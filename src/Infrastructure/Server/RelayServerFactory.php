@@ -1,0 +1,131 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Innis\Nostr\Relay\Infrastructure\Server;
+
+use Innis\Nostr\Core\Infrastructure\Adapter\JsonMessageSerialiserAdapter;
+use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
+use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
+use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
+use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\EventDistributor;
+use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
+use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
+use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
+use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
+use Psr\Log\LoggerInterface;
+
+final class RelayServerFactory
+{
+    public function __construct(
+        private readonly RelayEventStoreInterface $eventStore,
+        private readonly RelayPolicyInterface $policy,
+        private readonly RelayConfigInterface $config,
+        private readonly LoggerInterface $logger,
+    ) {
+    }
+
+    public function create(): RelayInstance
+    {
+        $metrics = new InMemoryMetricsCollector();
+
+        $subscriptionManager = new SubscriptionManager(
+            $metrics,
+            $this->logger
+        );
+
+        $clientManager = new ClientManager(
+            $subscriptionManager,
+            $metrics,
+            $this->logger,
+            $this->config->getMaxConnections()
+        );
+
+        $disconnectionHandler = new ClientDisconnectionHandler(
+            $clientManager,
+            $subscriptionManager,
+            $this->logger
+        );
+
+        $eventDistributor = new EventDistributor(
+            $this->policy,
+            $subscriptionManager,
+            $clientManager,
+            $metrics,
+            $this->logger
+        );
+
+        $rateLimitConfig = $this->config->getRateLimitConfig();
+        $eventRateLimiter = new TokenBucketRateLimiter(
+            capacity: $rateLimitConfig->getEventsPerMinute(),
+            refillRate: $rateLimitConfig->getEventsRefillRate()
+        );
+
+        $subscriptionRateLimiter = new TokenBucketRateLimiter(
+            capacity: $rateLimitConfig->getSubscriptionsPerMinute(),
+            refillRate: $rateLimitConfig->getSubscriptionsRefillRate()
+        );
+
+        $processEventUseCase = new ProcessEventSubmissionUseCase(
+            $this->eventStore,
+            $this->policy,
+            $eventDistributor,
+            $eventRateLimiter,
+            $metrics,
+            $this->logger
+        );
+
+        $createSubscriptionUseCase = new CreateSubscriptionUseCase(
+            $this->eventStore,
+            $this->policy,
+            $subscriptionManager,
+            $subscriptionRateLimiter,
+            $this->logger
+        );
+
+        $closeSubscriptionUseCase = new CloseSubscriptionUseCase(
+            $subscriptionManager,
+            $this->logger
+        );
+
+        $serialiser = new JsonMessageSerialiserAdapter();
+
+        $messageRouter = new MessageRouter(
+            $processEventUseCase,
+            $createSubscriptionUseCase,
+            $closeSubscriptionUseCase,
+            $serialiser,
+            $this->logger
+        );
+
+        $connectionHandler = new ClientConnectionHandler(
+            $clientManager,
+            $disconnectionHandler,
+            $messageRouter,
+            $this->logger
+        );
+
+        $nip11Handler = new Nip11HttpHandler($this->config);
+
+        $server = new AmphpRelayServer(
+            $this->config,
+            $connectionHandler,
+            $nip11Handler,
+            $this->logger
+        );
+
+        return new RelayInstance(
+            $server,
+            $eventDistributor,
+            $subscriptionManager,
+            $clientManager,
+            $metrics
+        );
+    }
+}

@@ -1,0 +1,29 @@
+includes:
+    - vendor/phpstan/phpstan-phpunit/extension.neon
+
+parameters:
+    level: 9
+    paths:
+        - src
+        - tests
+    tmpDir: var/phpstan
+    reportUnmatchedIgnoredErrors: true
+    ignoreErrors:
+        # PHP cannot express generic array types natively (e.g. array<string,mixed>)
+        -
+            identifier: missingType.iterableValue
+        # PHP cannot express generic class types natively (e.g. Collection<Event>)
+        -
+            identifier: missingType.generics
+        # PHPStan infers port range but the explicit bounds check is intentional defensive code
+        -
+            message: '#expects int<0, 65535>, int given#'
+            path: src/Infrastructure/Server/AmphpRelayServer.php
+        # Test assertion callbacks cast mixed JSON values - types verified by runtime assertions
+        -
+            identifier: cast.string
+            path: tests/
+        # Test assertions that verify runtime behaviour are valid even when PHPStan can infer the result statically
+        -
+            identifier: method.alreadyNarrowedType
+            path: tests/
