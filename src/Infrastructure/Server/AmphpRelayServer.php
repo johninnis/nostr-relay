@@ -66,7 +66,9 @@ final class AmphpRelayServer
                 Request $request,
                 Response $response,
             ): void {
-                $forwarded = $request->getAttribute(Forwarded::class);
+                $forwarded = $request->hasAttribute(Forwarded::class)
+                    ? $request->getAttribute(Forwarded::class)
+                    : null;
                 $ipAddress = $forwarded instanceof Forwarded
                     ? $forwarded->getFor()->getAddress()
                     : $request->getClient()->getRemoteAddress()->toString();
