@@ -14,9 +14,11 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
@@ -66,6 +68,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $this->eventStore,
             $this->policy,
             $distributor,
+            new AuthenticationManager(),
             $this->rateLimiter,
             $this->metrics,
             $logger,
@@ -80,14 +83,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         );
     }
 
-    private function createSignedEvent(): Event
+    private function createSignedEvent(?EventKind $kind = null): Event
     {
         $keyPair = KeyPair::generate();
 
         return (new Event(
             $keyPair->getPublicKey(),
             Timestamp::now(),
-            EventKind::textNote(),
+            $kind ?? EventKind::textNote(),
             TagCollection::empty(),
             EventContent::fromString('hello world'),
         ))->sign($keyPair->getPrivateKey());
@@ -161,5 +164,44 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             }));
 
         $this->useCase->execute($this->client, $event);
+    }
+
+    public function testEphemeralEventSkipsStorageAndSendsOk(): void
+    {
+        $event = $this->createSignedEvent(EventKind::fromInt(20001));
+
+        $this->eventStore->expects($this->never())->method('store');
+        $this->metrics->expects($this->once())->method('incrementEventsReceived');
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $data = json_decode($json, true);
+                assert(is_array($data));
+
+                return 'OK' === $data[0] && true === $data[2];
+            }));
+
+        $this->useCase->execute($this->client, $event);
+    }
+
+    public function testAuthRequiredSendsAuthChallengeAndOk(): void
+    {
+        $event = $this->createSignedEvent();
+
+        $this->policy->method('allowEventSubmission')
+            ->willThrowException(new AuthRequiredException('auth needed'));
+
+        $sentMessages = [];
+        $this->connection->method('sendText')
+            ->willReturnCallback(static function (string $json) use (&$sentMessages): void {
+                $sentMessages[] = json_decode($json, true);
+            });
+
+        $this->useCase->execute($this->client, $event);
+
+        $this->assertCount(2, $sentMessages);
+        $this->assertSame('AUTH', $sentMessages[0][0]);
+        $this->assertSame('OK', $sentMessages[1][0]);
+        $this->assertFalse($sentMessages[1][2]);
+        $this->assertStringContainsString('auth-required', (string) $sentMessages[1][3]);
     }
 }

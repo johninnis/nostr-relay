@@ -7,13 +7,16 @@ namespace Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
@@ -29,6 +32,7 @@ final class ProcessEventSubmissionUseCase
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
         private readonly EventDistributor $distributor,
+        private readonly AuthenticationManager $authManager,
         private readonly RateLimiterInterface $rateLimiter,
         private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
@@ -44,6 +48,14 @@ final class ProcessEventSubmissionUseCase
             $this->eventValidator->validateEvent($event);
 
             $this->policy->allowEventSubmission($client, $event);
+
+            if ($event->getKind()->isEphemeral()) {
+                $this->metrics->incrementEventsReceived();
+                async(fn () => $this->distributor->distributeToSubscribers($event));
+                $client->send(new OkMessage($event->getId(), true, ''));
+
+                return;
+            }
 
             $stored = $this->eventStore->store($event);
 
@@ -68,13 +80,17 @@ final class ProcessEventSubmissionUseCase
                 'client_id' => $client->getId()->toString(),
                 'reason' => $e->getMessage(),
             ]);
+        } catch (AuthRequiredException) {
+            $challenge = $this->authManager->generateChallenge($client->getId());
+            $client->send(new AuthMessage($challenge));
+            $client->send(new OkMessage($event->getId(), false, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Event rejected by policy', [
                 'client_id' => $client->getId()->toString(),
                 'reason' => $e->getMessage(),
             ]);
-        } catch (RateLimitException $e) {
+        } catch (RateLimitException) {
             $client->send(new OkMessage($event->getId(), false, 'rate-limited: slow down'));
             $this->logger->warning('Event rate limited', [
                 'client_id' => $client->getId()->toString(),

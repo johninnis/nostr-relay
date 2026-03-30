@@ -11,4 +11,6 @@ interface RelayEventStoreInterface
     public function store(Event $event): bool;
 
     public function findByFilters(array $filters, int $limit = 100): array;
+
+    public function countByFilters(array $filters): int;
 }

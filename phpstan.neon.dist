@@ -27,3 +27,7 @@ parameters:
         -
             identifier: method.alreadyNarrowedType
             path: tests/
+        # Test callbacks access json_decode mixed results - verified at runtime
+        -
+            identifier: offsetAccess.nonOffsetAccessible
+            path: tests/

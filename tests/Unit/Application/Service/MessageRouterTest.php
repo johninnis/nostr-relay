@@ -10,22 +10,30 @@ use Innis\Nostr\Core\Domain\Service\MessageSerialiserInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
+use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
@@ -44,6 +52,7 @@ final class MessageRouterTest extends TestCase
     private RelayEventStoreInterface&MockObject $eventStore;
     private RelayPolicyInterface&MockObject $policy;
     private SubscriptionManager $subscriptionManager;
+    private AuthenticationManager $authManager;
     private MessageRouter $router;
     private RelayClient $client;
     private ClientConnectionInterface&MockObject $connection;
@@ -58,16 +67,17 @@ final class MessageRouterTest extends TestCase
         $logger = new NullLogger();
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $subscriptionManager = $this->subscriptionManager;
+        $this->authManager = new AuthenticationManager();
+
         $clientManager = new ClientManager(
-            $subscriptionManager,
+            $this->subscriptionManager,
             $metrics,
             $logger,
         );
 
         $distributor = new EventDistributor(
             $this->policy,
-            $subscriptionManager,
+            $this->subscriptionManager,
             $clientManager,
             $metrics,
             $logger,
@@ -77,6 +87,7 @@ final class MessageRouterTest extends TestCase
             $this->eventStore,
             $this->policy,
             $distributor,
+            $this->authManager,
             $rateLimiter,
             $metrics,
             $logger,
@@ -85,17 +96,37 @@ final class MessageRouterTest extends TestCase
         $createSubscription = new CreateSubscriptionUseCase(
             $this->eventStore,
             $this->policy,
-            $subscriptionManager,
+            $this->subscriptionManager,
+            $this->authManager,
             $rateLimiter,
             $logger,
         );
 
-        $closeSubscription = new CloseSubscriptionUseCase($subscriptionManager, $logger);
+        $closeSubscription = new CloseSubscriptionUseCase($this->subscriptionManager, $logger);
+
+        $config = $this->createMock(RelayConfigInterface::class);
+        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+
+        $processAuth = new ProcessAuthUseCase(
+            $this->authManager,
+            $config,
+            $logger,
+        );
+
+        $countSubscription = new CountSubscriptionUseCase(
+            $this->eventStore,
+            $this->policy,
+            $this->authManager,
+            $rateLimiter,
+            $logger,
+        );
 
         $this->router = new MessageRouter(
             $processEvent,
             $createSubscription,
             $closeSubscription,
+            $processAuth,
+            $countSubscription,
             $this->serialiser,
             $logger,
         );
@@ -168,6 +199,57 @@ final class MessageRouterTest extends TestCase
         $this->router->route($this->client, '["CLOSE","sub-1"]');
 
         $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+    }
+
+    public function testRoutesAuthMessage(): void
+    {
+        $keyPair = KeyPair::generate();
+        $challenge = $this->authManager->generateChallenge($this->client->getId());
+
+        $event = (new Event(
+            $keyPair->getPublicKey(),
+            Timestamp::now(),
+            EventKind::clientAuth(),
+            new TagCollection([
+                Tag::fromArray(['relay', 'wss://relay.example.com']),
+                Tag::fromArray(['challenge', $challenge]),
+            ]),
+            EventContent::fromString(''),
+        ))->sign($keyPair->getPrivateKey());
+
+        $this->serialiser->method('deserialiseClientMessage')->willReturn(new AuthMessage($event));
+
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $data = json_decode($json, true);
+                assert(is_array($data));
+
+                return 'OK' === $data[0] && true === $data[2];
+            }));
+
+        $this->router->route($this->client, '["AUTH",{}]');
+
+        $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
+    }
+
+    public function testRoutesCountMessage(): void
+    {
+        $subId = SubscriptionId::fromString('count-1');
+        $filters = [new Filter()];
+
+        $this->serialiser->method('deserialiseClientMessage')->willReturn(new CountMessage($subId, $filters));
+        $this->policy->method('filterForClient')->willReturn($filters);
+        $this->eventStore->method('countByFilters')->willReturn(42);
+
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $data = json_decode($json, true);
+                assert(is_array($data));
+
+                return 'COUNT' === $data[0] && 'count-1' === $data[1] && 42 === $data[2]['count'];
+            }));
+
+        $this->router->route($this->client, '["COUNT","count-1",{}]');
     }
 
     public function testSendsNoticeForInvalidMessage(): void

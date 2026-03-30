@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Service\MessageSerialiserInterface;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use InvalidArgumentException;
@@ -23,6 +27,8 @@ final class MessageRouter
         private readonly ProcessEventSubmissionUseCase $processEventSubmissionUseCase,
         private readonly CreateSubscriptionUseCase $createSubscriptionUseCase,
         private readonly CloseSubscriptionUseCase $closeSubscriptionUseCase,
+        private readonly ProcessAuthUseCase $processAuthUseCase,
+        private readonly CountSubscriptionUseCase $countSubscriptionUseCase,
         private readonly MessageSerialiserInterface $serialiser,
         private readonly LoggerInterface $logger,
     ) {
@@ -46,6 +52,15 @@ final class MessageRouter
                 $clientMessage instanceof CloseMessage => $this->closeSubscriptionUseCase->execute(
                     $client,
                     $clientMessage->getSubscriptionId()
+                ),
+                $clientMessage instanceof AuthMessage => $this->processAuthUseCase->execute(
+                    $client,
+                    $clientMessage->getEvent()
+                ),
+                $clientMessage instanceof CountMessage => $this->countSubscriptionUseCase->execute(
+                    $client,
+                    $clientMessage->getSubscriptionId(),
+                    $clientMessage->getFilters()
                 ),
                 default => $client->send(new NoticeMessage('Unknown message type')),
             };

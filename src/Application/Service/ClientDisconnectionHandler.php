@@ -12,6 +12,7 @@ final class ClientDisconnectionHandler
     public function __construct(
         private readonly ClientManager $clientManager,
         private readonly SubscriptionManager $subscriptionManager,
+        private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -23,6 +24,7 @@ final class ClientDisconnectionHandler
         }
 
         $this->subscriptionManager->removeAllForClient($clientId);
+        $this->authManager->removeClient($clientId);
         $this->clientManager->removeClient($clientId);
 
         $this->logger->info('Client disconnected', [

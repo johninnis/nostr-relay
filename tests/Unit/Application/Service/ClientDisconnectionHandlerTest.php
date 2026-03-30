@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
@@ -37,6 +38,7 @@ final class ClientDisconnectionHandlerTest extends TestCase
         $this->handler = new ClientDisconnectionHandler(
             $this->clientManager,
             $this->subscriptionManager,
+            new AuthenticationManager(),
             $logger,
         );
     }

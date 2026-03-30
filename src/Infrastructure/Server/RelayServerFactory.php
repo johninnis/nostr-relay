@@ -8,13 +8,16 @@ use Innis\Nostr\Core\Infrastructure\Adapter\JsonMessageSerialiserAdapter;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
@@ -27,6 +30,7 @@ final class RelayServerFactory
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
         private readonly RelayConfigInterface $config,
+        private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -47,9 +51,12 @@ final class RelayServerFactory
             $this->config->getMaxConnections()
         );
 
+        $authManager = $this->authManager;
+
         $disconnectionHandler = new ClientDisconnectionHandler(
             $clientManager,
             $subscriptionManager,
+            $authManager,
             $this->logger
         );
 
@@ -76,6 +83,7 @@ final class RelayServerFactory
             $this->eventStore,
             $this->policy,
             $eventDistributor,
+            $authManager,
             $eventRateLimiter,
             $metrics,
             $this->logger
@@ -85,6 +93,7 @@ final class RelayServerFactory
             $this->eventStore,
             $this->policy,
             $subscriptionManager,
+            $authManager,
             $subscriptionRateLimiter,
             $this->logger
         );
@@ -94,12 +103,28 @@ final class RelayServerFactory
             $this->logger
         );
 
+        $processAuthUseCase = new ProcessAuthUseCase(
+            $authManager,
+            $this->config,
+            $this->logger
+        );
+
+        $countSubscriptionUseCase = new CountSubscriptionUseCase(
+            $this->eventStore,
+            $this->policy,
+            $authManager,
+            $subscriptionRateLimiter,
+            $this->logger
+        );
+
         $serialiser = new JsonMessageSerialiserAdapter();
 
         $messageRouter = new MessageRouter(
             $processEventUseCase,
             $createSubscriptionUseCase,
             $closeSubscriptionUseCase,
+            $processAuthUseCase,
+            $countSubscriptionUseCase,
             $serialiser,
             $this->logger
         );

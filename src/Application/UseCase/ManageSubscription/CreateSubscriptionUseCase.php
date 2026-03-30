@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Application\UseCase\ManageSubscription;
 
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EoseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
@@ -14,8 +15,10 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
@@ -29,6 +32,7 @@ final class CreateSubscriptionUseCase
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
         private readonly SubscriptionManager $subscriptionManager,
+        private readonly AuthenticationManager $authManager,
         private readonly RateLimiterInterface $rateLimiter,
         private readonly LoggerInterface $logger,
     ) {
@@ -56,6 +60,10 @@ final class CreateSubscriptionUseCase
             async(function () use ($client, $subscription, $modifiedFilters) {
                 $this->sendStoredEvents($client, $subscription, $modifiedFilters);
             });
+        } catch (AuthRequiredException) {
+            $challenge = $this->authManager->generateChallenge($client->getId());
+            $client->send(new AuthMessage($challenge));
+            $client->send(new ClosedMessage($subscriptionId, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Subscription rejected by policy', [
@@ -63,7 +71,7 @@ final class CreateSubscriptionUseCase
                 'subscription_id' => (string) $subscriptionId,
                 'reason' => $e->getMessage(),
             ]);
-        } catch (RateLimitException $e) {
+        } catch (RateLimitException) {
             $client->send(new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
         } catch (Throwable $e) {
             $this->subscriptionManager->removeSubscription($client->getId(), $subscriptionId);
