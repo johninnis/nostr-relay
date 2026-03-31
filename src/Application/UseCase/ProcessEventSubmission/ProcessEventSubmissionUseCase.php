@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -40,6 +41,35 @@ final class ProcessEventSubmissionUseCase
         $this->eventValidator = new EventValidationService();
     }
 
+    private function processDeletion(Event $event): void
+    {
+        $references = TagReferenceExtractor::extract($event->getTags());
+        $author = $event->getPubkey();
+        $deletedCount = 0;
+
+        $eventIds = array_map(
+            static fn ($ref) => $ref->getEventId(),
+            $references->getEvents()
+        );
+
+        if (!empty($eventIds)) {
+            $deletedCount += $this->eventStore->deleteByEventIds($eventIds, $author);
+        }
+
+        $coordinates = $references->getAddressable();
+
+        if (!empty($coordinates)) {
+            $deletedCount += $this->eventStore->deleteByCoordinates($coordinates, $author);
+        }
+
+        if ($deletedCount > 0) {
+            $this->logger->debug('Deletion event processed', [
+                'deletion_event_id' => $event->getId()->toHex(),
+                'deleted_count' => $deletedCount,
+            ]);
+        }
+    }
+
     public function execute(RelayClient $client, Event $event): void
     {
         try {
@@ -61,6 +91,10 @@ final class ProcessEventSubmissionUseCase
 
             if ($stored) {
                 $this->metrics->incrementEventsReceived();
+
+                if ($event->isDeletion()) {
+                    $this->processDeletion($event);
+                }
 
                 async(fn () => $this->distributor->distributeToSubscribers($event));
 

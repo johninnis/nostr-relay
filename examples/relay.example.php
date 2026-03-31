@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
@@ -23,6 +25,21 @@ class ExampleEventStore implements RelayEventStoreInterface
     public function findByFilters(array $filters, int $limit = 100): array
     {
         return [];
+    }
+
+    public function countByFilters(array $filters): int
+    {
+        return 0;
+    }
+
+    public function deleteByEventIds(array $eventIds, PublicKey $author): int
+    {
+        return 0;
+    }
+
+    public function deleteByCoordinates(array $coordinates, PublicKey $author): int
+    {
+        return 0;
     }
 }
 
@@ -148,6 +165,7 @@ $factory = new \Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory(
     new ExampleEventStore(),
     new PrivateRelayPolicy($ownerPubkeyHex),
     new ExampleRelayConfig($ownerPubkeyHex),
+    new AuthenticationManager(),
     new \Psr\Log\NullLogger()
 );
 

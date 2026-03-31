@@ -8,6 +8,8 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -18,9 +20,9 @@ use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
@@ -93,6 +95,19 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $kind ?? EventKind::textNote(),
             TagCollection::empty(),
             EventContent::fromString('hello world'),
+        ))->sign($keyPair->getPrivateKey());
+    }
+
+    private function createSignedDeletionEvent(TagCollection $tags, ?KeyPair $keyPair = null): Event
+    {
+        $keyPair ??= KeyPair::generate();
+
+        return (new Event(
+            $keyPair->getPublicKey(),
+            Timestamp::now(),
+            EventKind::eventDeletion(),
+            $tags,
+            EventContent::fromString('spam'),
         ))->sign($keyPair->getPrivateKey());
     }
 
@@ -203,5 +218,74 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->assertSame('OK', $sentMessages[1][0]);
         $this->assertFalse($sentMessages[1][2]);
         $this->assertStringContainsString('auth-required', (string) $sentMessages[1][3]);
+    }
+
+    public function testDeletionEventTriggersDeleteByEventIds(): void
+    {
+        $targetEventId = str_repeat('a', 64);
+        $tags = new TagCollection([
+            Tag::event($targetEventId),
+        ]);
+        $event = $this->createSignedDeletionEvent($tags);
+
+        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->expects($this->once())
+            ->method('deleteByEventIds')
+            ->with(
+                $this->callback(static function (array $eventIds) use ($targetEventId): bool {
+                    return 1 === count($eventIds) && $targetEventId === $eventIds[0]->toHex();
+                }),
+                $this->callback(static function (PublicKey $author) use ($event): bool {
+                    return $author->equals($event->getPubkey());
+                }),
+            )
+            ->willReturn(1);
+
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $data = json_decode($json, true);
+                assert(is_array($data));
+
+                return 'OK' === $data[0] && true === $data[2];
+            }));
+
+        $this->useCase->execute($this->client, $event);
+    }
+
+    public function testDeletionEventTriggersDeleteByCoordinates(): void
+    {
+        $keyPair = KeyPair::generate();
+        $coordinate = '30023:'.$keyPair->getPublicKey()->toHex().':my-article';
+        $tags = new TagCollection([
+            Tag::fromArray(['a', $coordinate]),
+        ]);
+        $event = $this->createSignedDeletionEvent($tags, $keyPair);
+
+        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->expects($this->never())->method('deleteByEventIds');
+        $this->eventStore->expects($this->once())
+            ->method('deleteByCoordinates')
+            ->with(
+                $this->callback(static function (array $coordinates) use ($coordinate): bool {
+                    return 1 === count($coordinates) && $coordinate === $coordinates[0]->toString();
+                }),
+                $this->callback(static function (PublicKey $author) use ($keyPair): bool {
+                    return $author->equals($keyPair->getPublicKey());
+                }),
+            )
+            ->willReturn(1);
+
+        $this->useCase->execute($this->client, $event);
+    }
+
+    public function testNonDeletionEventDoesNotTriggerDeletion(): void
+    {
+        $event = $this->createSignedEvent();
+
+        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->expects($this->never())->method('deleteByEventIds');
+        $this->eventStore->expects($this->never())->method('deleteByCoordinates');
+
+        $this->useCase->execute($this->client, $event);
     }
 }
