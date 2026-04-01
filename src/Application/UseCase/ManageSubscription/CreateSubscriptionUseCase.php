@@ -61,13 +61,16 @@ final class CreateSubscriptionUseCase
                 $this->sendStoredEvents($client, $subscription, $modifiedFilters);
             });
         } catch (AuthRequiredException) {
+            $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
             $challenge = $this->authManager->generateChallenge($client->getId());
-            $client->send(new AuthMessage($challenge));
+            if (!$alreadyChallenged) {
+                $client->send(new AuthMessage($challenge));
+            }
             $client->send(new ClosedMessage($subscriptionId, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Subscription rejected by policy', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'reason' => $e->getMessage(),
             ]);
@@ -77,7 +80,7 @@ final class CreateSubscriptionUseCase
             $this->subscriptionManager->removeSubscription($client->getId(), $subscriptionId);
             $client->send(new ClosedMessage($subscriptionId, 'error: invalid subscription'));
             $this->logger->error('Subscription creation error', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'error' => $e->getMessage(),
             ]);
@@ -100,13 +103,13 @@ final class CreateSubscriptionUseCase
             $this->subscriptionManager->updateSubscriptionState($client->getId(), $subscription->getId(), SubscriptionState::LIVE);
 
             $this->logger->debug('Stored events sent, subscription now live', [
-                'subscription_id' => $subscription->getId()->toString(),
+                'subscription_id' => (string) $subscription->getId(),
                 'event_count' => count($events),
             ]);
         } catch (Throwable $e) {
             $client->send(new NoticeMessage('error: failed to fetch events'));
             $this->logger->error('Failed to fetch stored events', [
-                'subscription_id' => $subscription->getId()->toString(),
+                'subscription_id' => (string) $subscription->getId(),
                 'error' => $e->getMessage(),
             ]);
         }

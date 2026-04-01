@@ -28,7 +28,7 @@ final class ClientDisconnectionHandler
         $this->clientManager->removeClient($clientId);
 
         $this->logger->info('Client disconnected', [
-            'client_id' => $clientId->toString(),
+            'client_id' => (string) $clientId,
             'total_clients' => $this->clientManager->getClientCount(),
         ]);
     }

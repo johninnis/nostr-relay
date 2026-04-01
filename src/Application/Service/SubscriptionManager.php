@@ -30,7 +30,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     public function addSubscription(ClientId $clientId, Subscription $subscription): void
     {
         $key = $this->compositeKey($clientId, $subscription->getId());
-        $clientIdStr = $clientId->toString();
+        $clientIdStr = (string) $clientId;
 
         if (isset($this->subscriptions[$key])) {
             $this->removeSubscription($clientId, $subscription->getId());
@@ -44,7 +44,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         $this->metrics->incrementSubscriptions();
 
         $this->logger->debug('Subscription created', [
-            'subscription_id' => $subscription->getId()->toString(),
+            'subscription_id' => (string) $subscription->getId(),
             'client_id' => $clientIdStr,
             'filter_count' => count($subscription->getFilters()),
         ]);
@@ -59,7 +59,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         }
 
         $subscription = $this->subscriptions[$key];
-        $clientIdStr = $clientId->toString();
+        $clientIdStr = (string) $clientId;
 
         $this->removeFromKindIndex($subscription, $key);
         $this->removeFromClientIndex($clientIdStr, $key);
@@ -68,14 +68,14 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         $this->metrics->decrementSubscriptions();
 
         $this->logger->debug('Subscription closed', [
-            'subscription_id' => $subscriptionId->toString(),
+            'subscription_id' => (string) $subscriptionId,
             'client_id' => $clientIdStr,
         ]);
     }
 
     public function removeAllForClient(ClientId $clientId): void
     {
-        $clientIdStr = $clientId->toString();
+        $clientIdStr = (string) $clientId;
         $keys = $this->subscriptionsByClient[$clientIdStr] ?? [];
 
         foreach ($keys as $key) {
@@ -117,7 +117,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     public function getSubscriptionsForClient(ClientId $clientId): SubscriptionCollection
     {
-        $keys = $this->subscriptionsByClient[$clientId->toString()] ?? [];
+        $keys = $this->subscriptionsByClient[(string) $clientId] ?? [];
 
         $subscriptions = [];
         foreach ($keys as $key) {
@@ -132,7 +132,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     public function getSubscriptionCountForClient(ClientId $clientId): int
     {
-        return count($this->subscriptionsByClient[$clientId->toString()] ?? []);
+        return count($this->subscriptionsByClient[(string) $clientId] ?? []);
     }
 
     public function getAllSubscriptions(): SubscriptionCollection
@@ -147,7 +147,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     private function compositeKey(ClientId $clientId, SubscriptionId $subscriptionId): string
     {
-        return $clientId->toString().':'.$subscriptionId->toString();
+        return (string) $clientId.':'.(string) $subscriptionId;
     }
 
     private function addToKindIndex(Subscription $subscription, string $key): void

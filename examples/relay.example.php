@@ -3,16 +3,13 @@
 declare(strict_types=1);
 
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
-use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
+use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 
 class ExampleEventStore implements RelayEventStoreInterface
@@ -43,60 +40,6 @@ class ExampleEventStore implements RelayEventStoreInterface
     }
 }
 
-class PrivateRelayPolicy implements RelayPolicyInterface
-{
-    public function __construct(
-        private readonly string $ownerPubkeyHex,
-    ) {
-    }
-
-    public function allowEventSubmission(RelayClient $client, Event $event): void
-    {
-        if ($event->getPubkey()->toHex() !== $this->ownerPubkeyHex) {
-            throw new PolicyViolationException('Only events from relay owner allowed');
-        }
-
-        if ($event->getContent()->getLength() > 65536) {
-            throw new PolicyViolationException('Event too large (max 64KB)');
-        }
-    }
-
-    public function allowSubscription(RelayClient $client, array $filters): void
-    {
-        if ($client->getSubscriptionCount() >= 20) {
-            throw new PolicyViolationException('Too many subscriptions (max 20)');
-        }
-
-        if (count($filters) > 5) {
-            throw new PolicyViolationException('Too many filters (max 5)');
-        }
-
-        foreach ($filters as $filter) {
-            if ($filter->hasLimit() && $filter->getLimit() > 1000) {
-                throw new PolicyViolationException('Filter limit too high (max 1000)');
-            }
-        }
-    }
-
-    public function filterForClient(RelayClient $client, array $filters): array
-    {
-        return array_map(
-            fn (Filter $filter) => $filter->withAuthors([$this->ownerPubkeyHex]),
-            $filters
-        );
-    }
-
-    public function canClientReceiveEvent(RelayClient $client, Event $event): bool
-    {
-        return $event->getPubkey()->toHex() === $this->ownerPubkeyHex;
-    }
-
-    public function getMaxSubscriptionsPerClient(): int
-    {
-        return 20;
-    }
-}
-
 class ExampleRelayConfig implements RelayConfigInterface
 {
     public function __construct(
@@ -119,6 +62,11 @@ class ExampleRelayConfig implements RelayConfigInterface
         return 1000;
     }
 
+    public function getRelayUrl(): RelayUrl
+    {
+        return RelayUrl::fromString('ws://127.0.0.1:8080');
+    }
+
     public function getRelayInfo(): Nip11Info
     {
         $relayUrl = RelayUrl::fromString('wss://relay.example.com');
@@ -128,20 +76,9 @@ class ExampleRelayConfig implements RelayConfigInterface
             'description' => 'Private Nostr relay',
             'pubkey' => $this->ownerPubkeyHex,
             'contact' => 'admin@example.com',
-            'supported_nips' => [1, 11],
+            'supported_nips' => [1, 11, 42],
             'software' => 'innis/nostr-relay',
             'version' => '1.0.0',
-            'limitation' => [
-                'max_message_length' => 65536,
-                'max_subscriptions' => 20,
-                'max_filters' => 5,
-                'max_limit' => 1000,
-                'max_event_tags' => 2000,
-                'max_content_length' => 65536,
-                'auth_required' => false,
-                'payment_required' => false,
-                'restricted_writes' => true,
-            ],
         ]);
     }
 
@@ -160,13 +97,27 @@ class ExampleRelayConfig implements RelayConfigInterface
 }
 
 $ownerPubkeyHex = 'your-hex-pubkey-here';
+$authManager = new AuthenticationManager();
+$logger = new \Psr\Log\NullLogger();
+
+$policy = new RelayPolicy($authManager, $logger, [
+    'tenants' => [$ownerPubkeyHex],
+    'guest' => [
+        'read' => [
+            ['kinds' => [0, 1, 6, 7, 30023], 'from' => 'tenants'],
+        ],
+        'write' => [
+            ['kinds' => [7, 9735]],
+        ],
+    ],
+]);
 
 $factory = new \Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory(
     new ExampleEventStore(),
-    new PrivateRelayPolicy($ownerPubkeyHex),
+    $policy,
     new ExampleRelayConfig($ownerPubkeyHex),
-    new AuthenticationManager(),
-    new \Psr\Log\NullLogger()
+    $authManager,
+    $logger
 );
 
 $relay = $factory->create();

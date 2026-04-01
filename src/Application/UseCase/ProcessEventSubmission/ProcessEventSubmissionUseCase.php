@@ -103,7 +103,7 @@ final class ProcessEventSubmissionUseCase
                 $this->logger->debug('Event stored and distributed', [
                     'event_id' => $event->getId()->toHex(),
                     'kind' => $event->getKind()->toInt(),
-                    'client_id' => $client->getId()->toString(),
+                    'client_id' => (string) $client->getId(),
                 ]);
             } else {
                 $client->send(new OkMessage($event->getId(), false, 'duplicate: event already exists'));
@@ -111,28 +111,31 @@ final class ProcessEventSubmissionUseCase
         } catch (InvalidEventException $e) {
             $client->send(new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('Event failed validation', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'reason' => $e->getMessage(),
             ]);
         } catch (AuthRequiredException) {
+            $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
             $challenge = $this->authManager->generateChallenge($client->getId());
-            $client->send(new AuthMessage($challenge));
+            if (!$alreadyChallenged) {
+                $client->send(new AuthMessage($challenge));
+            }
             $client->send(new OkMessage($event->getId(), false, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Event rejected by policy', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'reason' => $e->getMessage(),
             ]);
         } catch (RateLimitException) {
             $client->send(new OkMessage($event->getId(), false, 'rate-limited: slow down'));
             $this->logger->warning('Event rate limited', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
             ]);
         } catch (Throwable $e) {
             $client->send(new OkMessage($event->getId(), false, 'error: could not process event'));
             $this->logger->error('Event processing error', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
         }

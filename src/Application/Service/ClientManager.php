@@ -35,11 +35,11 @@ final class ClientManager
         $clientId = ClientId::generate();
         $client = new RelayClient($clientId, $connection, $connectionInfo, $this->subscriptionLookup);
 
-        $this->clients[$clientId->toString()] = $client;
+        $this->clients[(string) $clientId] = $client;
         $this->metrics->incrementActiveConnections();
 
         $this->logger->info('Client connected', [
-            'client_id' => $clientId->toString(),
+            'client_id' => (string) $clientId,
             'ip' => $connectionInfo->getIpAddress(),
             'total_clients' => count($this->clients),
         ]);
@@ -49,17 +49,17 @@ final class ClientManager
 
     public function removeClient(ClientId $clientId): void
     {
-        if (!isset($this->clients[$clientId->toString()])) {
+        if (!isset($this->clients[(string) $clientId])) {
             return;
         }
 
-        unset($this->clients[$clientId->toString()]);
+        unset($this->clients[(string) $clientId]);
         $this->metrics->decrementActiveConnections();
     }
 
     public function getClient(ClientId $clientId): ?RelayClient
     {
-        return $this->clients[$clientId->toString()] ?? null;
+        return $this->clients[(string) $clientId] ?? null;
     }
 
     public function getClientCount(): int

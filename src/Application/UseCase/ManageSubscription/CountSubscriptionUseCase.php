@@ -43,8 +43,11 @@ final class CountSubscriptionUseCase
 
             $client->send(new CountMessage($subscriptionId, $count));
         } catch (AuthRequiredException) {
+            $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
             $challenge = $this->authManager->generateChallenge($client->getId());
-            $client->send(new AuthMessage($challenge));
+            if (!$alreadyChallenged) {
+                $client->send(new AuthMessage($challenge));
+            }
             $client->send(new ClosedMessage($subscriptionId, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
@@ -53,7 +56,7 @@ final class CountSubscriptionUseCase
         } catch (Throwable $e) {
             $client->send(new ClosedMessage($subscriptionId, 'error: could not count events'));
             $this->logger->error('Count subscription error', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'error' => $e->getMessage(),
             ]);

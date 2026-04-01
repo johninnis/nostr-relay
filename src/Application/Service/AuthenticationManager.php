@@ -14,7 +14,7 @@ final class AuthenticationManager
 
     public function generateChallenge(ClientId $clientId): string
     {
-        $key = $clientId->toString();
+        $key = (string) $clientId;
 
         if (isset($this->challenges[$key])) {
             return $this->challenges[$key];
@@ -28,12 +28,12 @@ final class AuthenticationManager
 
     public function getChallenge(ClientId $clientId): ?string
     {
-        return $this->challenges[$clientId->toString()] ?? null;
+        return $this->challenges[(string) $clientId] ?? null;
     }
 
     public function authenticate(ClientId $clientId, PublicKey $pubkey): void
     {
-        $key = $clientId->toString();
+        $key = (string) $clientId;
         unset($this->challenges[$key]);
 
         if (!isset($this->authenticatedPubkeys[$key])) {
@@ -51,12 +51,12 @@ final class AuthenticationManager
 
     public function isAuthenticated(ClientId $clientId): bool
     {
-        return !empty($this->authenticatedPubkeys[$clientId->toString()]);
+        return !empty($this->authenticatedPubkeys[(string) $clientId]);
     }
 
     public function getAuthenticatedPubkeys(ClientId $clientId): array
     {
-        return $this->authenticatedPubkeys[$clientId->toString()] ?? [];
+        return $this->authenticatedPubkeys[(string) $clientId] ?? [];
     }
 
     public function isAuthenticatedAs(ClientId $clientId, PublicKey $pubkey): bool
@@ -72,7 +72,7 @@ final class AuthenticationManager
 
     public function removeClient(ClientId $clientId): void
     {
-        $key = $clientId->toString();
+        $key = (string) $clientId;
         unset($this->authenticatedPubkeys[$key], $this->challenges[$key]);
     }
 }

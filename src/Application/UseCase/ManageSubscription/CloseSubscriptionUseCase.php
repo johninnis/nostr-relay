@@ -24,7 +24,7 @@ final class CloseSubscriptionUseCase
             $this->subscriptionManager->removeSubscription($client->getId(), $subscriptionId);
         } catch (Throwable $e) {
             $this->logger->error('Subscription close error', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'error' => $e->getMessage(),
             ]);

@@ -21,7 +21,7 @@ final readonly class ClientId
         return new self($value);
     }
 
-    public function toString(): string
+    public function __toString(): string
     {
         return $this->value;
     }

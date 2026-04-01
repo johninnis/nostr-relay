@@ -67,13 +67,13 @@ final class MessageRouter
         } catch (InvalidArgumentException $e) {
             $client->send(new NoticeMessage('Invalid message: '.$e->getMessage()));
             $this->logger->warning('Invalid message received', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
         } catch (Throwable $e) {
             $client->send(new NoticeMessage('Internal server error'));
             $this->logger->error('Message routing error', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
         }

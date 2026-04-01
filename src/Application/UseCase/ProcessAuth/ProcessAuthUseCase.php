@@ -67,13 +67,13 @@ final class ProcessAuthUseCase
             $client->send(new OkMessage($event->getId(), true, ''));
 
             $this->logger->info('Client authenticated', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'pubkey' => $event->getPubkey()->toHex(),
             ]);
         } catch (Throwable $e) {
             $client->send(new OkMessage($event->getId(), false, 'auth-required: '.$e->getMessage()));
             $this->logger->warning('AUTH validation failed', [
-                'client_id' => $client->getId()->toString(),
+                'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
         }

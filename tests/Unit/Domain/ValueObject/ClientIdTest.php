@@ -21,8 +21,8 @@ final class ClientIdTest extends TestCase
     {
         $id = ClientId::generate();
 
-        $this->assertSame(32, strlen($id->toString()));
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', $id->toString());
+        $this->assertSame(32, strlen((string) $id));
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', (string) $id);
     }
 
     public function testFromStringPreservesValue(): void
@@ -30,7 +30,7 @@ final class ClientIdTest extends TestCase
         $value = 'abc123';
         $id = ClientId::fromString($value);
 
-        $this->assertSame($value, $id->toString());
+        $this->assertSame($value, (string) $id);
     }
 
     public function testEqualsReturnsTrueForSameValue(): void

@@ -22,14 +22,14 @@ final class RelayClientCollection implements IteratorAggregate, Countable
             if (!$client instanceof RelayClient) {
                 throw new InvalidArgumentException('All items must be RelayClient instances');
             }
-            $this->clients[$client->getId()->toString()] = $client;
+            $this->clients[(string) $client->getId()] = $client;
         }
     }
 
     public function add(RelayClient $client): self
     {
         $copy = clone $this;
-        $copy->clients[$client->getId()->toString()] = $client;
+        $copy->clients[(string) $client->getId()] = $client;
 
         return $copy;
     }
@@ -37,19 +37,19 @@ final class RelayClientCollection implements IteratorAggregate, Countable
     public function remove(ClientId $clientId): self
     {
         $copy = clone $this;
-        unset($copy->clients[$clientId->toString()]);
+        unset($copy->clients[(string) $clientId]);
 
         return $copy;
     }
 
     public function get(ClientId $clientId): ?RelayClient
     {
-        return $this->clients[$clientId->toString()] ?? null;
+        return $this->clients[(string) $clientId] ?? null;
     }
 
     public function has(ClientId $clientId): bool
     {
-        return isset($this->clients[$clientId->toString()]);
+        return isset($this->clients[(string) $clientId]);
     }
 
     public function isEmpty(): bool

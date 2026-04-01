@@ -267,7 +267,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             ->method('deleteByCoordinates')
             ->with(
                 $this->callback(static function (array $coordinates) use ($coordinate): bool {
-                    return 1 === count($coordinates) && $coordinate === $coordinates[0]->toString();
+                    return 1 === count($coordinates) && $coordinate === (string) $coordinates[0];
                 }),
                 $this->callback(static function (PublicKey $author) use ($keyPair): bool {
                     return $author->equals($keyPair->getPublicKey());
