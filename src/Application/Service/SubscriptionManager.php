@@ -157,9 +157,10 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         foreach ($subscription->getFilters() as $filter) {
             if ($filter->hasKinds()) {
                 foreach ($filter->getKinds() as $kind) {
-                    if (!isset($indexedKinds[$kind])) {
-                        $this->subscriptionsByKind[$kind][] = $key;
-                        $indexedKinds[$kind] = true;
+                    $kindInt = $kind->toInt();
+                    if (!isset($indexedKinds[$kindInt])) {
+                        $this->subscriptionsByKind[$kindInt][] = $key;
+                        $indexedKinds[$kindInt] = true;
                     }
                 }
             } elseif (!isset($indexedKinds['*'])) {
@@ -176,9 +177,10 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         foreach ($subscription->getFilters() as $filter) {
             if ($filter->hasKinds()) {
                 foreach ($filter->getKinds() as $kind) {
-                    if (!isset($removedKinds[$kind])) {
-                        $this->removeKindEntry($kind, $key);
-                        $removedKinds[$kind] = true;
+                    $kindInt = $kind->toInt();
+                    if (!isset($removedKinds[$kindInt])) {
+                        $this->removeKindEntry($kindInt, $key);
+                        $removedKinds[$kindInt] = true;
                     }
                 }
             } elseif (!isset($removedKinds['*'])) {

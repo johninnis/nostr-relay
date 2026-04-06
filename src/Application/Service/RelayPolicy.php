@@ -6,7 +6,6 @@ namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -201,8 +200,7 @@ final class RelayPolicy implements RelayPolicyInterface
 
             if (!empty($this->guestReadKinds) && $filter->hasKinds()) {
                 foreach ($filter->getKinds() as $kind) {
-                    $kindInt = $kind instanceof EventKind ? $kind->toInt() : $kind;
-                    if (!in_array($kindInt, $this->guestReadKinds, true)) {
+                    if (!in_array($kind->toInt(), $this->guestReadKinds, true)) {
                         return false;
                     }
                 }
