@@ -19,6 +19,8 @@ use Amp\Websocket\Server\Rfc6455ClientFactory;
 use Amp\Websocket\Server\Websocket;
 use Amp\Websocket\Server\WebsocketClientHandler;
 use Amp\Websocket\WebsocketClient;
+use Innis\Nostr\Relay\Application\DTO\HttpRequestContext;
+use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
@@ -31,6 +33,7 @@ final class AmphpRelayServer
         private readonly ClientConnectionHandler $connectionHandler,
         private readonly Nip11HttpHandler $nip11Handler,
         private readonly LoggerInterface $logger,
+        private readonly ?HttpRequestHandlerInterface $httpHandler = null,
     ) {
     }
 
@@ -102,6 +105,13 @@ final class AmphpRelayServer
                     }
                 }
 
+                if (null !== $this->httpHandler) {
+                    $response = $this->delegateToHttpHandler($request, $this->httpHandler);
+                    if (null !== $response) {
+                        return $response;
+                    }
+                }
+
                 return $websocket->handleRequest($request);
             }
         );
@@ -119,5 +129,34 @@ final class AmphpRelayServer
         $signal = \Amp\trapSignal([SIGINT, SIGTERM]);
         $this->logger->info('Received shutdown signal', ['signal' => $signal]);
         $server->stop();
+    }
+
+    private function delegateToHttpHandler(Request $request, HttpRequestHandlerInterface $handler): ?Response
+    {
+        $headers = [];
+        foreach ($request->getHeaders() as $name => $values) {
+            $headers[$name] = $values[0] ?? '';
+        }
+
+        $body = $request->getBody()->buffer();
+
+        $context = new HttpRequestContext(
+            $request->getMethod(),
+            $request->getUri()->getPath(),
+            $headers,
+            $body,
+        );
+
+        $result = $handler->handleHttpRequest($context);
+
+        if (null === $result) {
+            return null;
+        }
+
+        return new Response(
+            $result->getStatusCode(),
+            $result->getHeaders(),
+            $result->getBody(),
+        );
     }
 }

@@ -36,6 +36,11 @@ final class MessageRouter
 
     public function route(RelayClient $client, string $message): void
     {
+        $this->logger->debug('Message received', [
+            'client_id' => (string) $client->getId(),
+            'message' => mb_substr($message, 0, 200),
+        ]);
+
         try {
             $clientMessage = $this->serialiser->deserialiseClientMessage($message);
 

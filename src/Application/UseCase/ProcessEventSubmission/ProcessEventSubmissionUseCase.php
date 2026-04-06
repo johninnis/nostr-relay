@@ -72,6 +72,17 @@ final class ProcessEventSubmissionUseCase
 
     public function execute(RelayClient $client, Event $event): void
     {
+        $eventId = $event->getId()->toHex();
+        $kind = $event->getKind()->toInt();
+        $clientId = (string) $client->getId();
+
+        $this->logger->debug('Event received', [
+            'event_id' => $eventId,
+            'kind' => $kind,
+            'pubkey' => $event->getPubkey()->toHex(),
+            'client_id' => $clientId,
+        ]);
+
         try {
             $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
 
@@ -83,6 +94,7 @@ final class ProcessEventSubmissionUseCase
                 $this->metrics->incrementEventsReceived();
                 async(fn () => $this->distributor->distributeToSubscribers($event));
                 $client->send(new OkMessage($event->getId(), true, ''));
+                $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $eventId]);
 
                 return;
             }
@@ -99,21 +111,14 @@ final class ProcessEventSubmissionUseCase
                 async(fn () => $this->distributor->distributeToSubscribers($event));
 
                 $client->send(new OkMessage($event->getId(), true, ''));
-
-                $this->logger->debug('Event stored and distributed', [
-                    'event_id' => $event->getId()->toHex(),
-                    'kind' => $event->getKind()->toInt(),
-                    'client_id' => (string) $client->getId(),
-                ]);
+                $this->logger->debug('Event stored', ['event_id' => $eventId, 'kind' => $kind]);
             } else {
                 $client->send(new OkMessage($event->getId(), false, 'duplicate: event already exists'));
+                $this->logger->debug('Event duplicate', ['event_id' => $eventId]);
             }
         } catch (InvalidEventException $e) {
             $client->send(new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
-            $this->logger->warning('Event failed validation', [
-                'client_id' => (string) $client->getId(),
-                'reason' => $e->getMessage(),
-            ]);
+            $this->logger->warning('Event invalid', ['event_id' => $eventId, 'reason' => $e->getMessage()]);
         } catch (AuthRequiredException) {
             $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
             $challenge = $this->authManager->generateChallenge($client->getId());
@@ -121,23 +126,16 @@ final class ProcessEventSubmissionUseCase
                 $client->send(new AuthMessage($challenge));
             }
             $client->send(new OkMessage($event->getId(), false, 'auth-required: authentication required'));
+            $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'challenged' => !$alreadyChallenged]);
         } catch (PolicyViolationException $e) {
             $client->send(new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
-            $this->logger->warning('Event rejected by policy', [
-                'client_id' => (string) $client->getId(),
-                'reason' => $e->getMessage(),
-            ]);
+            $this->logger->warning('Event blocked', ['event_id' => $eventId, 'reason' => $e->getMessage()]);
         } catch (RateLimitException) {
             $client->send(new OkMessage($event->getId(), false, 'rate-limited: slow down'));
-            $this->logger->warning('Event rate limited', [
-                'client_id' => (string) $client->getId(),
-            ]);
+            $this->logger->warning('Event rate-limited', ['event_id' => $eventId]);
         } catch (Throwable $e) {
             $client->send(new OkMessage($event->getId(), false, 'error: could not process event'));
-            $this->logger->error('Event processing error', [
-                'client_id' => (string) $client->getId(),
-                'error' => $e->getMessage(),
-            ]);
+            $this->logger->error('Event processing error', ['event_id' => $eventId, 'error' => $e->getMessage()]);
         }
     }
 }

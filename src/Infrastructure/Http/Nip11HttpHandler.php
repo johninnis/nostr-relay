@@ -6,18 +6,18 @@ namespace Innis\Nostr\Relay\Infrastructure\Http;
 
 use Amp\Http\HttpStatus;
 use Amp\Http\Server\Response;
-use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
+use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 
 final class Nip11HttpHandler
 {
     public function __construct(
-        private readonly RelayConfigInterface $config,
+        private readonly Nip11InfoProviderInterface $infoProvider,
     ) {
     }
 
     public function handle(): Response
     {
-        $relayInfo = json_encode($this->config->getRelayInfo()->toArray(), JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $relayInfo = json_encode($this->infoProvider->getNip11Info()->toArray(), JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 
         return new Response(
             HttpStatus::OK,

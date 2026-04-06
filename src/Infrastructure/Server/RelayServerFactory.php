@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
 use Innis\Nostr\Core\Infrastructure\Adapter\JsonMessageSerialiserAdapter;
+use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
+use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
@@ -19,6 +21,7 @@ use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUs
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
+use Innis\Nostr\Relay\Infrastructure\Http\ConfigNip11InfoAdapter;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
@@ -32,6 +35,8 @@ final class RelayServerFactory
         private readonly RelayConfigInterface $config,
         private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
+        private readonly ?HttpRequestHandlerInterface $httpHandler = null,
+        private readonly ?Nip11InfoProviderInterface $nip11InfoProvider = null,
     ) {
     }
 
@@ -133,16 +138,19 @@ final class RelayServerFactory
             $clientManager,
             $disconnectionHandler,
             $messageRouter,
+            $authManager,
             $this->logger
         );
 
-        $nip11Handler = new Nip11HttpHandler($this->config);
+        $nip11InfoProvider = $this->nip11InfoProvider ?? new ConfigNip11InfoAdapter($this->config);
+        $nip11Handler = new Nip11HttpHandler($nip11InfoProvider);
 
         $server = new AmphpRelayServer(
             $this->config,
             $connectionHandler,
             $nip11Handler,
-            $this->logger
+            $this->logger,
+            $this->httpHandler,
         );
 
         return new RelayInstance(

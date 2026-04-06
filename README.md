@@ -17,6 +17,8 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **NIP-42 AUTH** - Challenge/response authentication (challenge sent only once per client)
 - **NIP-45 COUNT** - COUNT message support
 - **Ephemeral events** - Kinds 20000-29999 skip storage
+- **Custom HTTP handlers** - Inject handlers for additional HTTP endpoints (e.g. management APIs, landing pages)
+- **Mutable NIP-11 metadata** - Swap in a custom `Nip11InfoProviderInterface` to update relay info at runtime
 - **Built-in RelayPolicy** - Configurable tenant/guest permissions
 - **Real-time distribution** - Events broadcast to matching subscriptions
 - **Rate limiting** - DDoS protection with configurable limits
@@ -54,6 +56,11 @@ The relay requires two interfaces to be implemented by your host application:
 
 Access control can use the built-in `RelayPolicy` or a custom implementation of `RelayPolicyInterface`.
 
+Two optional interfaces extend the relay's HTTP handling:
+
+- **`HttpRequestHandlerInterface`** - Handle additional HTTP requests (e.g. management API, landing page). Return a response or `null` to fall through to WebSocket.
+- **`Nip11InfoProviderInterface`** - Provide NIP-11 metadata dynamically. Defaults to reading from `RelayConfigInterface` if not provided.
+
 ### 2. Create and Start the Relay
 
 ```php
@@ -82,6 +89,10 @@ $factory = new RelayServerFactory(
     config: new MyRelayConfig(),
     authManager: $authManager,
     logger: $logger,
+    // Optional: custom HTTP handler for additional endpoints
+    // httpHandler: new MyHttpHandler(),
+    // Optional: dynamic NIP-11 metadata provider
+    // nip11InfoProvider: new MyNip11InfoProvider(),
 );
 
 $relay = $factory->create();
@@ -185,6 +196,8 @@ If no config is passed, the relay is fully open with no restrictions.
 - Event storage and queries
 - Access control policies (use built-in `RelayPolicy` or implement `RelayPolicyInterface` directly)
 - Server and NIP-11 configuration
+- Custom HTTP endpoints (optional `HttpRequestHandlerInterface`)
+- Runtime NIP-11 metadata (optional `Nip11InfoProviderInterface`, defaults to static config)
 
 ---
 
@@ -194,7 +207,7 @@ If no config is passed, the relay is fully open with no restrictions.
 composer test
 ```
 
-Runs the unit test suite (113 tests) and PHPStan level 9 static analysis.
+Runs the unit test suite (120 tests) and PHPStan level 9 static analysis.
 
 Manual testing with [websocat](https://github.com/vi/websocat):
 
