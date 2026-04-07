@@ -162,6 +162,11 @@ final class RelayPolicy implements RelayPolicyInterface
         return $this->maxSubscriptions;
     }
 
+    public function isRateLimitExempt(RelayClient $client): bool
+    {
+        return $this->isOpenRelay() || $this->isTenant($client);
+    }
+
     private function isOpenRelay(): bool
     {
         return empty($this->tenantPubkeys);

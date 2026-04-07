@@ -33,7 +33,9 @@ final class CountSubscriptionUseCase
     public function execute(RelayClient $client, SubscriptionId $subscriptionId, array $filters): void
     {
         try {
-            $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
+            if (!$this->policy->isRateLimitExempt($client)) {
+                $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
+            }
 
             $this->policy->allowSubscription($client, $filters);
 

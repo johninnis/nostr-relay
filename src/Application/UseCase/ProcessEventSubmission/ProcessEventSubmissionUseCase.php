@@ -84,7 +84,9 @@ final class ProcessEventSubmissionUseCase
         ]);
 
         try {
-            $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
+            if (!$this->policy->isRateLimitExempt($client)) {
+                $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
+            }
 
             $this->eventValidator->validateEvent($event);
 

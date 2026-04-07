@@ -18,4 +18,6 @@ interface RelayPolicyInterface
     public function canClientReceiveEvent(RelayClient $client, Event $event): bool;
 
     public function getMaxSubscriptionsPerClient(): int;
+
+    public function isRateLimitExempt(RelayClient $client): bool;
 }

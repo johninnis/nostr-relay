@@ -97,6 +97,15 @@ final class AmphpRelayServer
 
         $requestHandler = new ClosureRequestHandler(
             function (Request $request) use ($websocket): Response {
+                if ('OPTIONS' === $request->getMethod()) {
+                    return new Response(204, [
+                        'access-control-allow-origin' => '*',
+                        'access-control-allow-methods' => 'GET, POST, OPTIONS',
+                        'access-control-allow-headers' => 'Content-Type, Authorization',
+                        'access-control-max-age' => '86400',
+                    ]);
+                }
+
                 if ('GET' === $request->getMethod() && '/' === $request->getUri()->getPath()) {
                     $acceptHeader = $request->getHeader('accept') ?? '';
 
@@ -108,7 +117,7 @@ final class AmphpRelayServer
                 if (null !== $this->httpHandler) {
                     $response = $this->delegateToHttpHandler($request, $this->httpHandler);
                     if (null !== $response) {
-                        return $response;
+                        return $this->addCorsHeaders($response);
                     }
                 }
 
@@ -139,6 +148,7 @@ final class AmphpRelayServer
         }
 
         $body = $request->getBody()->buffer();
+        $request->setBody($body);
 
         $context = new HttpRequestContext(
             $request->getMethod(),
@@ -158,5 +168,12 @@ final class AmphpRelayServer
             $result->getHeaders(),
             $result->getBody(),
         );
+    }
+
+    private function addCorsHeaders(Response $response): Response
+    {
+        $response->setHeader('access-control-allow-origin', '*');
+
+        return $response;
     }
 }
