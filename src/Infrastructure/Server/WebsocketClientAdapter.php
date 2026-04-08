@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
+use Amp\ByteStream\StreamException;
 use Amp\Websocket\WebsocketClient;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 
@@ -16,11 +17,17 @@ final readonly class WebsocketClientAdapter implements ClientConnectionInterface
 
     public function sendText(string $text): void
     {
-        $this->websocketClient->sendText($text);
+        try {
+            $this->websocketClient->sendText($text);
+        } catch (StreamException) {
+        }
     }
 
     public function close(): void
     {
-        $this->websocketClient->close();
+        try {
+            $this->websocketClient->close();
+        } catch (StreamException) {
+        }
     }
 }
