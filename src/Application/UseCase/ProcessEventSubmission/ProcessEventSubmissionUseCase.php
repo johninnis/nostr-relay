@@ -131,7 +131,12 @@ final class ProcessEventSubmissionUseCase
             $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'challenged' => !$alreadyChallenged]);
         } catch (PolicyViolationException $e) {
             $client->send(new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
-            $this->logger->warning('Event blocked', ['event_id' => $eventId, 'reason' => $e->getMessage()]);
+            $this->logger->warning('Event blocked', [
+                'event_id' => $eventId,
+                'pubkey' => $event->getPubkey()->toHex(),
+                'kind' => $kind,
+                'reason' => $e->getMessage(),
+            ]);
         } catch (RateLimitException) {
             $client->send(new OkMessage($event->getId(), false, 'rate-limited: slow down'));
             $this->logger->warning('Event rate-limited', ['event_id' => $eventId]);
