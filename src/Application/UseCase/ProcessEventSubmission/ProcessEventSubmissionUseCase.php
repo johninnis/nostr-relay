@@ -62,10 +62,20 @@ final class ProcessEventSubmissionUseCase
             $deletedCount += $this->eventStore->deleteByCoordinates($coordinates, $author);
         }
 
+        $referenceCount = count($eventIds) + count($coordinates);
+
         if ($deletedCount > 0) {
             $this->logger->debug('Deletion event processed', [
                 'deletion_event_id' => $event->getId()->toHex(),
+                'pubkey' => $event->getPubkey()->toHex(),
+                'referenced' => $referenceCount,
                 'deleted_count' => $deletedCount,
+            ]);
+        } elseif ($referenceCount > 0) {
+            $this->logger->debug('Deletion event had no effect', [
+                'deletion_event_id' => $event->getId()->toHex(),
+                'pubkey' => $event->getPubkey()->toHex(),
+                'referenced' => $referenceCount,
             ]);
         }
     }
@@ -96,7 +106,7 @@ final class ProcessEventSubmissionUseCase
                 $this->metrics->incrementEventsReceived();
                 async(fn () => $this->distributor->distributeToSubscribers($event));
                 $client->send(new OkMessage($event->getId(), true, ''));
-                $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $eventId]);
+                $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
 
                 return;
             }
@@ -113,14 +123,14 @@ final class ProcessEventSubmissionUseCase
                 async(fn () => $this->distributor->distributeToSubscribers($event));
 
                 $client->send(new OkMessage($event->getId(), true, ''));
-                $this->logger->debug('Event stored', ['event_id' => $eventId, 'kind' => $kind]);
+                $this->logger->debug('Event stored', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'kind' => $kind]);
             } else {
                 $client->send(new OkMessage($event->getId(), false, 'duplicate: event already exists'));
-                $this->logger->debug('Event duplicate', ['event_id' => $eventId]);
+                $this->logger->debug('Event duplicate', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
             }
         } catch (InvalidEventException $e) {
             $client->send(new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
-            $this->logger->warning('Event invalid', ['event_id' => $eventId, 'reason' => $e->getMessage()]);
+            $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
         } catch (AuthRequiredException) {
             $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
             $challenge = $this->authManager->generateChallenge($client->getId());
@@ -128,7 +138,7 @@ final class ProcessEventSubmissionUseCase
                 $client->send(new AuthMessage($challenge));
             }
             $client->send(new OkMessage($event->getId(), false, 'auth-required: authentication required'));
-            $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'challenged' => !$alreadyChallenged]);
+            $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'challenged' => !$alreadyChallenged]);
         } catch (PolicyViolationException $e) {
             $client->send(new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Event blocked', [
@@ -139,10 +149,10 @@ final class ProcessEventSubmissionUseCase
             ]);
         } catch (RateLimitException) {
             $client->send(new OkMessage($event->getId(), false, 'rate-limited: slow down'));
-            $this->logger->warning('Event rate-limited', ['event_id' => $eventId]);
+            $this->logger->warning('Event rate-limited', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
         } catch (Throwable $e) {
             $client->send(new OkMessage($event->getId(), false, 'error: could not process event'));
-            $this->logger->error('Event processing error', ['event_id' => $eventId, 'error' => $e->getMessage()]);
+            $this->logger->error('Event processing error', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'error' => $e->getMessage()]);
         }
     }
 }
