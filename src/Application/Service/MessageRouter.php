@@ -36,11 +36,6 @@ final class MessageRouter
 
     public function route(RelayClient $client, string $message): void
     {
-        $this->logger->debug('Message received', [
-            'client_id' => (string) $client->getId(),
-            'message' => mb_substr($message, 0, 200),
-        ]);
-
         try {
             $clientMessage = $this->serialiser->deserialiseClientMessage($message);
 
@@ -74,12 +69,14 @@ final class MessageRouter
             $this->logger->warning('Invalid message received', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
+                'message' => mb_substr($message, 0, 200),
             ]);
         } catch (Throwable $e) {
             $client->send(new NoticeMessage('Internal server error'));
             $this->logger->error('Message routing error', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
+                'message' => mb_substr($message, 0, 200),
             ]);
         }
     }

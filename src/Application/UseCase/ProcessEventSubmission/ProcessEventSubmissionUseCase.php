@@ -19,6 +19,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
@@ -114,23 +115,13 @@ final class ProcessEventSubmissionUseCase
                 return;
             }
 
-            $stored = $this->eventStore->store($event);
+            $outcome = $this->eventStore->store($event);
 
-            if ($stored) {
-                $this->metrics->incrementEventsReceived();
-
-                if ($event->isDeletion()) {
-                    $this->processDeletion($event);
-                }
-
-                async(fn () => $this->distributor->distributeToSubscribers($event));
-
-                $client->send(new OkMessage($event->getId(), true, ''));
-                $this->logger->debug('Event stored', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'kind' => $kind]);
-            } else {
-                $client->send(new OkMessage($event->getId(), false, 'duplicate: event already exists'));
-                $this->logger->debug('Event duplicate', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
-            }
+            match ($outcome) {
+                EventStoreOutcome::Stored => $this->onStored($client, $event, $eventId, $kind),
+                EventStoreOutcome::Duplicate => $this->onDuplicate($client, $event, $eventId),
+                EventStoreOutcome::Superseded => $this->onSuperseded($client, $event, $eventId, $kind),
+            };
         } catch (InvalidEventException $e) {
             $client->send(new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
@@ -157,5 +148,31 @@ final class ProcessEventSubmissionUseCase
             $client->send(new OkMessage($event->getId(), false, 'error: could not process event'));
             $this->logger->error('Event processing error', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'error' => $e->getMessage()]);
         }
+    }
+
+    private function onStored(RelayClient $client, Event $event, string $eventId, int $kind): void
+    {
+        $this->metrics->incrementEventsReceived();
+
+        if ($event->isDeletion()) {
+            $this->processDeletion($event);
+        }
+
+        async(fn () => $this->distributor->distributeToSubscribers($event));
+
+        $client->send(new OkMessage($event->getId(), true, ''));
+        $this->logger->debug('Event stored', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'kind' => $kind]);
+    }
+
+    private function onDuplicate(RelayClient $client, Event $event, string $eventId): void
+    {
+        $client->send(new OkMessage($event->getId(), false, 'duplicate: event already exists'));
+        $this->logger->debug('Event duplicate', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
+    }
+
+    private function onSuperseded(RelayClient $client, Event $event, string $eventId, int $kind): void
+    {
+        $client->send(new OkMessage($event->getId(), false, 'duplicate: newer version already exists'));
+        $this->logger->debug('Event superseded', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'kind' => $kind]);
     }
 }

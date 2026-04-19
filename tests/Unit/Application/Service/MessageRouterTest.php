@@ -37,6 +37,7 @@ use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionU
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
@@ -160,7 +161,7 @@ final class MessageRouterTest extends TestCase
         ))->sign($keyPair, $this->signatureService());
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new EventMessage($event));
-        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
 
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {

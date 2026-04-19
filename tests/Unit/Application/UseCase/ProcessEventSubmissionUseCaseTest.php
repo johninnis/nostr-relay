@@ -24,6 +24,7 @@ use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
@@ -124,7 +125,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $event = $this->createSignedEvent();
 
-        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
         $this->metrics->expects($this->once())->method('incrementEventsReceived');
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
@@ -141,14 +142,31 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $event = $this->createSignedEvent();
 
-        $this->eventStore->method('store')->willReturn(false);
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Duplicate);
         $this->metrics->expects($this->never())->method('incrementEventsReceived');
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'duplicate');
+                return 'OK' === $data[0] && false === $data[2] && 'duplicate: event already exists' === $data[3];
+            }));
+
+        $this->useCase->execute($this->client, $event);
+    }
+
+    public function testSupersededEventSendsNotOkWithNewerVersionMessage(): void
+    {
+        $event = $this->createSignedEvent();
+
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Superseded);
+        $this->metrics->expects($this->never())->method('incrementEventsReceived');
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $data = json_decode($json, true);
+                assert(is_array($data));
+
+                return 'OK' === $data[0] && false === $data[2] && 'duplicate: newer version already exists' === $data[3];
             }));
 
         $this->useCase->execute($this->client, $event);
@@ -238,7 +256,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         ]);
         $event = $this->createSignedDeletionEvent($tags);
 
-        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
         $this->eventStore->expects($this->once())
             ->method('deleteByEventIds')
             ->with(
@@ -272,7 +290,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         ]);
         $event = $this->createSignedDeletionEvent($tags, $keyPair);
 
-        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
         $this->eventStore->expects($this->never())->method('deleteByEventIds');
         $this->eventStore->expects($this->once())
             ->method('deleteByCoordinates')
@@ -293,7 +311,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $event = $this->createSignedEvent();
 
-        $this->eventStore->method('store')->willReturn(true);
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
         $this->eventStore->expects($this->never())->method('deleteByEventIds');
         $this->eventStore->expects($this->never())->method('deleteByCoordinates');
 
