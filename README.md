@@ -21,7 +21,9 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **Mutable NIP-11 metadata** - Swap in a custom `Nip11InfoProviderInterface` to update relay info at runtime
 - **Built-in RelayPolicy** - Configurable tenant/guest permissions
 - **Real-time distribution** - Events broadcast to matching subscriptions
-- **Rate limiting** - DDoS protection with configurable limits
+- **Rate limiting** - DDoS protection with configurable limits; tenants (and trusted clients via `isRateLimitExempt()`) bypass
+- **CORS support** - `OPTIONS` preflight handling and CORS headers on HTTP responses for browser-based clients
+- **Trusted proxies** - `X-Forwarded-For` honoured when the client IP matches a trusted proxy
 - **PSR-3 logging** - Standard logging interface
 
 ---
@@ -103,7 +105,7 @@ See [`examples/relay.example.php`](examples/relay.example.php) for a complete wo
 
 ### 3. Configure Nginx
 
-The relay does not handle TLS. Use a reverse proxy for SSL:
+The relay does not handle TLS. Use a reverse proxy for SSL. If the proxy sets `X-Forwarded-For`, return its IP from `RelayConfigInterface::getTrustedProxies()` so the relay records the real client address:
 
 ```nginx
 upstream nostr_relay {
@@ -145,6 +147,10 @@ Optional keys with sensible defaults:
 - `max_filters` - Maximum filters per subscription
 - `max_event_size` - Maximum event payload size in bytes
 - `max_query_limit` - Maximum limit value in REQ filters
+
+### Rate-Limit Exemption
+
+`RelayPolicyInterface::isRateLimitExempt()` lets the policy opt specific clients out of rate limits and subscription caps. The built-in `RelayPolicy` exempts authenticated tenants (and everyone on an open relay). Implement `RelayPolicyInterface` directly to exempt other trusted clients — for example, internal services or IPs behind a trusted proxy.
 
 ### Guest Rules
 

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
+use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Infrastructure\Adapter\JsonMessageSerialiserAdapter;
+use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
@@ -29,6 +31,8 @@ use Psr\Log\LoggerInterface;
 
 final class RelayServerFactory
 {
+    private readonly SignatureServiceInterface $signatureService;
+
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
@@ -37,7 +41,9 @@ final class RelayServerFactory
         private readonly LoggerInterface $logger,
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
         private readonly ?Nip11InfoProviderInterface $nip11InfoProvider = null,
+        ?SignatureServiceInterface $signatureService = null,
     ) {
+        $this->signatureService = $signatureService ?? Secp256k1SignatureAdapter::create();
     }
 
     public function create(): RelayInstance
@@ -91,7 +97,8 @@ final class RelayServerFactory
             $authManager,
             $eventRateLimiter,
             $metrics,
-            $this->logger
+            $this->logger,
+            $this->signatureService
         );
 
         $createSubscriptionUseCase = new CreateSubscriptionUseCase(
@@ -111,7 +118,8 @@ final class RelayServerFactory
         $processAuthUseCase = new ProcessAuthUseCase(
             $authManager,
             $this->config,
-            $this->logger
+            $this->logger,
+            $this->signatureService
         );
 
         $countSubscriptionUseCase = new CountSubscriptionUseCase(

@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Service\MessageSerialiserInterface;
+use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
@@ -48,6 +49,11 @@ use RuntimeException;
 
 final class MessageRouterTest extends TestCase
 {
+    private function signatureService(): \Innis\Nostr\Core\Domain\Service\SignatureServiceInterface
+    {
+        return Secp256k1SignatureAdapter::create();
+    }
+
     private MessageSerialiserInterface&MockObject $serialiser;
     private RelayEventStoreInterface&MockObject $eventStore;
     private RelayPolicyInterface&MockObject $policy;
@@ -91,6 +97,7 @@ final class MessageRouterTest extends TestCase
             $rateLimiter,
             $metrics,
             $logger,
+            Secp256k1SignatureAdapter::create(),
         );
 
         $createSubscription = new CreateSubscriptionUseCase(
@@ -111,6 +118,7 @@ final class MessageRouterTest extends TestCase
             $this->authManager,
             $config,
             $logger,
+            Secp256k1SignatureAdapter::create(),
         );
 
         $countSubscription = new CountSubscriptionUseCase(
@@ -142,14 +150,14 @@ final class MessageRouterTest extends TestCase
 
     public function testRoutesEventMessage(): void
     {
-        $keyPair = KeyPair::generate();
+        $keyPair = KeyPair::generate($this->signatureService());
         $event = (new Event(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::textNote(),
             TagCollection::empty(),
             EventContent::fromString('test'),
-        ))->sign($keyPair->getPrivateKey());
+        ))->sign($keyPair, $this->signatureService());
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new EventMessage($event));
         $this->eventStore->method('store')->willReturn(true);
@@ -203,7 +211,7 @@ final class MessageRouterTest extends TestCase
 
     public function testRoutesAuthMessage(): void
     {
-        $keyPair = KeyPair::generate();
+        $keyPair = KeyPair::generate($this->signatureService());
         $challenge = $this->authManager->generateChallenge($this->client->getId());
 
         $event = (new Event(
@@ -215,7 +223,7 @@ final class MessageRouterTest extends TestCase
                 Tag::fromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
-        ))->sign($keyPair->getPrivateKey());
+        ))->sign($keyPair, $this->signatureService());
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new AuthMessage($event));
 

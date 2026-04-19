@@ -7,6 +7,8 @@ namespace Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
+use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
@@ -37,8 +39,9 @@ final class ProcessEventSubmissionUseCase
         private readonly RateLimiterInterface $rateLimiter,
         private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
+        SignatureServiceInterface $signatureService,
     ) {
-        $this->eventValidator = new EventValidationService();
+        $this->eventValidator = new EventValidationService($signatureService, new NipComplianceValidator($signatureService));
     }
 
     private function processDeletion(Event $event): void

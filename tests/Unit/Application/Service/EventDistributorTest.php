@@ -14,6 +14,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
@@ -58,7 +59,7 @@ final class EventDistributorTest extends TestCase
 
     private function createEvent(): Event
     {
-        $keyPair = KeyPair::generate();
+        $keyPair = KeyPair::generate(Secp256k1SignatureAdapter::create());
 
         return new Event(
             $keyPair->getPublicKey(),

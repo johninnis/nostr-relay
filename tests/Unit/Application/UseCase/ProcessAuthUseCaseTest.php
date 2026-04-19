@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
@@ -12,6 +13,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
@@ -31,11 +33,17 @@ final class ProcessAuthUseCaseTest extends TestCase
     private RelayClient $client;
     private ClientConnectionInterface&MockObject $connection;
     private KeyPair $keyPair;
+    private SignatureServiceInterface $sigService;
+
+    private function signatureService(): SignatureServiceInterface
+    {
+        return $this->sigService ??= Secp256k1SignatureAdapter::create();
+    }
 
     protected function setUp(): void
     {
         $this->authManager = new AuthenticationManager();
-        $this->keyPair = KeyPair::generate();
+        $this->keyPair = KeyPair::generate($this->signatureService());
 
         $config = $this->createMock(RelayConfigInterface::class);
         $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
@@ -44,6 +52,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $this->authManager,
             $config,
             new NullLogger(),
+            $this->signatureService(),
         );
 
         $this->connection = $this->createMock(ClientConnectionInterface::class);
@@ -160,6 +169,6 @@ final class ProcessAuthUseCaseTest extends TestCase
                 Tag::fromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
-        ))->sign($this->keyPair->getPrivateKey());
+        ))->sign($this->keyPair, $this->signatureService());
     }
 }

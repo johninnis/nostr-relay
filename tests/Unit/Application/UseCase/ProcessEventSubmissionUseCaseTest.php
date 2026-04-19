@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
@@ -12,6 +13,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -42,6 +44,12 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     private ProcessEventSubmissionUseCase $useCase;
     private RelayClient $client;
     private ClientConnectionInterface&MockObject $connection;
+    private SignatureServiceInterface $sigService;
+
+    private function signatureService(): SignatureServiceInterface
+    {
+        return $this->sigService ??= Secp256k1SignatureAdapter::create();
+    }
 
     protected function setUp(): void
     {
@@ -74,6 +82,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $this->rateLimiter,
             $this->metrics,
             $logger,
+            $this->signatureService(),
         );
 
         $this->connection = $this->createMock(ClientConnectionInterface::class);
@@ -87,7 +96,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
     private function createSignedEvent(?EventKind $kind = null): Event
     {
-        $keyPair = KeyPair::generate();
+        $keyPair = KeyPair::generate($this->signatureService());
 
         return (new Event(
             $keyPair->getPublicKey(),
@@ -95,12 +104,12 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $kind ?? EventKind::textNote(),
             TagCollection::empty(),
             EventContent::fromString('hello world'),
-        ))->sign($keyPair->getPrivateKey());
+        ))->sign($keyPair, $this->signatureService());
     }
 
     private function createSignedDeletionEvent(TagCollection $tags, ?KeyPair $keyPair = null): Event
     {
-        $keyPair ??= KeyPair::generate();
+        $keyPair ??= KeyPair::generate($this->signatureService());
 
         return (new Event(
             $keyPair->getPublicKey(),
@@ -108,7 +117,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             EventKind::eventDeletion(),
             $tags,
             EventContent::fromString('spam'),
-        ))->sign($keyPair->getPrivateKey());
+        ))->sign($keyPair, $this->signatureService());
     }
 
     public function testSuccessfulEventStoreAndDistribute(): void
@@ -225,6 +234,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $targetEventId = str_repeat('a', 64);
         $tags = new TagCollection([
             Tag::event($targetEventId),
+            Tag::fromArray(['k', '1']),
         ]);
         $event = $this->createSignedDeletionEvent($tags);
 
@@ -254,10 +264,11 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
     public function testDeletionEventTriggersDeleteByCoordinates(): void
     {
-        $keyPair = KeyPair::generate();
+        $keyPair = KeyPair::generate($this->signatureService());
         $coordinate = '30023:'.$keyPair->getPublicKey()->toHex().':my-article';
         $tags = new TagCollection([
             Tag::fromArray(['a', $coordinate]),
+            Tag::fromArray(['k', '30023']),
         ]);
         $event = $this->createSignedDeletionEvent($tags, $keyPair);
 

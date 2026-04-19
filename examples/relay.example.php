@@ -113,11 +113,11 @@ $policy = new RelayPolicy($authManager, $logger, [
 ]);
 
 $factory = new \Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory(
-    new ExampleEventStore(),
-    $policy,
-    new ExampleRelayConfig($ownerPubkeyHex),
-    $authManager,
-    $logger
+    eventStore: new ExampleEventStore(),
+    policy: $policy,
+    config: new ExampleRelayConfig($ownerPubkeyHex),
+    authManager: $authManager,
+    logger: $logger,
 );
 
 $relay = $factory->create();
