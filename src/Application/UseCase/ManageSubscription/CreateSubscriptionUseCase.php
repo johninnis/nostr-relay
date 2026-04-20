@@ -77,6 +77,7 @@ final class CreateSubscriptionUseCase
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'reason' => $e->getMessage(),
+                'filters' => array_map(static fn ($filter) => $filter->toArray(), $filters),
             ]);
         } catch (RateLimitException) {
             $client->send(new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
