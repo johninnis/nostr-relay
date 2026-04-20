@@ -4,7 +4,15 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\Entity;
 
+use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\SubscriptionCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
@@ -13,6 +21,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 final class RelayClientTest extends TestCase
 {
@@ -74,7 +83,7 @@ final class RelayClientTest extends TestCase
 
     public function testSendDelegatesToConnection(): void
     {
-        $message = new \Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage('hello');
+        $message = new NoticeMessage('hello');
 
         $this->connection
             ->expects($this->once())
@@ -84,6 +93,47 @@ final class RelayClientTest extends TestCase
         $this->client->send($message);
     }
 
+    public function testEventCountersStartAtZero(): void
+    {
+        $this->assertSame(0, $this->client->getEventsReceived());
+        $this->assertSame(0, $this->client->getEventsAccepted());
+        $this->assertSame(0, $this->client->getEventsSent());
+    }
+
+    public function testIncrementEventsReceivedIncrementsCounter(): void
+    {
+        $this->client->incrementEventsReceived();
+        $this->client->incrementEventsReceived();
+
+        $this->assertSame(2, $this->client->getEventsReceived());
+    }
+
+    public function testIncrementEventsAcceptedIncrementsCounter(): void
+    {
+        $this->client->incrementEventsAccepted();
+        $this->client->incrementEventsAccepted();
+        $this->client->incrementEventsAccepted();
+
+        $this->assertSame(3, $this->client->getEventsAccepted());
+    }
+
+    public function testSendingEventMessageIncrementsEventsSent(): void
+    {
+        $message = new EventMessage(SubscriptionId::fromString('sub-1'), $this->createEvent());
+
+        $this->client->send($message);
+        $this->client->send($message);
+
+        $this->assertSame(2, $this->client->getEventsSent());
+    }
+
+    public function testSendingNonEventMessageDoesNotIncrementEventsSent(): void
+    {
+        $this->client->send(new NoticeMessage('hi'));
+
+        $this->assertSame(0, $this->client->getEventsSent());
+    }
+
     public function testCloseDelegatesToConnection(): void
     {
         $this->connection
@@ -91,5 +141,19 @@ final class RelayClientTest extends TestCase
             ->method('close');
 
         $this->client->close();
+    }
+
+    private function createEvent(): Event
+    {
+        $pubkey = PublicKey::fromHex(str_repeat('a', 64))
+            ?? throw new RuntimeException('invalid test pubkey');
+
+        return new Event(
+            $pubkey,
+            Timestamp::now(),
+            EventKind::textNote(),
+            TagCollection::empty(),
+            EventContent::fromString('test'),
+        );
     }
 }
