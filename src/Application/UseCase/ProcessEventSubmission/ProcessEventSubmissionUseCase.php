@@ -90,7 +90,7 @@ final class ProcessEventSubmissionUseCase
         $kind = $event->getKind()->toInt();
         $clientId = (string) $client->getId();
 
-        $client->incrementEventsReceived();
+        $client->recordEventReceived();
 
         $this->logger->debug('Event received', [
             'event_id' => $eventId,
@@ -110,7 +110,7 @@ final class ProcessEventSubmissionUseCase
 
             if ($event->getKind()->isEphemeral()) {
                 $this->metrics->incrementEventsReceived();
-                $client->incrementEventsAccepted();
+                $client->recordEventAccepted();
                 async(fn () => $this->distributor->distributeToSubscribers($event));
                 $client->send(new OkMessage($event->getId(), true, ''));
                 $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
@@ -156,7 +156,7 @@ final class ProcessEventSubmissionUseCase
     private function onStored(RelayClient $client, Event $event, string $eventId, int $kind): void
     {
         $this->metrics->incrementEventsReceived();
-        $client->incrementEventsAccepted();
+        $client->recordEventAccepted();
 
         if ($event->isDeletion()) {
             $this->processDeletion($event);

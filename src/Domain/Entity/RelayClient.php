@@ -11,12 +11,11 @@ use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
 
 final class RelayClient
 {
-    private int $eventsReceived = 0;
-    private int $eventsAccepted = 0;
-    private int $eventsSent = 0;
+    private SessionCounters $sessionCounters;
 
     public function __construct(
         private readonly ClientId $id,
@@ -24,6 +23,7 @@ final class RelayClient
         private readonly ConnectionInfo $connectionInfo,
         private readonly SubscriptionLookupInterface $subscriptionLookup,
     ) {
+        $this->sessionCounters = SessionCounters::empty();
     }
 
     public function getId(): ClientId
@@ -46,35 +46,25 @@ final class RelayClient
         return $this->subscriptionLookup->getSubscriptionCountForClient($this->id);
     }
 
-    public function incrementEventsReceived(): void
+    public function getSessionCounters(): SessionCounters
     {
-        ++$this->eventsReceived;
+        return $this->sessionCounters;
     }
 
-    public function getEventsReceived(): int
+    public function recordEventReceived(): void
     {
-        return $this->eventsReceived;
+        $this->sessionCounters = $this->sessionCounters->withEventReceived();
     }
 
-    public function incrementEventsAccepted(): void
+    public function recordEventAccepted(): void
     {
-        ++$this->eventsAccepted;
-    }
-
-    public function getEventsAccepted(): int
-    {
-        return $this->eventsAccepted;
-    }
-
-    public function getEventsSent(): int
-    {
-        return $this->eventsSent;
+        $this->sessionCounters = $this->sessionCounters->withEventAccepted();
     }
 
     public function send(RelayMessage $message): void
     {
         if ($message instanceof EventMessage) {
-            ++$this->eventsSent;
+            $this->sessionCounters = $this->sessionCounters->withEventSent();
         }
         $this->connection->sendText($message->toJson());
     }

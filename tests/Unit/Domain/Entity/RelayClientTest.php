@@ -93,28 +93,30 @@ final class RelayClientTest extends TestCase
         $this->client->send($message);
     }
 
-    public function testEventCountersStartAtZero(): void
+    public function testSessionCountersStartEmpty(): void
     {
-        $this->assertSame(0, $this->client->getEventsReceived());
-        $this->assertSame(0, $this->client->getEventsAccepted());
-        $this->assertSame(0, $this->client->getEventsSent());
+        $counters = $this->client->getSessionCounters();
+
+        $this->assertSame(0, $counters->getEventsReceived());
+        $this->assertSame(0, $counters->getEventsAccepted());
+        $this->assertSame(0, $counters->getEventsSent());
     }
 
-    public function testIncrementEventsReceivedIncrementsCounter(): void
+    public function testRecordEventReceivedUpdatesCounters(): void
     {
-        $this->client->incrementEventsReceived();
-        $this->client->incrementEventsReceived();
+        $this->client->recordEventReceived();
+        $this->client->recordEventReceived();
 
-        $this->assertSame(2, $this->client->getEventsReceived());
+        $this->assertSame(2, $this->client->getSessionCounters()->getEventsReceived());
     }
 
-    public function testIncrementEventsAcceptedIncrementsCounter(): void
+    public function testRecordEventAcceptedUpdatesCounters(): void
     {
-        $this->client->incrementEventsAccepted();
-        $this->client->incrementEventsAccepted();
-        $this->client->incrementEventsAccepted();
+        $this->client->recordEventAccepted();
+        $this->client->recordEventAccepted();
+        $this->client->recordEventAccepted();
 
-        $this->assertSame(3, $this->client->getEventsAccepted());
+        $this->assertSame(3, $this->client->getSessionCounters()->getEventsAccepted());
     }
 
     public function testSendingEventMessageIncrementsEventsSent(): void
@@ -124,14 +126,14 @@ final class RelayClientTest extends TestCase
         $this->client->send($message);
         $this->client->send($message);
 
-        $this->assertSame(2, $this->client->getEventsSent());
+        $this->assertSame(2, $this->client->getSessionCounters()->getEventsSent());
     }
 
     public function testSendingNonEventMessageDoesNotIncrementEventsSent(): void
     {
         $this->client->send(new NoticeMessage('hi'));
 
-        $this->assertSame(0, $this->client->getEventsSent());
+        $this->assertSame(0, $this->client->getSessionCounters()->getEventsSent());
     }
 
     public function testCloseDelegatesToConnection(): void
