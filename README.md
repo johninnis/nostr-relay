@@ -143,7 +143,7 @@ The built-in `RelayPolicy` accepts a configuration array that controls access fo
 
 Optional keys with sensible defaults:
 
-- `max_subscriptions` - Maximum concurrent subscriptions per client
+- `max_subscriptions` - Maximum concurrent subscriptions per client. Also gates `COUNT` requests: a `COUNT` from a client already at the cap is rejected with `blocked: too many subscriptions`. Both messages execute the same filter against the event store, so they share the cap as a single load-shedding signal.
 - `max_filters` - Maximum filters per subscription
 - `max_event_size` - Maximum event payload size in bytes
 - `max_query_limit` - Maximum limit value in REQ filters
