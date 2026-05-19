@@ -20,10 +20,10 @@
         "psr/log": "^3.0"
     },
     "require-dev": {
-        "friendsofphp/php-cs-fixer": "^3.85",
-        "phpstan/phpstan": "^2.0",
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "phpstan/phpstan": "^2.1",
         "phpstan/phpstan-phpunit": "^2.0",
-        "phpunit/phpunit": "^11.0"
+        "phpunit/phpunit": "^13.1"
     },
     "autoload": {
         "psr-4": {

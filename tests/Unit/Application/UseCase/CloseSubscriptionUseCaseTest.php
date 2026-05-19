@@ -28,15 +28,15 @@ final class CloseSubscriptionUseCaseTest extends TestCase
     protected function setUp(): void
     {
         $logger = new NullLogger();
-        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics = $this->createStub(MetricsCollectorInterface::class);
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->useCase = new CloseSubscriptionUseCase($this->subscriptionManager, $logger);
 
         $this->client = new RelayClient(
             ClientId::fromString('client-1'),
-            $this->createMock(ClientConnectionInterface::class),
+            $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createMock(SubscriptionLookupInterface::class),
+            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 

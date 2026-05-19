@@ -147,7 +147,7 @@ final class TokenBucketRateLimiterTest extends TestCase
 
     private function configReturning(RateLimitConfig $rateLimitConfig): RelayConfigInterface
     {
-        $config = $this->createMock(RelayConfigInterface::class);
+        $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getRateLimitConfig')->willReturn($rateLimitConfig);
 
         return $config;

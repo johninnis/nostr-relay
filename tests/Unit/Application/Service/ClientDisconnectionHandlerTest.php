@@ -25,12 +25,12 @@ final class ClientDisconnectionHandlerTest extends TestCase
 
     protected function setUp(): void
     {
-        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->clientManager = new ClientManager(
-            $this->createMock(SubscriptionLookupInterface::class),
+            $this->createStub(SubscriptionLookupInterface::class),
             $metrics,
             $logger,
         );
@@ -45,7 +45,7 @@ final class ClientDisconnectionHandlerTest extends TestCase
 
     public function testDisconnectRemovesClientAndSubscriptions(): void
     {
-        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection = $this->createStub(ClientConnectionInterface::class);
         $connectionInfo = new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now());
         $client = $this->clientManager->registerClient($connection, $connectionInfo);
 

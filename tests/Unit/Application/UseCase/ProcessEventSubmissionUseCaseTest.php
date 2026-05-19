@@ -32,19 +32,16 @@ use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 final class ProcessEventSubmissionUseCaseTest extends TestCase
 {
-    private RelayEventStoreInterface&MockObject $eventStore;
-    private RelayPolicyInterface&MockObject $policy;
-    private RateLimiterInterface&MockObject $rateLimiter;
-    private MetricsCollectorInterface&MockObject $metrics;
+    private RelayPolicyInterface&Stub $policy;
+    private RateLimiterInterface&Stub $rateLimiter;
     private ProcessEventSubmissionUseCase $useCase;
     private RelayClient $client;
-    private ClientConnectionInterface&MockObject $connection;
     private SignatureServiceInterface $sigService;
 
     private function signatureService(): SignatureServiceInterface
@@ -54,16 +51,24 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $this->policy = $this->createMock(RelayPolicyInterface::class);
-        $this->rateLimiter = $this->createMock(RateLimiterInterface::class);
-        $this->metrics = $this->createMock(MetricsCollectorInterface::class);
+        $this->policy = $this->createStub(RelayPolicyInterface::class);
+        $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
+        $this->useCase = $this->makeUseCase();
+        $this->client = $this->makeClient();
+    }
+
+    private function makeUseCase(
+        ?RelayEventStoreInterface $eventStore = null,
+        ?MetricsCollectorInterface $metrics = null,
+    ): ProcessEventSubmissionUseCase {
+        $eventStore ??= $this->createStub(RelayEventStoreInterface::class);
+        $metrics ??= $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $subscriptionManager = new SubscriptionManager($this->metrics, $logger);
+        $subscriptionManager = new SubscriptionManager($metrics, $logger);
         $clientManager = new ClientManager(
             $subscriptionManager,
-            $this->metrics,
+            $metrics,
             $logger,
         );
 
@@ -71,27 +76,29 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $this->policy,
             $subscriptionManager,
             $clientManager,
-            $this->metrics,
+            $metrics,
             $logger,
         );
 
-        $this->useCase = new ProcessEventSubmissionUseCase(
-            $this->eventStore,
+        return new ProcessEventSubmissionUseCase(
+            $eventStore,
             $this->policy,
             $distributor,
             new AuthenticationManager(),
             $this->rateLimiter,
-            $this->metrics,
+            $metrics,
             $logger,
             $this->signatureService(),
         );
+    }
 
-        $this->connection = $this->createMock(ClientConnectionInterface::class);
-        $this->client = new RelayClient(
+    private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
+    {
+        return new RelayClient(
             ClientId::fromString('client-1'),
-            $this->connection,
+            $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createMock(SubscriptionLookupInterface::class),
+            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 
@@ -125,51 +132,75 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $event = $this->createSignedEvent();
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $this->metrics->expects($this->once())->method('incrementEventsReceived');
-        $this->connection->expects($this->once())->method('sendText')
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->once())->method('incrementEventsReceived');
+
+        $useCase = $this->makeUseCase($eventStore, $metrics);
+
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && true === $data[2];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $event);
+        $useCase->execute($client, $event);
     }
 
     public function testDuplicateEventSendsNotOk(): void
     {
         $event = $this->createSignedEvent();
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Duplicate);
-        $this->metrics->expects($this->never())->method('incrementEventsReceived');
-        $this->connection->expects($this->once())->method('sendText')
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Duplicate);
+
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->never())->method('incrementEventsReceived');
+
+        $useCase = $this->makeUseCase($eventStore, $metrics);
+
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && false === $data[2] && 'duplicate: event already exists' === $data[3];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $event);
+        $useCase->execute($client, $event);
     }
 
     public function testSupersededEventSendsNotOkWithNewerVersionMessage(): void
     {
         $event = $this->createSignedEvent();
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Superseded);
-        $this->metrics->expects($this->never())->method('incrementEventsReceived');
-        $this->connection->expects($this->once())->method('sendText')
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Superseded);
+
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->never())->method('incrementEventsReceived');
+
+        $useCase = $this->makeUseCase($eventStore, $metrics);
+
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && false === $data[2] && 'duplicate: newer version already exists' === $data[3];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $event);
+        $useCase->execute($client, $event);
     }
 
     public function testPolicyViolationSendsBlockedMessage(): void
@@ -179,15 +210,17 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->policy->method('allowEventSubmission')
             ->willThrowException(new PolicyViolationException('not allowed'));
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'blocked');
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $event);
+        $this->useCase->execute($client, $event);
     }
 
     public function testRateLimitSendsRateLimitedMessage(): void
@@ -197,32 +230,42 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'rate-limited');
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $event);
+        $this->useCase->execute($client, $event);
     }
 
     public function testEphemeralEventSkipsStorageAndSendsOk(): void
     {
         $event = $this->createSignedEvent(EventKind::fromInt(20001));
 
-        $this->eventStore->expects($this->never())->method('store');
-        $this->metrics->expects($this->once())->method('incrementEventsReceived');
-        $this->connection->expects($this->once())->method('sendText')
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('store');
+
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->once())->method('incrementEventsReceived');
+
+        $useCase = $this->makeUseCase($eventStore, $metrics);
+
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && true === $data[2];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $event);
+        $useCase->execute($client, $event);
     }
 
     public function testAuthRequiredSendsAuthChallengeAndOk(): void
@@ -233,12 +276,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             ->willThrowException(new AuthRequiredException('auth needed'));
 
         $sentMessages = [];
-        $this->connection->method('sendText')
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')
             ->willReturnCallback(static function (string $json) use (&$sentMessages): void {
                 $sentMessages[] = json_decode($json, true);
             });
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $event);
+        $this->useCase->execute($client, $event);
 
         $this->assertCount(2, $sentMessages);
         $this->assertSame('AUTH', $sentMessages[0][0]);
@@ -264,11 +309,12 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $keyPair);
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $this->eventStore->expects($this->once())
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->once())
             ->method('findByFilters')
             ->willReturn([$targetEvent]);
-        $this->eventStore->expects($this->once())
+        $eventStore->expects($this->once())
             ->method('deleteByEventIds')
             ->with(
                 $this->callback(static function (array $eventIds) use ($targetEvent): bool {
@@ -280,15 +326,19 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             )
             ->willReturn(1);
 
-        $this->connection->expects($this->once())->method('sendText')
+        $useCase = $this->makeUseCase($eventStore);
+
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && true === $data[2];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $deletionEvent);
+        $useCase->execute($client, $deletionEvent);
     }
 
     public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
@@ -309,14 +359,17 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $this->eventStore->expects($this->once())
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->once())
             ->method('findByFilters')
             ->willReturn([$victimEvent]);
-        $this->eventStore->expects($this->never())->method('deleteByEventIds');
-        $this->eventStore->expects($this->never())->method('deleteByCoordinates');
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+        $eventStore->expects($this->never())->method('deleteByCoordinates');
 
-        $this->useCase->execute($this->client, $deletionEvent);
+        $useCase = $this->makeUseCase($eventStore);
+
+        $useCase->execute($this->client, $deletionEvent);
     }
 
     public function testDeletionEventTriggersDeleteByCoordinates(): void
@@ -329,9 +382,10 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         ]);
         $event = $this->createSignedDeletionEvent($tags, $keyPair);
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $this->eventStore->expects($this->never())->method('deleteByEventIds');
-        $this->eventStore->expects($this->once())
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+        $eventStore->expects($this->once())
             ->method('deleteByCoordinates')
             ->with(
                 $this->callback(static function (array $coordinates) use ($coordinate): bool {
@@ -343,7 +397,9 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             )
             ->willReturn(1);
 
-        $this->useCase->execute($this->client, $event);
+        $useCase = $this->makeUseCase($eventStore);
+
+        $useCase->execute($this->client, $event);
     }
 
     public function testDeletionEventSkipsCoordinatesOwnedBySomeoneElse(): void
@@ -357,22 +413,28 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $this->eventStore->expects($this->never())->method('findByFilters');
-        $this->eventStore->expects($this->never())->method('deleteByEventIds');
-        $this->eventStore->expects($this->never())->method('deleteByCoordinates');
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('findByFilters');
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+        $eventStore->expects($this->never())->method('deleteByCoordinates');
 
-        $this->useCase->execute($this->client, $deletionEvent);
+        $useCase = $this->makeUseCase($eventStore);
+
+        $useCase->execute($this->client, $deletionEvent);
     }
 
     public function testNonDeletionEventDoesNotTriggerDeletion(): void
     {
         $event = $this->createSignedEvent();
 
-        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $this->eventStore->expects($this->never())->method('deleteByEventIds');
-        $this->eventStore->expects($this->never())->method('deleteByCoordinates');
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+        $eventStore->expects($this->never())->method('deleteByCoordinates');
 
-        $this->useCase->execute($this->client, $event);
+        $useCase = $this->makeUseCase($eventStore);
+
+        $useCase->execute($this->client, $event);
     }
 }

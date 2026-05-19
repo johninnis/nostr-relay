@@ -25,12 +25,13 @@ use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 final class EventDistributorTest extends TestCase
 {
-    private RelayPolicyInterface&MockObject $policy;
+    private RelayPolicyInterface&Stub $policy;
     private SubscriptionManager $subscriptionManager;
     private ClientManager $clientManager;
     private MetricsCollectorInterface&MockObject $metrics;
@@ -38,7 +39,7 @@ final class EventDistributorTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->policy = $this->createMock(RelayPolicyInterface::class);
+        $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->metrics = $this->createMock(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
@@ -73,7 +74,7 @@ final class EventDistributorTest extends TestCase
 
     private function registerClientWithSubscription(string $subIdStr, ?array $kinds = null, ?ClientConnectionInterface $connection = null): RelayClient
     {
-        $connection ??= $this->createMock(ClientConnectionInterface::class);
+        $connection ??= $this->createStub(ClientConnectionInterface::class);
         $connectionInfo = new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now());
         $client = $this->clientManager->registerClient($connection, $connectionInfo);
 
@@ -128,7 +129,7 @@ final class EventDistributorTest extends TestCase
         $this->policy->method('canClientReceiveEvent')->willReturn(true);
         $this->metrics->expects($this->once())->method('incrementEventsSent');
 
-        $deadConnection = $this->createMock(ClientConnectionInterface::class);
+        $deadConnection = $this->createStub(ClientConnectionInterface::class);
         $deadConnection->method('sendText')
             ->willThrowException(ConnectionException::peerDisconnected());
 

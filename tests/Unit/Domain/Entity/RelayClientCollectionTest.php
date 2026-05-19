@@ -20,9 +20,9 @@ final class RelayClientCollectionTest extends TestCase
     {
         return new RelayClient(
             ClientId::fromString($id),
-            $this->createMock(ClientConnectionInterface::class),
+            $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createMock(SubscriptionLookupInterface::class),
+            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 

@@ -20,30 +20,31 @@ use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
 final class RelayClientTest extends TestCase
 {
     private ClientId $clientId;
-    private ClientConnectionInterface&MockObject $connection;
     private ConnectionInfo $connectionInfo;
-    private SubscriptionLookupInterface&MockObject $subscriptionLookup;
     private RelayClient $client;
 
     protected function setUp(): void
     {
         $this->clientId = ClientId::fromString('test-client');
-        $this->connection = $this->createMock(ClientConnectionInterface::class);
         $this->connectionInfo = new ConnectionInfo('127.0.0.1', 'TestAgent/1.0', Timestamp::now());
-        $this->subscriptionLookup = $this->createMock(SubscriptionLookupInterface::class);
+        $this->client = $this->makeClient();
+    }
 
-        $this->client = new RelayClient(
+    private function makeClient(
+        ?ClientConnectionInterface $connection = null,
+        ?SubscriptionLookupInterface $subscriptionLookup = null,
+    ): RelayClient {
+        return new RelayClient(
             $this->clientId,
-            $this->connection,
+            $connection ?? $this->createStub(ClientConnectionInterface::class),
             $this->connectionInfo,
-            $this->subscriptionLookup,
+            $subscriptionLookup ?? $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 
@@ -60,38 +61,44 @@ final class RelayClientTest extends TestCase
     public function testGetSubscriptionsDelegatesToLookup(): void
     {
         $collection = SubscriptionCollection::empty();
-        $this->subscriptionLookup
+        $subscriptionLookup = $this->createMock(SubscriptionLookupInterface::class);
+        $subscriptionLookup
             ->expects($this->once())
             ->method('getSubscriptionsForClient')
             ->with($this->clientId)
             ->willReturn($collection);
+        $client = $this->makeClient(subscriptionLookup: $subscriptionLookup);
 
-        $result = $this->client->getSubscriptions();
+        $result = $client->getSubscriptions();
 
         $this->assertSame($collection, $result);
     }
 
     public function testGetSubscriptionCountDelegatesToLookup(): void
     {
-        $this->subscriptionLookup
+        $subscriptionLookup = $this->createMock(SubscriptionLookupInterface::class);
+        $subscriptionLookup
             ->expects($this->once())
             ->method('getSubscriptionCountForClient')
             ->with($this->clientId)
             ->willReturn(3);
+        $client = $this->makeClient(subscriptionLookup: $subscriptionLookup);
 
-        $this->assertSame(3, $this->client->getSubscriptionCount());
+        $this->assertSame(3, $client->getSubscriptionCount());
     }
 
     public function testSendDelegatesToConnection(): void
     {
         $message = new NoticeMessage('hello');
 
-        $this->connection
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection
             ->expects($this->once())
             ->method('sendText')
             ->with($message->toJson());
+        $client = $this->makeClient($connection);
 
-        $this->client->send($message);
+        $client->send($message);
     }
 
     public function testSessionCountersStartEmpty(): void
@@ -139,27 +146,31 @@ final class RelayClientTest extends TestCase
 
     public function testFailedSendDoesNotIncrementEventsSent(): void
     {
-        $this->connection->method('sendText')
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')
             ->willThrowException(ConnectionException::peerDisconnected());
+        $client = $this->makeClient($connection);
 
         $message = new EventMessage(SubscriptionId::fromString('sub-1'), $this->createEvent());
 
         $this->expectException(ConnectionException::class);
 
         try {
-            $this->client->send($message);
+            $client->send($message);
         } finally {
-            $this->assertSame(0, $this->client->getSessionCounters()->getEventsSent());
+            $this->assertSame(0, $client->getSessionCounters()->getEventsSent());
         }
     }
 
     public function testCloseDelegatesToConnection(): void
     {
-        $this->connection
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection
             ->expects($this->once())
             ->method('close');
+        $client = $this->makeClient($connection);
 
-        $this->client->close();
+        $client->close();
     }
 
     private function createEvent(): Event

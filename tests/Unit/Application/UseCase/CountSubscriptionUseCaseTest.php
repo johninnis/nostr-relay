@@ -20,24 +20,22 @@ use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 final class CountSubscriptionUseCaseTest extends TestCase
 {
-    private RelayEventStoreInterface&MockObject $eventStore;
-    private RelayPolicyInterface&MockObject $policy;
-    private RateLimiterInterface&MockObject $rateLimiter;
+    private RelayEventStoreInterface&Stub $eventStore;
+    private RelayPolicyInterface&Stub $policy;
+    private RateLimiterInterface&Stub $rateLimiter;
     private CountSubscriptionUseCase $useCase;
-    private RelayClient $client;
-    private ClientConnectionInterface&MockObject $connection;
 
     protected function setUp(): void
     {
-        $this->eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $this->policy = $this->createMock(RelayPolicyInterface::class);
-        $this->rateLimiter = $this->createMock(RateLimiterInterface::class);
+        $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $this->policy = $this->createStub(RelayPolicyInterface::class);
+        $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
 
         $this->useCase = new CountSubscriptionUseCase(
             $this->eventStore,
@@ -46,13 +44,15 @@ final class CountSubscriptionUseCaseTest extends TestCase
             $this->rateLimiter,
             new NullLogger(),
         );
+    }
 
-        $this->connection = $this->createMock(ClientConnectionInterface::class);
-        $this->client = new RelayClient(
+    private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
+    {
+        return new RelayClient(
             ClientId::fromString('client-1'),
-            $this->connection,
+            $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createMock(SubscriptionLookupInterface::class),
+            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 
@@ -64,15 +64,17 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn($filters);
         $this->eventStore->method('countByFilters')->willReturn(42);
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'COUNT' === $data[0] && 'count-1' === $data[1] && 42 === $data[2]['count'];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $subId, $filters);
+        $this->useCase->execute($client, $subId, $filters);
     }
 
     public function testPolicyViolationSendsClosedMessage(): void
@@ -83,15 +85,17 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->policy->method('allowSubscription')
             ->willThrowException(new PolicyViolationException('not allowed'));
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'CLOSED' === $data[0] && str_contains((string) $data[2], 'blocked');
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $subId, $filters);
+        $this->useCase->execute($client, $subId, $filters);
     }
 
     public function testAuthRequiredSendsAuthChallengeAndClosedMessage(): void
@@ -103,12 +107,14 @@ final class CountSubscriptionUseCaseTest extends TestCase
             ->willThrowException(new AuthRequiredException('auth needed'));
 
         $sentMessages = [];
-        $this->connection->method('sendText')
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')
             ->willReturnCallback(static function (string $json) use (&$sentMessages): void {
                 $sentMessages[] = json_decode($json, true);
             });
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $subId, $filters);
+        $this->useCase->execute($client, $subId, $filters);
 
         $this->assertCount(2, $sentMessages);
         $this->assertSame('AUTH', $sentMessages[0][0]);
@@ -124,14 +130,16 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'CLOSED' === $data[0] && str_contains((string) $data[2], 'rate-limited');
             }));
+        $client = $this->makeClient($connection);
 
-        $this->useCase->execute($this->client, $subId, $filters);
+        $this->useCase->execute($client, $subId, $filters);
     }
 }

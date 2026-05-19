@@ -12,23 +12,26 @@ use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 final class ClientManagerTest extends TestCase
 {
-    private SubscriptionLookupInterface&MockObject $subscriptionLookup;
-    private MetricsCollectorInterface&MockObject $metrics;
+    private SubscriptionLookupInterface&Stub $subscriptionLookup;
     private ClientManager $manager;
 
     protected function setUp(): void
     {
-        $this->subscriptionLookup = $this->createMock(SubscriptionLookupInterface::class);
-        $this->metrics = $this->createMock(MetricsCollectorInterface::class);
-        $this->manager = new ClientManager(
+        $this->subscriptionLookup = $this->createStub(SubscriptionLookupInterface::class);
+        $this->manager = $this->makeManager();
+    }
+
+    private function makeManager(?MetricsCollectorInterface $metrics = null): ClientManager
+    {
+        return new ClientManager(
             $this->subscriptionLookup,
-            $this->metrics,
+            $metrics ?? $this->createStub(MetricsCollectorInterface::class),
             new NullLogger(),
             2,
         );
@@ -41,20 +44,22 @@ final class ClientManagerTest extends TestCase
 
     public function testRegisterClientReturnsRelayClient(): void
     {
-        $connection = $this->createMock(ClientConnectionInterface::class);
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->once())->method('incrementActiveConnections');
+        $manager = $this->makeManager($metrics);
+
+        $connection = $this->createStub(ClientConnectionInterface::class);
         $connectionInfo = $this->createConnectionInfo();
 
-        $this->metrics->expects($this->once())->method('incrementActiveConnections');
-
-        $client = $this->manager->registerClient($connection, $connectionInfo);
+        $client = $manager->registerClient($connection, $connectionInfo);
 
         $this->assertSame($connectionInfo, $client->getConnectionInfo());
-        $this->assertSame(1, $this->manager->getClientCount());
+        $this->assertSame(1, $manager->getClientCount());
     }
 
     public function testRegisterClientThrowsWhenMaxConnectionsReached(): void
     {
-        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection = $this->createStub(ClientConnectionInterface::class);
 
         $this->manager->registerClient($connection, $this->createConnectionInfo());
         $this->manager->registerClient($connection, $this->createConnectionInfo());
@@ -66,28 +71,32 @@ final class ClientManagerTest extends TestCase
 
     public function testRemoveClientDecrementsCount(): void
     {
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $client = $this->manager->registerClient($connection, $this->createConnectionInfo());
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->once())->method('decrementActiveConnections');
+        $manager = $this->makeManager($metrics);
 
-        $this->metrics->expects($this->once())->method('decrementActiveConnections');
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $client = $manager->registerClient($connection, $this->createConnectionInfo());
 
-        $this->manager->removeClient($client->getId());
+        $manager->removeClient($client->getId());
 
-        $this->assertSame(0, $this->manager->getClientCount());
+        $this->assertSame(0, $manager->getClientCount());
     }
 
     public function testRemoveNonExistentClientIsNoOp(): void
     {
-        $this->metrics->expects($this->never())->method('decrementActiveConnections');
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->never())->method('decrementActiveConnections');
+        $manager = $this->makeManager($metrics);
 
-        $this->manager->removeClient(ClientId::fromString('missing'));
+        $manager->removeClient(ClientId::fromString('missing'));
 
-        $this->assertSame(0, $this->manager->getClientCount());
+        $this->assertSame(0, $manager->getClientCount());
     }
 
     public function testGetClientReturnsRegisteredClient(): void
     {
-        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection = $this->createStub(ClientConnectionInterface::class);
         $client = $this->manager->registerClient($connection, $this->createConnectionInfo());
 
         $found = $this->manager->getClient($client->getId());
@@ -103,7 +112,7 @@ final class ClientManagerTest extends TestCase
 
     public function testGetAllClientsReturnsCollection(): void
     {
-        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection = $this->createStub(ClientConnectionInterface::class);
         $this->manager->registerClient($connection, $this->createConnectionInfo());
         $this->manager->registerClient($connection, $this->createConnectionInfo());
 

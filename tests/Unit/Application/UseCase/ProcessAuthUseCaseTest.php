@@ -45,7 +45,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->authManager = new AuthenticationManager();
         $this->keyPair = KeyPair::generate($this->signatureService());
 
-        $config = $this->createMock(RelayConfigInterface::class);
+        $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
 
         $this->useCase = new ProcessAuthUseCase(
@@ -60,7 +60,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             ClientId::fromString('client-1'),
             $this->connection,
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createMock(SubscriptionLookupInterface::class),
+            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 

@@ -12,19 +12,24 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
-use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 final class SubscriptionManagerTest extends TestCase
 {
-    private MetricsCollectorInterface&MockObject $metrics;
     private SubscriptionManager $manager;
 
     protected function setUp(): void
     {
-        $this->metrics = $this->createMock(MetricsCollectorInterface::class);
-        $this->manager = new SubscriptionManager($this->metrics, new NullLogger());
+        $this->manager = $this->makeManager();
+    }
+
+    private function makeManager(?MetricsCollectorInterface $metrics = null): SubscriptionManager
+    {
+        return new SubscriptionManager(
+            $metrics ?? $this->createStub(MetricsCollectorInterface::class),
+            new NullLogger(),
+        );
     }
 
     private function createSubscription(string $subId, ?array $kinds = null): Subscription
@@ -36,47 +41,55 @@ final class SubscriptionManagerTest extends TestCase
 
     public function testAddSubscriptionIncrementsMetrics(): void
     {
-        $this->metrics->expects($this->once())->method('incrementSubscriptions');
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->once())->method('incrementSubscriptions');
+        $manager = $this->makeManager($metrics);
 
         $clientId = ClientId::fromString('client-1');
         $subscription = $this->createSubscription('sub-1');
 
-        $this->manager->addSubscription($clientId, $subscription);
+        $manager->addSubscription($clientId, $subscription);
     }
 
     public function testAddSubscriptionReplacesExisting(): void
     {
-        $this->metrics->expects($this->exactly(2))->method('incrementSubscriptions');
-        $this->metrics->expects($this->once())->method('decrementSubscriptions');
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->exactly(2))->method('incrementSubscriptions');
+        $metrics->expects($this->once())->method('decrementSubscriptions');
+        $manager = $this->makeManager($metrics);
 
         $clientId = ClientId::fromString('client-1');
         $sub1 = $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]);
         $sub2 = $this->createSubscription('sub-1', [EventKind::METADATA]);
 
-        $this->manager->addSubscription($clientId, $sub1);
-        $this->manager->addSubscription($clientId, $sub2);
+        $manager->addSubscription($clientId, $sub1);
+        $manager->addSubscription($clientId, $sub2);
 
-        $this->assertSame(1, $this->manager->getSubscriptionCountForClient($clientId));
+        $this->assertSame(1, $manager->getSubscriptionCountForClient($clientId));
     }
 
     public function testRemoveSubscriptionDecrementsMetrics(): void
     {
-        $this->metrics->expects($this->once())->method('decrementSubscriptions');
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->once())->method('decrementSubscriptions');
+        $manager = $this->makeManager($metrics);
 
         $clientId = ClientId::fromString('client-1');
         $subscription = $this->createSubscription('sub-1');
 
-        $this->manager->addSubscription($clientId, $subscription);
-        $this->manager->removeSubscription($clientId, $subscription->getId());
+        $manager->addSubscription($clientId, $subscription);
+        $manager->removeSubscription($clientId, $subscription->getId());
 
-        $this->assertSame(0, $this->manager->getSubscriptionCountForClient($clientId));
+        $this->assertSame(0, $manager->getSubscriptionCountForClient($clientId));
     }
 
     public function testRemoveNonExistentSubscriptionIsNoOp(): void
     {
-        $this->metrics->expects($this->never())->method('decrementSubscriptions');
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->never())->method('decrementSubscriptions');
+        $manager = $this->makeManager($metrics);
 
-        $this->manager->removeSubscription(
+        $manager->removeSubscription(
             ClientId::fromString('client-1'),
             SubscriptionId::fromString('missing'),
         );
@@ -84,15 +97,17 @@ final class SubscriptionManagerTest extends TestCase
 
     public function testRemoveAllForClientCleansUpAllSubscriptions(): void
     {
-        $this->metrics->expects($this->exactly(2))->method('decrementSubscriptions');
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->exactly(2))->method('decrementSubscriptions');
+        $manager = $this->makeManager($metrics);
 
         $clientId = ClientId::fromString('client-1');
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'));
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-2'));
+        $manager->addSubscription($clientId, $this->createSubscription('sub-1'));
+        $manager->addSubscription($clientId, $this->createSubscription('sub-2'));
 
-        $this->manager->removeAllForClient($clientId);
+        $manager->removeAllForClient($clientId);
 
-        $this->assertSame(0, $this->manager->getSubscriptionCountForClient($clientId));
+        $this->assertSame(0, $manager->getSubscriptionCountForClient($clientId));
     }
 
     public function testUpdateSubscriptionStateChangesState(): void

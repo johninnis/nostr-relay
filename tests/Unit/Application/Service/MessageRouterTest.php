@@ -43,7 +43,7 @@ use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use InvalidArgumentException;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -55,22 +55,21 @@ final class MessageRouterTest extends TestCase
         return Secp256k1SignatureAdapter::create();
     }
 
-    private MessageSerialiserInterface&MockObject $serialiser;
-    private RelayEventStoreInterface&MockObject $eventStore;
-    private RelayPolicyInterface&MockObject $policy;
+    private MessageSerialiserInterface&Stub $serialiser;
+    private RelayEventStoreInterface&Stub $eventStore;
+    private RelayPolicyInterface&Stub $policy;
     private SubscriptionManager $subscriptionManager;
     private AuthenticationManager $authManager;
     private MessageRouter $router;
     private RelayClient $client;
-    private ClientConnectionInterface&MockObject $connection;
 
     protected function setUp(): void
     {
-        $this->serialiser = $this->createMock(MessageSerialiserInterface::class);
-        $this->eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $this->policy = $this->createMock(RelayPolicyInterface::class);
-        $rateLimiter = $this->createMock(RateLimiterInterface::class);
-        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $this->serialiser = $this->createStub(MessageSerialiserInterface::class);
+        $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $this->policy = $this->createStub(RelayPolicyInterface::class);
+        $rateLimiter = $this->createStub(RateLimiterInterface::class);
+        $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
@@ -112,7 +111,7 @@ final class MessageRouterTest extends TestCase
 
         $closeSubscription = new CloseSubscriptionUseCase($this->subscriptionManager, $logger);
 
-        $config = $this->createMock(RelayConfigInterface::class);
+        $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
 
         $processAuth = new ProcessAuthUseCase(
@@ -140,12 +139,16 @@ final class MessageRouterTest extends TestCase
             $logger,
         );
 
-        $this->connection = $this->createMock(ClientConnectionInterface::class);
-        $this->client = new RelayClient(
+        $this->client = $this->makeClient();
+    }
+
+    private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
+    {
+        return new RelayClient(
             ClientId::fromString('client-1'),
-            $this->connection,
+            $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createMock(SubscriptionLookupInterface::class),
+            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 
@@ -163,15 +166,17 @@ final class MessageRouterTest extends TestCase
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new EventMessage($event));
         $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && true === $data[2];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->router->route($this->client, '["EVENT",{}]');
+        $this->router->route($client, '["EVENT",{}]');
     }
 
     public function testRoutesReqMessage(): void
@@ -228,17 +233,19 @@ final class MessageRouterTest extends TestCase
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new AuthMessage($event));
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'OK' === $data[0] && true === $data[2];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->router->route($this->client, '["AUTH",{}]');
+        $this->router->route($client, '["AUTH",{}]');
 
-        $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertTrue($this->authManager->isAuthenticated($client->getId()));
     }
 
     public function testRoutesCountMessage(): void
@@ -250,15 +257,17 @@ final class MessageRouterTest extends TestCase
         $this->policy->method('filterForClient')->willReturn($filters);
         $this->eventStore->method('countByFilters')->willReturn(42);
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'COUNT' === $data[0] && 'count-1' === $data[1] && 42 === $data[2]['count'];
             }));
+        $client = $this->makeClient($connection);
 
-        $this->router->route($this->client, '["COUNT","count-1",{}]');
+        $this->router->route($client, '["COUNT","count-1",{}]');
     }
 
     public function testSendsNoticeForInvalidMessage(): void
@@ -267,15 +276,17 @@ final class MessageRouterTest extends TestCase
             ->method('deserialiseClientMessage')
             ->willThrowException(new InvalidArgumentException('bad json'));
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'NOTICE' === $data[0] && str_contains((string) $data[1], 'Invalid message');
             }));
+        $client = $this->makeClient($connection);
 
-        $this->router->route($this->client, 'invalid');
+        $this->router->route($client, 'invalid');
     }
 
     public function testSendsNoticeForUnexpectedError(): void
@@ -284,14 +295,16 @@ final class MessageRouterTest extends TestCase
             ->method('deserialiseClientMessage')
             ->willThrowException(new RuntimeException('unexpected'));
 
-        $this->connection->expects($this->once())->method('sendText')
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $data = json_decode($json, true);
                 assert(is_array($data));
 
                 return 'NOTICE' === $data[0] && str_contains((string) $data[1], 'Internal server error');
             }));
+        $client = $this->makeClient($connection);
 
-        $this->router->route($this->client, '[]');
+        $this->router->route($client, '[]');
     }
 }
