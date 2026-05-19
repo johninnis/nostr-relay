@@ -51,7 +51,6 @@ final class ClientConnectionHandler
             $client->send(new AuthMessage($challenge));
             $this->logger->info('AUTH challenge sent', [
                 'client_id' => (string) $client->getId(),
-                'challenge' => $challenge,
             ]);
 
             while ($message = $websocketClient->receive()) {
