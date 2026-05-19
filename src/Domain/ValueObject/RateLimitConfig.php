@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Domain\ValueObject;
 
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
+use InvalidArgumentException;
 
 final readonly class RateLimitConfig
 {
@@ -12,6 +13,13 @@ final readonly class RateLimitConfig
         private int $eventsPerMinute,
         private int $subscriptionsPerMinute,
     ) {
+        if ($eventsPerMinute <= 0) {
+            throw new InvalidArgumentException('eventsPerMinute must be a positive integer');
+        }
+
+        if ($subscriptionsPerMinute <= 0) {
+            throw new InvalidArgumentException('subscriptionsPerMinute must be a positive integer');
+        }
     }
 
     public function getEventsPerMinute(): int

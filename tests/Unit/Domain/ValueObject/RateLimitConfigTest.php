@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 final class RateLimitConfigTest extends TestCase
@@ -24,5 +25,19 @@ final class RateLimitConfigTest extends TestCase
 
         $this->assertSame(120, $config->perMinute(RateLimitMetric::Events));
         $this->assertSame(30, $config->perMinute(RateLimitMetric::Subscriptions));
+    }
+
+    public function testRejectsZeroEventsPerMinute(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new RateLimitConfig(0, 30);
+    }
+
+    public function testRejectsNegativeSubscriptionsPerMinute(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new RateLimitConfig(60, -1);
     }
 }
