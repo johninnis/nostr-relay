@@ -12,6 +12,7 @@ use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
 use PHPUnit\Framework\TestCase;
+use ReflectionClass;
 use RuntimeException;
 
 final class TokenBucketRateLimiterTest extends TestCase
@@ -100,6 +101,48 @@ final class TokenBucketRateLimiterTest extends TestCase
 
         $this->expectException(RateLimitException::class);
         $eventLimiter->checkLimit('key');
+    }
+
+    public function testBucketTableIsBoundedWhenAllBucketsAreFresh(): void
+    {
+        $limiter = new TokenBucketRateLimiter(
+            $this->configReturning(new RateLimitConfig(60, 60)),
+            RateLimitMetric::Events,
+        );
+
+        for ($i = 0; $i < 6000; ++$i) {
+            $limiter->checkLimit('key-'.$i);
+        }
+
+        $reflection = new ReflectionClass($limiter);
+        $buckets = $reflection->getProperty('buckets')->getValue($limiter);
+        $hardMax = $reflection->getConstant('HARD_MAX_BUCKETS');
+
+        $this->assertIsArray($buckets);
+        $this->assertIsInt($hardMax);
+        $this->assertLessThanOrEqual($hardMax, count($buckets));
+    }
+
+    public function testOldestBucketsEvictedFirstWhenAtHardCap(): void
+    {
+        $limiter = new TokenBucketRateLimiter(
+            $this->configReturning(new RateLimitConfig(60, 60)),
+            RateLimitMetric::Events,
+        );
+
+        $reflection = new ReflectionClass($limiter);
+        $hardMax = $reflection->getConstant('HARD_MAX_BUCKETS');
+        assert(is_int($hardMax));
+
+        for ($i = 0; $i < $hardMax + 500; ++$i) {
+            $limiter->checkLimit('key-'.$i);
+        }
+
+        $buckets = $reflection->getProperty('buckets')->getValue($limiter);
+        assert(is_array($buckets));
+
+        $this->assertArrayNotHasKey('key-0', $buckets);
+        $this->assertArrayHasKey('key-'.($hardMax + 499), $buckets);
     }
 
     private function configReturning(RateLimitConfig $rateLimitConfig): RelayConfigInterface

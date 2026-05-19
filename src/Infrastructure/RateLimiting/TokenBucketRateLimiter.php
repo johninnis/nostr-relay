@@ -12,8 +12,10 @@ use Innis\Nostr\Relay\Domain\ValueObject\RateLimitToken;
 
 final class TokenBucketRateLimiter implements RateLimiterInterface
 {
-    private const EVICTION_THRESHOLD = 1000;
-    private const STALE_AFTER_SECONDS = 60.0;
+    private const int EVICTION_THRESHOLD = 1000;
+    private const int HARD_MAX_BUCKETS = 5000;
+    private const float STALE_AFTER_SECONDS = 60.0;
+    private const float OVERFLOW_RETAIN_RATIO = 0.9;
 
     private array $buckets = [];
 
@@ -66,5 +68,20 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
             $this->buckets,
             static fn (RateLimitToken $bucket) => $bucket->getLastRefill() > $staleBefore
         );
+
+        if (count($this->buckets) >= self::HARD_MAX_BUCKETS) {
+            $this->evictOldestBuckets();
+        }
+    }
+
+    private function evictOldestBuckets(): void
+    {
+        uasort(
+            $this->buckets,
+            static fn (RateLimitToken $a, RateLimitToken $b) => $a->getLastRefill() <=> $b->getLastRefill()
+        );
+
+        $retain = (int) (self::HARD_MAX_BUCKETS * self::OVERFLOW_RETAIN_RATIO);
+        $this->buckets = array_slice($this->buckets, -$retain, null, true);
     }
 }
