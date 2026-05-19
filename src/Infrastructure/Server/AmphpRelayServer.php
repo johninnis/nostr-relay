@@ -25,6 +25,7 @@ use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
+use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 
 final class AmphpRelayServer
@@ -45,11 +46,14 @@ final class AmphpRelayServer
     {
         $host = $this->config->getHost();
         $port = $this->config->getPort();
+        $trustedProxies = $this->config->getTrustedProxies();
+        self::validateTrustedProxies($trustedProxies);
 
         $this->logger->info('Starting Nostr relay server', [
             'host' => $host,
             'port' => $port,
             'max_connections' => $this->config->getMaxConnections(),
+            'trusted_proxies' => $trustedProxies,
         ]);
 
         $httpDriverFactory = new DefaultHttpDriverFactory(
@@ -61,7 +65,7 @@ final class AmphpRelayServer
         $server = SocketHttpServer::createForBehindProxy(
             $this->logger,
             ForwardedHeaderType::XForwardedFor,
-            $this->config->getTrustedProxies(),
+            $trustedProxies,
             httpDriverFactory: $httpDriverFactory,
         );
 
@@ -186,5 +190,38 @@ final class AmphpRelayServer
         $response->setHeader('access-control-allow-origin', '*');
 
         return $response;
+    }
+
+    private static function validateTrustedProxies(array $proxies): void
+    {
+        foreach ($proxies as $index => $proxy) {
+            if (!is_string($proxy) || '' === $proxy) {
+                throw new InvalidArgumentException(sprintf('Trusted proxy at index %s must be a non-empty string', (string) $index));
+            }
+
+            $parts = explode('/', $proxy, 2);
+            $address = $parts[0];
+            $bits = $parts[1] ?? null;
+
+            $isIpv4 = false !== filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
+            $isIpv6 = false !== filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6);
+
+            if (!$isIpv4 && !$isIpv6) {
+                throw new InvalidArgumentException(sprintf('Invalid trusted proxy address: %s', $proxy));
+            }
+
+            if (null === $bits) {
+                continue;
+            }
+
+            $maxBits = $isIpv4 ? 32 : 128;
+            $bitsInt = filter_var($bits, FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 0, 'max_range' => $maxBits],
+            ]);
+
+            if (false === $bitsInt) {
+                throw new InvalidArgumentException(sprintf('Invalid CIDR mask in trusted proxy: %s', $proxy));
+            }
+        }
     }
 }

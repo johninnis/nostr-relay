@@ -105,7 +105,7 @@ See [`examples/relay.example.php`](examples/relay.example.php) for a complete wo
 
 ### 3. Configure Nginx
 
-The relay does not handle TLS. Use a reverse proxy for SSL. If the proxy sets `X-Forwarded-For`, return its IP from `RelayConfigInterface::getTrustedProxies()` so the relay records the real client address:
+The relay does not handle TLS. Use a reverse proxy for SSL. If the proxy sets `X-Forwarded-For`, return its address from `RelayConfigInterface::getTrustedProxies()` as an IPv4/IPv6 string with an optional CIDR mask (e.g. `'10.0.0.1'`, `'172.18.0.0/24'`, `'2001:db8::/32'`). Invalid entries cause the relay to refuse to start. If no proxy sits in front of the relay, return an empty array; honouring forwarded headers from an untrusted source lets any client spoof their IP.
 
 ```nginx
 upstream nostr_relay {
