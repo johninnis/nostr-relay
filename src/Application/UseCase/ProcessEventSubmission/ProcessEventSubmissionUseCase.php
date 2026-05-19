@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\Service\EventValidationService;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -51,37 +55,77 @@ final class ProcessEventSubmissionUseCase
         $author = $event->getPubkey();
         $deletedCount = 0;
 
-        $eventIds = array_map(
+        $requestedEventIds = array_map(
             static fn ($ref) => $ref->getEventId(),
             $references->getEvents()
         );
+        $requestedCoordinates = $references->getAddressable();
+        $requestedCount = count($requestedEventIds) + count($requestedCoordinates);
 
-        if (!empty($eventIds)) {
-            $deletedCount += $this->eventStore->deleteByEventIds($eventIds, $author);
+        $verifiedEventIds = $this->verifyOwnedEventIds($requestedEventIds, $author);
+        $verifiedCoordinates = array_values(array_filter(
+            $requestedCoordinates,
+            static fn (EventCoordinate $coord) => $coord->getPubkey()->equals($author)
+        ));
+        $verifiedCount = count($verifiedEventIds) + count($verifiedCoordinates);
+
+        if ($verifiedCount < $requestedCount) {
+            $this->logger->warning('Deletion event referenced events not owned by author', [
+                'deletion_event_id' => $event->getId()->toHex(),
+                'pubkey' => $author->toHex(),
+                'requested' => $requestedCount,
+                'verified' => $verifiedCount,
+            ]);
         }
 
-        $coordinates = $references->getAddressable();
-
-        if (!empty($coordinates)) {
-            $deletedCount += $this->eventStore->deleteByCoordinates($coordinates, $author);
+        if (!empty($verifiedEventIds)) {
+            $deletedCount += $this->eventStore->deleteByEventIds($verifiedEventIds, $author);
         }
 
-        $referenceCount = count($eventIds) + count($coordinates);
+        if (!empty($verifiedCoordinates)) {
+            $deletedCount += $this->eventStore->deleteByCoordinates($verifiedCoordinates, $author);
+        }
 
         if ($deletedCount > 0) {
             $this->logger->debug('Deletion event processed', [
                 'deletion_event_id' => $event->getId()->toHex(),
-                'pubkey' => $event->getPubkey()->toHex(),
-                'referenced' => $referenceCount,
+                'pubkey' => $author->toHex(),
+                'referenced' => $requestedCount,
                 'deleted_count' => $deletedCount,
             ]);
-        } elseif ($referenceCount > 0) {
+        } elseif ($requestedCount > 0) {
             $this->logger->debug('Deletion event had no effect', [
                 'deletion_event_id' => $event->getId()->toHex(),
-                'pubkey' => $event->getPubkey()->toHex(),
-                'referenced' => $referenceCount,
+                'pubkey' => $author->toHex(),
+                'referenced' => $requestedCount,
             ]);
         }
+    }
+
+    private function verifyOwnedEventIds(array $eventIds, PublicKey $author): array
+    {
+        if (empty($eventIds)) {
+            return [];
+        }
+
+        $filters = array_map(
+            static fn (array $chunk) => new Filter(ids: array_map(
+                static fn (EventId $id) => $id->toHex(),
+                $chunk
+            )),
+            array_chunk($eventIds, Filter::MAX_VALUES_PER_FIELD)
+        );
+
+        $storedEvents = $this->eventStore->findByFilters($filters, count($eventIds));
+
+        $verified = [];
+        foreach ($storedEvents as $storedEvent) {
+            if ($storedEvent->getPubkey()->equals($author)) {
+                $verified[] = $storedEvent->getId();
+            }
+        }
+
+        return $verified;
     }
 
     public function execute(RelayClient $client, Event $event): void

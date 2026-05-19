@@ -249,22 +249,33 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
     public function testDeletionEventTriggersDeleteByEventIds(): void
     {
-        $targetEventId = str_repeat('a', 64);
+        $keyPair = KeyPair::generate($this->signatureService());
+        $targetEvent = (new Event(
+            $keyPair->getPublicKey(),
+            Timestamp::now(),
+            EventKind::textNote(),
+            TagCollection::empty(),
+            EventContent::fromString('target'),
+        ))->sign($keyPair, $this->signatureService());
+
         $tags = new TagCollection([
-            Tag::event($targetEventId),
+            Tag::event($targetEvent->getId()->toHex()),
             Tag::fromArray(['k', '1']),
         ]);
-        $event = $this->createSignedDeletionEvent($tags);
+        $deletionEvent = $this->createSignedDeletionEvent($tags, $keyPair);
 
         $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
         $this->eventStore->expects($this->once())
+            ->method('findByFilters')
+            ->willReturn([$targetEvent]);
+        $this->eventStore->expects($this->once())
             ->method('deleteByEventIds')
             ->with(
-                $this->callback(static function (array $eventIds) use ($targetEventId): bool {
-                    return 1 === count($eventIds) && $targetEventId === $eventIds[0]->toHex();
+                $this->callback(static function (array $eventIds) use ($targetEvent): bool {
+                    return 1 === count($eventIds) && $targetEvent->getId()->toHex() === $eventIds[0]->toHex();
                 }),
-                $this->callback(static function (PublicKey $author) use ($event): bool {
-                    return $author->equals($event->getPubkey());
+                $this->callback(static function (PublicKey $author) use ($keyPair): bool {
+                    return $author->equals($keyPair->getPublicKey());
                 }),
             )
             ->willReturn(1);
@@ -277,7 +288,35 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
                 return 'OK' === $data[0] && true === $data[2];
             }));
 
-        $this->useCase->execute($this->client, $event);
+        $this->useCase->execute($this->client, $deletionEvent);
+    }
+
+    public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
+    {
+        $victimKeyPair = KeyPair::generate($this->signatureService());
+        $victimEvent = (new Event(
+            $victimKeyPair->getPublicKey(),
+            Timestamp::now(),
+            EventKind::textNote(),
+            TagCollection::empty(),
+            EventContent::fromString('victim'),
+        ))->sign($victimKeyPair, $this->signatureService());
+
+        $attackerKeyPair = KeyPair::generate($this->signatureService());
+        $tags = new TagCollection([
+            Tag::event($victimEvent->getId()->toHex()),
+            Tag::fromArray(['k', '1']),
+        ]);
+        $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
+
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $this->eventStore->expects($this->once())
+            ->method('findByFilters')
+            ->willReturn([$victimEvent]);
+        $this->eventStore->expects($this->never())->method('deleteByEventIds');
+        $this->eventStore->expects($this->never())->method('deleteByCoordinates');
+
+        $this->useCase->execute($this->client, $deletionEvent);
     }
 
     public function testDeletionEventTriggersDeleteByCoordinates(): void
@@ -305,6 +344,25 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             ->willReturn(1);
 
         $this->useCase->execute($this->client, $event);
+    }
+
+    public function testDeletionEventSkipsCoordinatesOwnedBySomeoneElse(): void
+    {
+        $victimKeyPair = KeyPair::generate($this->signatureService());
+        $attackerKeyPair = KeyPair::generate($this->signatureService());
+        $victimCoordinate = '30023:'.$victimKeyPair->getPublicKey()->toHex().':target-article';
+        $tags = new TagCollection([
+            Tag::fromArray(['a', $victimCoordinate]),
+            Tag::fromArray(['k', '30023']),
+        ]);
+        $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
+
+        $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $this->eventStore->expects($this->never())->method('findByFilters');
+        $this->eventStore->expects($this->never())->method('deleteByEventIds');
+        $this->eventStore->expects($this->never())->method('deleteByCoordinates');
+
+        $this->useCase->execute($this->client, $deletionEvent);
     }
 
     public function testNonDeletionEventDoesNotTriggerDeletion(): void
