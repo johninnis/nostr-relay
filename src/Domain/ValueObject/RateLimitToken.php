@@ -6,6 +6,8 @@ namespace Innis\Nostr\Relay\Domain\ValueObject;
 
 final readonly class RateLimitToken
 {
+    private const SECONDS_PER_MINUTE = 60.0;
+
     public function __construct(
         private float $tokens,
         private float $lastRefill,
@@ -32,8 +34,11 @@ final readonly class RateLimitToken
         return new self($this->tokens - 1, $this->lastRefill);
     }
 
-    public function withAddedTokens(float $amount, float $refillTime): self
+    public function refilled(float $now, float $capacity): self
     {
-        return new self($this->tokens + $amount, $refillTime);
+        $elapsed = $now - $this->lastRefill;
+        $tokensToAdd = min($capacity - $this->tokens, $elapsed * ($capacity / self::SECONDS_PER_MINUTE));
+
+        return new self($this->tokens + $tokensToAdd, $now);
     }
 }

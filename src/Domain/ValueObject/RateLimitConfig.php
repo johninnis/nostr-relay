@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\ValueObject;
 
+use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
+
 final readonly class RateLimitConfig
 {
     public function __construct(
@@ -22,13 +24,11 @@ final readonly class RateLimitConfig
         return $this->subscriptionsPerMinute;
     }
 
-    public function getEventsRefillRate(): float
+    public function perMinute(RateLimitMetric $metric): int
     {
-        return $this->eventsPerMinute / 60;
-    }
-
-    public function getSubscriptionsRefillRate(): float
-    {
-        return $this->subscriptionsPerMinute / 60;
+        return match ($metric) {
+            RateLimitMetric::Events => $this->eventsPerMinute,
+            RateLimitMetric::Subscriptions => $this->subscriptionsPerMinute,
+        };
     }
 }

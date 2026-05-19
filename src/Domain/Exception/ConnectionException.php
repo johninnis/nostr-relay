@@ -30,6 +30,14 @@ final class ConnectionException extends RelayException
         );
     }
 
+    public static function ipBlocked(string $ipAddress): self
+    {
+        return new self(
+            message: 'Connection rejected for '.$ipAddress,
+            ipAddress: $ipAddress,
+        );
+    }
+
     public static function bindFailed(string $host, int $port, ?Throwable $previous = null): self
     {
         return new self(

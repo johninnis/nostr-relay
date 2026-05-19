@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Infrastructure\Server;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Infrastructure\Adapter\JsonMessageSerialiserAdapter;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
 use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
@@ -23,6 +24,7 @@ use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUs
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
+use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Infrastructure\Http\ConfigNip11InfoAdapter;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
@@ -42,6 +44,7 @@ final class RelayServerFactory
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
         private readonly ?Nip11InfoProviderInterface $nip11InfoProvider = null,
         ?SignatureServiceInterface $signatureService = null,
+        private readonly ?ConnectionGateInterface $connectionGate = null,
     ) {
         $this->signatureService = $signatureService ?? Secp256k1SignatureAdapter::create();
     }
@@ -79,16 +82,8 @@ final class RelayServerFactory
             $this->logger
         );
 
-        $rateLimitConfig = $this->config->getRateLimitConfig();
-        $eventRateLimiter = new TokenBucketRateLimiter(
-            capacity: $rateLimitConfig->getEventsPerMinute(),
-            refillRate: $rateLimitConfig->getEventsRefillRate()
-        );
-
-        $subscriptionRateLimiter = new TokenBucketRateLimiter(
-            capacity: $rateLimitConfig->getSubscriptionsPerMinute(),
-            refillRate: $rateLimitConfig->getSubscriptionsRefillRate()
-        );
+        $eventRateLimiter = new TokenBucketRateLimiter($this->config, RateLimitMetric::Events);
+        $subscriptionRateLimiter = new TokenBucketRateLimiter($this->config, RateLimitMetric::Subscriptions);
 
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $this->eventStore,
@@ -147,7 +142,13 @@ final class RelayServerFactory
             $disconnectionHandler,
             $messageRouter,
             $authManager,
-            $this->logger
+            $this->logger,
+            $this->connectionGate ?? new class implements ConnectionGateInterface {
+                public function isIpAllowed(string $ipAddress): bool
+                {
+                    return true;
+                }
+            },
         );
 
         $nip11InfoProvider = $this->nip11InfoProvider ?? new ConfigNip11InfoAdapter($this->config);

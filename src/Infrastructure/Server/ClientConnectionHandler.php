@@ -9,6 +9,7 @@ use Amp\Websocket\WebsocketCloseCode;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
@@ -26,6 +27,7 @@ final class ClientConnectionHandler
         private readonly MessageRouter $messageRouter,
         private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
+        private readonly ConnectionGateInterface $connectionGate,
     ) {
     }
 
@@ -38,6 +40,10 @@ final class ClientConnectionHandler
         );
 
         try {
+            if (!$this->connectionGate->isIpAllowed($ipAddress)) {
+                throw ConnectionException::ipBlocked($ipAddress);
+            }
+
             $adapter = new WebsocketClientAdapter($websocketClient);
             $client = $this->clientManager->registerClient($adapter, $connectionInfo);
 

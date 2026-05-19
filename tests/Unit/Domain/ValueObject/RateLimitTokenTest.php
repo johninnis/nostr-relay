@@ -55,13 +55,23 @@ final class RateLimitTokenTest extends TestCase
         $this->assertSame(100.0, $consumed->getLastRefill());
     }
 
-    public function testWithAddedTokensReturnsNewInstance(): void
+    public function testRefilledAddsTokensProportionalToElapsedTime(): void
     {
         $token = new RateLimitToken(2.0, 100.0);
-        $refilled = $token->withAddedTokens(3.0, 200.0);
+
+        $refilled = $token->refilled(now: 110.0, capacity: 30.0);
 
         $this->assertSame(2.0, $token->getTokens());
-        $this->assertSame(5.0, $refilled->getTokens());
-        $this->assertSame(200.0, $refilled->getLastRefill());
+        $this->assertSame(7.0, $refilled->getTokens());
+        $this->assertSame(110.0, $refilled->getLastRefill());
+    }
+
+    public function testRefilledCapsAtCapacity(): void
+    {
+        $token = new RateLimitToken(8.0, 0.0);
+
+        $refilled = $token->refilled(now: 1000.0, capacity: 10.0);
+
+        $this->assertSame(10.0, $refilled->getTokens());
     }
 }
