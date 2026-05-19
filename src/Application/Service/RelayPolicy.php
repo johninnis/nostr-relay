@@ -11,6 +11,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
+use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 
 final class RelayPolicy implements RelayPolicyInterface
@@ -224,9 +225,11 @@ final class RelayPolicy implements RelayPolicyInterface
                 ? PublicKey::fromBech32($tenant)
                 : PublicKey::fromHex($tenant);
 
-            if (null !== $pubkey) {
-                $pubkeys[] = $pubkey;
+            if (null === $pubkey) {
+                throw new InvalidArgumentException(sprintf('Invalid tenant pubkey: %s', $tenant));
             }
+
+            $pubkeys[] = $pubkey;
         }
 
         return $pubkeys;
