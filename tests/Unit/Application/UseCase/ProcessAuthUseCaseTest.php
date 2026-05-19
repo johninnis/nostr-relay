@@ -135,6 +135,38 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 
+    public function testRejectsUnsignedAuthEventClaimingVictimPubkey(): void
+    {
+        $victim = KeyPair::generate($this->signatureService())->getPublicKey();
+        $challenge = $this->authManager->generateChallenge($this->client->getId());
+
+        $forged = Event::fromArray([
+            'id' => str_repeat('a', 64),
+            'pubkey' => $victim->toHex(),
+            'created_at' => time(),
+            'kind' => EventKind::clientAuth()->toInt(),
+            'tags' => [
+                ['relay', 'wss://relay.example.com'],
+                ['challenge', $challenge],
+            ],
+            'content' => '',
+            'sig' => '',
+        ]);
+
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $data = json_decode($json, true);
+                assert(is_array($data));
+
+                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'signature is invalid');
+            }));
+
+        $this->useCase->execute($this->client, $forged);
+
+        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertFalse($this->authManager->isAuthenticatedAs($this->client->getId(), $victim));
+    }
+
     public function testRejectsExpiredTimestamp(): void
     {
         $challenge = $this->authManager->generateChallenge($this->client->getId());
