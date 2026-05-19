@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
 use Amp\Http\Server\DefaultErrorHandler;
+use Amp\Http\Server\Driver\DefaultHttpDriverFactory;
 use Amp\Http\Server\Middleware\Forwarded;
 use Amp\Http\Server\Middleware\ForwardedHeaderType;
 use Amp\Http\Server\Request;
@@ -28,6 +29,9 @@ use Psr\Log\LoggerInterface;
 
 final class AmphpRelayServer
 {
+    private const int HTTP_BODY_SIZE_LIMIT = 32 * 1024;
+    private const int HTTP_STREAM_TIMEOUT_SECONDS = 15;
+
     public function __construct(
         private readonly RelayConfigInterface $config,
         private readonly ClientConnectionHandler $connectionHandler,
@@ -48,10 +52,17 @@ final class AmphpRelayServer
             'max_connections' => $this->config->getMaxConnections(),
         ]);
 
+        $httpDriverFactory = new DefaultHttpDriverFactory(
+            logger: $this->logger,
+            streamTimeout: self::HTTP_STREAM_TIMEOUT_SECONDS,
+            bodySizeLimit: self::HTTP_BODY_SIZE_LIMIT,
+        );
+
         $server = SocketHttpServer::createForBehindProxy(
             $this->logger,
             ForwardedHeaderType::XForwardedFor,
             $this->config->getTrustedProxies(),
+            httpDriverFactory: $httpDriverFactory,
         );
 
         $bindContext = (new BindContext())->withTcpNoDelay();
