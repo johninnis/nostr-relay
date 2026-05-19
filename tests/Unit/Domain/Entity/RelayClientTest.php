@@ -15,6 +15,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
@@ -134,6 +135,22 @@ final class RelayClientTest extends TestCase
         $this->client->send(new NoticeMessage('hi'));
 
         $this->assertSame(0, $this->client->getSessionCounters()->getEventsSent());
+    }
+
+    public function testFailedSendDoesNotIncrementEventsSent(): void
+    {
+        $this->connection->method('sendText')
+            ->willThrowException(ConnectionException::peerDisconnected());
+
+        $message = new EventMessage(SubscriptionId::fromString('sub-1'), $this->createEvent());
+
+        $this->expectException(ConnectionException::class);
+
+        try {
+            $this->client->send($message);
+        } finally {
+            $this->assertSame(0, $this->client->getSessionCounters()->getEventsSent());
+        }
     }
 
     public function testCloseDelegatesToConnection(): void

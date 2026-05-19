@@ -19,6 +19,7 @@ use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
+use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
@@ -111,12 +112,22 @@ final class CreateSubscriptionUseCase
                 'subscription_id' => (string) $subscription->getId(),
                 'event_count' => count($events),
             ]);
+        } catch (ConnectionException $e) {
+            $this->logger->debug('Subscriber disconnected before stored events finished streaming', [
+                'client_id' => (string) $client->getId(),
+                'subscription_id' => (string) $subscription->getId(),
+                'reason' => $e->getMessage(),
+            ]);
         } catch (Throwable $e) {
-            $client->send(new NoticeMessage('error: failed to fetch events'));
             $this->logger->error('Failed to fetch stored events', [
                 'subscription_id' => (string) $subscription->getId(),
                 'error' => $e->getMessage(),
             ]);
+
+            try {
+                $client->send(new NoticeMessage('error: failed to fetch events'));
+            } catch (ConnectionException) {
+            }
         }
     }
 }

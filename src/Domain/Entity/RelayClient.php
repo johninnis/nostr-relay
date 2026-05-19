@@ -63,10 +63,11 @@ final class RelayClient
 
     public function send(RelayMessage $message): void
     {
+        $this->connection->sendText($message->toJson());
+
         if ($message instanceof EventMessage) {
             $this->sessionCounters = $this->sessionCounters->withEventSent();
         }
-        $this->connection->sendText($message->toJson());
     }
 
     public function close(): void

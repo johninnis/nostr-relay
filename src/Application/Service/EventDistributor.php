@@ -9,6 +9,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
 use Psr\Log\LoggerInterface;
 
@@ -65,7 +66,18 @@ final class EventDistributor
             return false;
         }
 
-        $client->send(new EventMessage($match->getSubscription()->getId(), $event));
+        try {
+            $client->send(new EventMessage($match->getSubscription()->getId(), $event));
+        } catch (ConnectionException $e) {
+            $this->logger->debug('Skipping send to disconnected subscriber', [
+                'client_id' => (string) $match->getClientId(),
+                'subscription_id' => (string) $match->getSubscription()->getId(),
+                'reason' => $e->getMessage(),
+            ]);
+
+            return false;
+        }
+
         $this->metrics->incrementEventsSent();
 
         return true;

@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Infrastructure\Server;
 
 use Amp\ByteStream\StreamException;
 use Amp\Websocket\WebsocketClient;
+use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 
 final readonly class WebsocketClientAdapter implements ClientConnectionInterface
@@ -19,7 +20,8 @@ final readonly class WebsocketClientAdapter implements ClientConnectionInterface
     {
         try {
             $this->websocketClient->sendText($text);
-        } catch (StreamException) {
+        } catch (StreamException $e) {
+            throw ConnectionException::peerDisconnected($e);
         }
     }
 

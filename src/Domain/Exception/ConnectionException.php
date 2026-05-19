@@ -45,4 +45,12 @@ final class ConnectionException extends RelayException
             previous: $previous,
         );
     }
+
+    public static function peerDisconnected(?Throwable $previous = null): self
+    {
+        return new self(
+            message: 'Peer disconnected'.($previous ? ': '.$previous->getMessage() : ''),
+            previous: $previous,
+        );
+    }
 }
