@@ -125,7 +125,8 @@ final class RelayPolicy implements RelayPolicyInterface
         return array_map(
             function (Filter $filter) {
                 if ($filter->hasAuthors()) {
-                    $allowed = array_intersect($filter->getAuthors() ?? [], $this->tenantHexKeys);
+                    $requestedAuthors = array_map(strtolower(...), $filter->getAuthors() ?? []);
+                    $allowed = array_intersect($requestedAuthors, $this->tenantHexKeys);
                     $constrained = $filter->withAuthors(array_values($allowed));
                 } else {
                     $constrained = $filter->withAuthors($this->tenantHexKeys);
@@ -198,7 +199,7 @@ final class RelayPolicy implements RelayPolicyInterface
     {
         foreach ($filters as $filter) {
             if ($filter->hasAuthors() && $this->guestReadFromTenants) {
-                $requested = $filter->getAuthors() ?? [];
+                $requested = array_map(strtolower(...), $filter->getAuthors() ?? []);
                 if (!empty(array_diff($requested, $this->tenantHexKeys))) {
                     return false;
                 }
