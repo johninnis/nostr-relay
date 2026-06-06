@@ -11,6 +11,8 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
+use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
+use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 
@@ -22,9 +24,9 @@ final class RelayPolicy implements RelayPolicyInterface
     private readonly bool $guestReadFromTenants;
     private readonly array $guestWriteRules;
     private readonly int $maxSubscriptions;
-    private readonly int $maxFilters;
     private readonly int $maxEventSize;
-    private readonly int $maxQueryLimit;
+    private readonly SubscriptionLimits $subscriptionLimits;
+    private readonly GuestFilterRules $guestFilterRules;
 
     public function __construct(
         private readonly AuthenticationManager $authManager,
@@ -34,9 +36,7 @@ final class RelayPolicy implements RelayPolicyInterface
         $this->tenantPubkeys = $this->resolveTenants($config['tenants'] ?? []);
         $this->tenantHexKeys = array_map(static fn (PublicKey $pk) => $pk->toHex(), $this->tenantPubkeys);
         $this->maxSubscriptions = $config['max_subscriptions'] ?? 20;
-        $this->maxFilters = $config['max_filters'] ?? 5;
         $this->maxEventSize = $config['max_event_size'] ?? 65536;
-        $this->maxQueryLimit = $config['max_query_limit'] ?? 1000;
 
         $guest = $config['guest'] ?? [];
         $this->guestWriteRules = $this->resolveWriteRules($guest['write'] ?? []);
@@ -53,6 +53,13 @@ final class RelayPolicy implements RelayPolicyInterface
         }
         $this->guestReadKinds = array_values(array_unique($allKinds));
         $this->guestReadFromTenants = $fromTenants;
+
+        $this->subscriptionLimits = new SubscriptionLimits(
+            $this->maxSubscriptions,
+            $config['max_filters'] ?? 5,
+            $config['max_query_limit'] ?? 1000,
+        );
+        $this->guestFilterRules = new GuestFilterRules($this->tenantHexKeys, $this->guestReadKinds);
     }
 
     public function allowEventSubmission(RelayClient $client, Event $event): void
@@ -89,19 +96,7 @@ final class RelayPolicy implements RelayPolicyInterface
 
     public function allowSubscription(RelayClient $client, array $filters): void
     {
-        if ($client->getSubscriptionCount() >= $this->maxSubscriptions) {
-            throw new PolicyViolationException('too many subscriptions (max '.$this->maxSubscriptions.')');
-        }
-
-        if (count($filters) > $this->maxFilters) {
-            throw new PolicyViolationException('too many filters (max '.$this->maxFilters.')');
-        }
-
-        foreach ($filters as $filter) {
-            if ($filter->hasLimit() && $filter->getLimit() > $this->maxQueryLimit) {
-                throw new PolicyViolationException('filter limit too high (max '.$this->maxQueryLimit.')');
-            }
-        }
+        $this->subscriptionLimits->enforce($client, $filters);
 
         if ($this->isOpenRelay() || $this->isTenant($client)) {
             return;
@@ -123,21 +118,9 @@ final class RelayPolicy implements RelayPolicyInterface
         }
 
         return array_map(
-            function (Filter $filter) {
-                if ($filter->hasAuthors()) {
-                    $requestedAuthors = array_map(strtolower(...), $filter->getAuthors() ?? []);
-                    $allowed = array_intersect($requestedAuthors, $this->tenantHexKeys);
-                    $constrained = $filter->withAuthors(array_values($allowed));
-                } else {
-                    $constrained = $filter->withAuthors($this->tenantHexKeys);
-                }
-
-                if (!$filter->hasKinds() && !empty($this->guestReadKinds)) {
-                    $constrained = $constrained->withKinds($this->guestReadKinds);
-                }
-
-                return $constrained;
-            },
+            fn (Filter $filter): Filter => $this->guestFilterRules->injectReadableKinds(
+                $this->guestFilterRules->constrainAuthorsToTenants($filter),
+            ),
             $filters
         );
     }
@@ -198,19 +181,12 @@ final class RelayPolicy implements RelayPolicyInterface
     private function isGuestAllowedSubscription(array $filters): bool
     {
         foreach ($filters as $filter) {
-            if ($filter->hasAuthors() && $this->guestReadFromTenants) {
-                $requested = array_map(strtolower(...), $filter->getAuthors() ?? []);
-                if (!empty(array_diff($requested, $this->tenantHexKeys))) {
-                    return false;
-                }
+            if ($this->guestReadFromTenants && !$this->guestFilterRules->authorsWithinTenants($filter)) {
+                return false;
             }
 
-            if (!empty($this->guestReadKinds) && $filter->hasKinds()) {
-                foreach ($filter->getKinds() as $kind) {
-                    if (!in_array($kind->toInt(), $this->guestReadKinds, true)) {
-                        return false;
-                    }
-                }
+            if (!$this->guestFilterRules->kindsWithinReadable($filter)) {
+                return false;
             }
         }
 
