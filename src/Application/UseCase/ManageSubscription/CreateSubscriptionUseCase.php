@@ -6,7 +6,6 @@ namespace Innis\Nostr\Relay\Application\UseCase\ManageSubscription;
 
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EoseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
@@ -66,11 +65,7 @@ final class CreateSubscriptionUseCase
                 $this->sendStoredEvents($client, $subscription, $modifiedFilters);
             });
         } catch (AuthRequiredException) {
-            $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
-            $challenge = $this->authManager->generateChallenge($client->getId());
-            if (!$alreadyChallenged) {
-                $client->send(new AuthMessage($challenge));
-            }
+            $this->authManager->challenge($client);
             $client->send(new ClosedMessage($subscriptionId, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));

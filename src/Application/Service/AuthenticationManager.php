@@ -5,12 +5,23 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
+use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 
 final class AuthenticationManager
 {
     private array $authenticatedPubkeys = [];
     private array $challenges = [];
+
+    public function challenge(RelayClient $client): void
+    {
+        if (null !== $this->getChallenge($client->getId())) {
+            return;
+        }
+
+        $client->send(new AuthMessage($this->generateChallenge($client->getId())));
+    }
 
     public function generateChallenge(ClientId $clientId): string
     {

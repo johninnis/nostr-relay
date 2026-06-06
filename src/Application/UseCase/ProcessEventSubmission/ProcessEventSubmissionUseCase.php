@@ -14,7 +14,6 @@ use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -173,13 +172,9 @@ final class ProcessEventSubmissionUseCase
             $client->send(new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
         } catch (AuthRequiredException) {
-            $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
-            $challenge = $this->authManager->generateChallenge($client->getId());
-            if (!$alreadyChallenged) {
-                $client->send(new AuthMessage($challenge));
-            }
+            $this->authManager->challenge($client);
             $client->send(new OkMessage($event->getId(), false, 'auth-required: authentication required'));
-            $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'challenged' => !$alreadyChallenged]);
+            $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
         } catch (PolicyViolationException $e) {
             $client->send(new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Event blocked', [

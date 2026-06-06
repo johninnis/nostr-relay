@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\UseCase\ManageSubscription;
 
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
@@ -45,11 +44,7 @@ final class CountSubscriptionUseCase
 
             $client->send(new CountMessage($subscriptionId, $count));
         } catch (AuthRequiredException) {
-            $alreadyChallenged = null !== $this->authManager->getChallenge($client->getId());
-            $challenge = $this->authManager->generateChallenge($client->getId());
-            if (!$alreadyChallenged) {
-                $client->send(new AuthMessage($challenge));
-            }
+            $this->authManager->challenge($client);
             $client->send(new ClosedMessage($subscriptionId, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
