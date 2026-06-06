@@ -15,6 +15,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
+use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -30,6 +31,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 {
     private AuthenticationManager $authManager;
     private ProcessAuthUseCase $useCase;
+    private RelayPolicyInterface $policy;
     private RelayClient $client;
     private ClientConnectionInterface&MockObject $connection;
     private KeyPair $keyPair;
@@ -48,9 +50,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
 
+        $this->policy = $this->createStub(RelayPolicyInterface::class);
+        $this->policy->method('allowsAuthentication')->willReturn(true);
+
         $this->useCase = new ProcessAuthUseCase(
             $this->authManager,
             $config,
+            $this->policy,
             new NullLogger(),
             $this->signatureService(),
         );
@@ -80,6 +86,38 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->useCase->execute($this->client, $event);
 
         $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
+    }
+
+    public function testRejectsAuthenticationFromNonTenantPubkey(): void
+    {
+        $challenge = $this->authManager->generateChallenge($this->client->getId());
+        $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
+
+        $config = $this->createStub(RelayConfigInterface::class);
+        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+
+        $policy = $this->createStub(RelayPolicyInterface::class);
+        $policy->method('allowsAuthentication')->willReturn(false);
+
+        $useCase = new ProcessAuthUseCase(
+            $this->authManager,
+            $config,
+            $policy,
+            new NullLogger(),
+            $this->signatureService(),
+        );
+
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $data = json_decode($json, true);
+                assert(is_array($data));
+
+                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'restricted');
+            }));
+
+        $useCase->execute($this->client, $event);
+
+        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 
     public function testIssuesChallengeWhenNoneOutstanding(): void

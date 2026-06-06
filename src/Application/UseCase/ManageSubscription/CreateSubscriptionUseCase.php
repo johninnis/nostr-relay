@@ -17,7 +17,6 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
@@ -57,8 +56,9 @@ final class CreateSubscriptionUseCase
             $scopedFilters = $this->policy->filterForClient($client, $filters);
             $modifiedFilters = $scopedFilters->getFilters();
 
-            if ($scopedFilters->wasNarrowed()) {
+            if ($scopedFilters->isBeyondScope()) {
                 $client->send(new NoticeMessage('limited to readable scope: authenticate for full access'));
+                $this->authManager->challenge($client);
             }
 
             $subscription = Subscription::create($subscriptionId, $modifiedFilters)
@@ -69,9 +69,6 @@ final class CreateSubscriptionUseCase
             async(function () use ($client, $subscription, $modifiedFilters) {
                 $this->sendStoredEvents($client, $subscription, $modifiedFilters);
             });
-        } catch (AuthRequiredException) {
-            $this->authManager->challenge($client);
-            $client->send(new ClosedMessage($subscriptionId, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Subscription rejected by policy', [

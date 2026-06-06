@@ -14,7 +14,6 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
@@ -78,12 +77,12 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->useCase->execute($client, $subId, $filters);
     }
 
-    public function testNarrowedFiltersSendNoticeBeforeCount(): void
+    public function testBeyondScopeSendsNoticeAndChallengeThenCount(): void
     {
         $subId = SubscriptionId::fromString('count-1');
 
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::fromMapping([Filter::fromArray([])], [Filter::fromArray(['kinds' => [1]])]),
+            ScopedFilters::scoped([Filter::fromArray(['kinds' => [1]])], true),
         );
         $this->eventStore->method('countByFilters')->willReturn(7);
 
@@ -99,7 +98,8 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->useCase->execute($client, $subId, [new Filter()]);
 
         $this->assertSame('NOTICE', $sent[0][0]);
-        $this->assertSame('COUNT', $sent[1][0]);
+        $this->assertSame('AUTH', $sent[1][0]);
+        $this->assertSame('COUNT', $sent[2][0]);
     }
 
     public function testPolicyViolationSendsClosedMessage(): void
@@ -121,30 +121,6 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $client = $this->makeClient($connection);
 
         $this->useCase->execute($client, $subId, $filters);
-    }
-
-    public function testAuthRequiredSendsAuthChallengeAndClosedMessage(): void
-    {
-        $subId = SubscriptionId::fromString('count-1');
-        $filters = [new Filter()];
-
-        $this->policy->method('allowSubscription')
-            ->willThrowException(new AuthRequiredException('auth needed'));
-
-        $sentMessages = [];
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connection->method('sendText')
-            ->willReturnCallback(static function (string $json) use (&$sentMessages): void {
-                $sentMessages[] = json_decode($json, true);
-            });
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $subId, $filters);
-
-        $this->assertCount(2, $sentMessages);
-        $this->assertSame('AUTH', $sentMessages[0][0]);
-        $this->assertSame('CLOSED', $sentMessages[1][0]);
-        $this->assertStringContainsString('auth-required', (string) $sentMessages[1][2]);
     }
 
     public function testRateLimitSendsClosedMessage(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Domain\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 
 final readonly class GuestFilterRules
 {
@@ -25,13 +26,19 @@ final readonly class GuestFilterRules
         return $filter->withAuthors($this->tenantHexKeys);
     }
 
-    public function injectReadableKinds(Filter $filter): Filter
+    public function constrainKindsToReadable(Filter $filter): Filter
     {
-        if (!$filter->hasKinds() && [] !== $this->readableKinds) {
+        if ([] === $this->readableKinds) {
+            return $filter;
+        }
+
+        if (!$filter->hasKinds()) {
             return $filter->withKinds($this->readableKinds);
         }
 
-        return $filter;
+        $requested = array_map(static fn (EventKind $kind): int => $kind->toInt(), $filter->getKinds() ?? []);
+
+        return $filter->withKinds(array_values(array_intersect($requested, $this->readableKinds)));
     }
 
     public function authorsWithinTenants(Filter $filter): bool

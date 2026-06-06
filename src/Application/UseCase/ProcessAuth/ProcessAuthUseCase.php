@@ -11,6 +11,7 @@ use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
+use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Psr\Log\LoggerInterface;
@@ -25,6 +26,7 @@ final class ProcessAuthUseCase
     public function __construct(
         private readonly AuthenticationManager $authManager,
         private readonly RelayConfigInterface $config,
+        private readonly RelayPolicyInterface $policy,
         private readonly LoggerInterface $logger,
         SignatureServiceInterface $signatureService,
     ) {
@@ -63,6 +65,12 @@ final class ProcessAuthUseCase
             $eventTime = $event->getCreatedAt()->toInt();
             if (abs($now - $eventTime) > self::TIMESTAMP_TOLERANCE_SECONDS) {
                 $client->send(new OkMessage($event->getId(), false, 'auth-required: timestamp out of range'));
+
+                return;
+            }
+
+            if (!$this->policy->allowsAuthentication($event->getPubkey())) {
+                $client->send(new OkMessage($event->getId(), false, 'restricted: authentication is limited to relay tenants'));
 
                 return;
             }

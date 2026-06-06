@@ -31,23 +31,32 @@ final class GuestFilterRulesTest extends TestCase
         self::assertSame([self::TENANT], $constrained->getAuthors());
     }
 
-    public function testInjectReadableKindsAddsKindsWhenFilterHasNone(): void
+    public function testConstrainKindsFillsReadableWhenFilterHasNone(): void
     {
         $rules = new GuestFilterRules([self::TENANT], [1, 7]);
 
-        $constrained = $rules->injectReadableKinds(new Filter());
+        $constrained = $rules->constrainKindsToReadable(new Filter());
 
         self::assertTrue($constrained->hasKinds());
         self::assertSame([1, 7], array_map(static fn ($kind) => $kind->toInt(), $constrained->getKinds() ?? []));
     }
 
-    public function testInjectReadableKindsLeavesExplicitKindsUntouched(): void
+    public function testConstrainKindsIntersectsRequestedWithReadable(): void
     {
         $rules = new GuestFilterRules([self::TENANT], [1, 7]);
 
-        $constrained = $rules->injectReadableKinds(new Filter(kinds: [1]));
+        $constrained = $rules->constrainKindsToReadable(new Filter(kinds: [1, 4]));
 
         self::assertSame([1], array_map(static fn ($kind) => $kind->toInt(), $constrained->getKinds() ?? []));
+    }
+
+    public function testConstrainKindsEmptyWhenAllRequestedAreUnreadable(): void
+    {
+        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+
+        $constrained = $rules->constrainKindsToReadable(new Filter(kinds: [4]));
+
+        self::assertSame([], $constrained->getKinds());
     }
 
     public function testAuthorsWithinTenants(): void

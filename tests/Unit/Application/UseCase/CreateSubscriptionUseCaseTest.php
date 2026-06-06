@@ -80,13 +80,13 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
     }
 
-    public function testNarrowedFiltersSendNotice(): void
+    public function testBeyondScopeSendsNoticeAndChallenge(): void
     {
         $subId = SubscriptionId::fromString('sub-1');
 
         $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::fromMapping([Filter::fromArray([])], [Filter::fromArray(['kinds' => [1]])]),
+            ScopedFilters::scoped([Filter::fromArray(['kinds' => [1]])], true),
         );
         $this->eventStore->method('findByFilters')->willReturn([]);
 
@@ -101,8 +101,22 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
         $this->useCase->execute($client, $subId, [new Filter()]);
 
-        $notices = array_filter($sent, static fn (array $message): bool => 'NOTICE' === $message[0]);
-        $this->assertNotEmpty($notices);
+        $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
+        $this->assertContains('NOTICE', $types);
+        $this->assertContains('AUTH', $types);
+    }
+
+    public function testFullyOutOfScopeSubscriptionIsCreatedNotRejected(): void
+    {
+        $subId = SubscriptionId::fromString('sub-1');
+
+        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped([], true));
+        $this->eventStore->method('findByFilters')->willReturn([]);
+
+        $this->useCase->execute($this->client, $subId, [new Filter(authors: ['ff'])]);
+
+        $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testPolicyViolationSendsClosedMessage(): void

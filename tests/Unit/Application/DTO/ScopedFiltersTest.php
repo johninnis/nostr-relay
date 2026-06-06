@@ -10,34 +10,31 @@ use PHPUnit\Framework\TestCase;
 
 final class ScopedFiltersTest extends TestCase
 {
-    public function testUnchangedReportsNoNarrowing(): void
+    public function testUnchangedIsNotBeyondScope(): void
     {
         $filters = [new Filter()];
 
         $scoped = ScopedFilters::unchanged($filters);
 
         $this->assertSame($filters, $scoped->getFilters());
-        $this->assertFalse($scoped->wasNarrowed());
+        $this->assertFalse($scoped->isBeyondScope());
     }
 
-    public function testFromMappingDetectsNarrowing(): void
+    public function testScopedCarriesFiltersAndBeyondScopeFlag(): void
     {
-        $original = [Filter::fromArray([])];
-        $narrowed = [Filter::fromArray(['kinds' => [1]])];
+        $filters = [new Filter(kinds: [1])];
 
-        $scoped = ScopedFilters::fromMapping($original, $narrowed);
+        $scoped = ScopedFilters::scoped($filters, true);
 
-        $this->assertSame($narrowed, $scoped->getFilters());
-        $this->assertTrue($scoped->wasNarrowed());
+        $this->assertSame($filters, $scoped->getFilters());
+        $this->assertTrue($scoped->isBeyondScope());
     }
 
-    public function testFromMappingReportsNoNarrowingWhenCanonicallyIdentical(): void
+    public function testScopedCanDropAllFiltersWhileFlaggingBeyondScope(): void
     {
-        $original = [Filter::fromArray(['kinds' => [1]])];
-        $scoped = [Filter::fromArray(['kinds' => [1]])];
+        $scoped = ScopedFilters::scoped([], true);
 
-        $result = ScopedFilters::fromMapping($original, $scoped);
-
-        $this->assertFalse($result->wasNarrowed());
+        $this->assertSame([], $scoped->getFilters());
+        $this->assertTrue($scoped->isBeyondScope());
     }
 }

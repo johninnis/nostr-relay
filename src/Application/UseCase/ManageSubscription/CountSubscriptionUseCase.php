@@ -13,7 +13,6 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
@@ -41,16 +40,14 @@ final class CountSubscriptionUseCase
 
             $scopedFilters = $this->policy->filterForClient($client, $filters);
 
-            if ($scopedFilters->wasNarrowed()) {
+            if ($scopedFilters->isBeyondScope()) {
                 $client->send(new NoticeMessage('limited to readable scope: authenticate for full access'));
+                $this->authManager->challenge($client);
             }
 
             $count = $this->eventStore->countByFilters($scopedFilters->getFilters());
 
             $client->send(new CountMessage($subscriptionId, $count));
-        } catch (AuthRequiredException) {
-            $this->authManager->challenge($client);
-            $client->send(new ClosedMessage($subscriptionId, 'auth-required: authentication required'));
         } catch (PolicyViolationException $e) {
             $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
         } catch (RateLimitException) {

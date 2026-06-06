@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\DTO;
 
-use Innis\Nostr\Core\Domain\Entity\Filter;
-
 final readonly class ScopedFilters
 {
     private function __construct(
         private array $filters,
-        private bool $narrowed,
+        private bool $beyondScope,
     ) {
     }
 
@@ -19,9 +17,9 @@ final readonly class ScopedFilters
         return new self($filters, false);
     }
 
-    public static function fromMapping(array $original, array $scoped): self
+    public static function scoped(array $filters, bool $beyondScope): self
     {
-        return new self($scoped, self::narrowed($original, $scoped));
+        return new self($filters, $beyondScope);
     }
 
     public function getFilters(): array
@@ -29,15 +27,8 @@ final readonly class ScopedFilters
         return $this->filters;
     }
 
-    public function wasNarrowed(): bool
+    public function isBeyondScope(): bool
     {
-        return $this->narrowed;
-    }
-
-    private static function narrowed(array $original, array $scoped): bool
-    {
-        $canonical = static fn (Filter $filter): array => $filter->toArray();
-
-        return array_map($canonical, $original) !== array_map($canonical, $scoped);
+        return $this->beyondScope;
     }
 }

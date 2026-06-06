@@ -113,6 +113,7 @@ final class RelayServerFactory
         $processAuthUseCase = new ProcessAuthUseCase(
             $authManager,
             $this->config,
+            $this->policy,
             $this->logger,
             $this->signatureService
         );

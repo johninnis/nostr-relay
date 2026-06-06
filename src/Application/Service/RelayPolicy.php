@@ -98,18 +98,6 @@ final class RelayPolicy implements RelayPolicyInterface
     public function allowSubscription(RelayClient $client, array $filters): void
     {
         $this->subscriptionLimits->enforce($client, $filters);
-
-        if ($this->isOpenRelay() || $this->isTenant($client)) {
-            return;
-        }
-
-        if (!$this->isGuestAllowedSubscription($filters)) {
-            $this->logger->info('Auth required for subscription', [
-                'client_id' => (string) $client->getId(),
-            ]);
-
-            throw new AuthRequiredException('authentication required for this subscription');
-        }
     }
 
     public function filterForClient(RelayClient $client, array $filters): ScopedFilters
@@ -118,14 +106,24 @@ final class RelayPolicy implements RelayPolicyInterface
             return ScopedFilters::unchanged($filters);
         }
 
-        $scoped = array_map(
-            fn (Filter $filter): Filter => $this->guestFilterRules->injectReadableKinds(
-                $this->guestFilterRules->constrainAuthorsToTenants($filter),
-            ),
-            $filters
+        $beyondScope = array_reduce(
+            $filters,
+            fn (bool $carry, Filter $filter): bool => $carry || $this->isBeyondGuestScope($filter),
+            false,
         );
 
-        return ScopedFilters::fromMapping($filters, $scoped);
+        $scoped = array_map(fn (Filter $filter): Filter => $this->constrainForGuest($filter), $filters);
+
+        return ScopedFilters::scoped($scoped, $beyondScope);
+    }
+
+    private function constrainForGuest(Filter $filter): Filter
+    {
+        $constrained = $this->guestReadFromTenants
+            ? $this->guestFilterRules->constrainAuthorsToTenants($filter)
+            : $filter;
+
+        return $this->guestFilterRules->constrainKindsToReadable($constrained);
     }
 
     public function canClientReceiveEvent(RelayClient $client, Event $event): bool
@@ -155,6 +153,11 @@ final class RelayPolicy implements RelayPolicyInterface
         return $this->isOpenRelay() || $this->isTenant($client);
     }
 
+    public function allowsAuthentication(PublicKey $pubkey): bool
+    {
+        return $this->isOpenRelay() || $this->isTenantPubkey($pubkey);
+    }
+
     private function isOpenRelay(): bool
     {
         return empty($this->tenantPubkeys);
@@ -181,19 +184,13 @@ final class RelayPolicy implements RelayPolicyInterface
         return !empty(array_intersect($event->getTags()->getPubkeys(), $this->tenantHexKeys));
     }
 
-    private function isGuestAllowedSubscription(array $filters): bool
+    private function isBeyondGuestScope(Filter $filter): bool
     {
-        foreach ($filters as $filter) {
-            if ($this->guestReadFromTenants && !$this->guestFilterRules->authorsWithinTenants($filter)) {
-                return false;
-            }
-
-            if (!$this->guestFilterRules->kindsWithinReadable($filter)) {
-                return false;
-            }
+        if ($this->guestReadFromTenants && !$this->guestFilterRules->authorsWithinTenants($filter)) {
+            return true;
         }
 
-        return true;
+        return !$this->guestFilterRules->kindsWithinReadable($filter);
     }
 
     private function resolveTenants(array $tenants): array

@@ -69,6 +69,7 @@ final class MessageRouterTest extends TestCase
         $this->serialiser = $this->createStub(MessageSerialiserInterface::class);
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
+        $this->policy->method('allowsAuthentication')->willReturn(true);
         $rateLimiter = $this->createStub(RateLimiterInterface::class);
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
@@ -118,6 +119,7 @@ final class MessageRouterTest extends TestCase
         $processAuth = new ProcessAuthUseCase(
             $this->authManager,
             $config,
+            $this->policy,
             $logger,
             Secp256k1SignatureAdapter::create(),
         );
