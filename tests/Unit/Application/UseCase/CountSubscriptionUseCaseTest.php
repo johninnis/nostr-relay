@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
@@ -61,7 +62,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionId::fromString('count-1');
         $filters = [new Filter()];
 
-        $this->policy->method('filterForClient')->willReturn($filters);
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(42);
 
         $connection = $this->createMock(ClientConnectionInterface::class);
@@ -75,6 +76,30 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $client = $this->makeClient($connection);
 
         $this->useCase->execute($client, $subId, $filters);
+    }
+
+    public function testNarrowedFiltersSendNoticeBeforeCount(): void
+    {
+        $subId = SubscriptionId::fromString('count-1');
+
+        $this->policy->method('filterForClient')->willReturn(
+            ScopedFilters::fromMapping([Filter::fromArray([])], [Filter::fromArray(['kinds' => [1]])]),
+        );
+        $this->eventStore->method('countByFilters')->willReturn(7);
+
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $decoded = json_decode($json, true);
+            assert(is_array($decoded));
+            $sent[] = $decoded;
+        });
+        $client = $this->makeClient($connection);
+
+        $this->useCase->execute($client, $subId, [new Filter()]);
+
+        $this->assertSame('NOTICE', $sent[0][0]);
+        $this->assertSame('COUNT', $sent[1][0]);
     }
 
     public function testPolicyViolationSendsClosedMessage(): void

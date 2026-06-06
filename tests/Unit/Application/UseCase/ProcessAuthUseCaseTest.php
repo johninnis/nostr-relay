@@ -82,20 +82,25 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
     }
 
-    public function testRejectsWhenNoChallengeIssued(): void
+    public function testIssuesChallengeWhenNoneOutstanding(): void
     {
         $event = $this->createAuthEvent('some-challenge', 'wss://relay.example.com');
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
-
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'no challenge');
-            }));
+        $sent = [];
+        $this->connection->expects($this->exactly(2))->method('sendText')
+            ->willReturnCallback(static function (string $json) use (&$sent): void {
+                $decoded = json_decode($json, true);
+                assert(is_array($decoded));
+                $sent[] = $decoded;
+            });
 
         $this->useCase->execute($this->client, $event);
 
+        $this->assertSame('AUTH', $sent[0][0]);
+        $this->assertSame('OK', $sent[1][0]);
+        $this->assertFalse($sent[1][2]);
+        $this->assertStringContainsString('auth-required', (string) $sent[1][3]);
+        $this->assertNotNull($this->authManager->getChallenge($this->client->getId()));
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 

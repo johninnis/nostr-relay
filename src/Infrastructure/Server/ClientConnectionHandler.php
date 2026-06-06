@@ -6,11 +6,9 @@ namespace Innis\Nostr\Relay\Infrastructure\Server;
 
 use Amp\Websocket\WebsocketClient;
 use Amp\Websocket\WebsocketCloseCode;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
@@ -25,7 +23,6 @@ final class ClientConnectionHandler
         private readonly ClientManager $clientManager,
         private readonly ClientDisconnectionHandler $disconnectionHandler,
         private readonly MessageRouter $messageRouter,
-        private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
         private readonly ConnectionGateInterface $connectionGate,
     ) {
@@ -46,12 +43,6 @@ final class ClientConnectionHandler
 
             $adapter = new WebsocketClientAdapter($websocketClient);
             $client = $this->clientManager->registerClient($adapter, $connectionInfo);
-
-            $challenge = $this->authManager->generateChallenge($client->getId());
-            $client->send(new AuthMessage($challenge));
-            $this->logger->info('AUTH challenge sent', [
-                'client_id' => (string) $client->getId(),
-            ]);
 
             while ($message = $websocketClient->receive()) {
                 $this->messageRouter->route($client, $message->buffer());

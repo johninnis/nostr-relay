@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -71,12 +72,37 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $filters = [new Filter()];
 
         $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
-        $this->policy->method('filterForClient')->willReturn($filters);
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
         $this->useCase->execute($this->client, $subId, $filters);
 
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+    }
+
+    public function testNarrowedFiltersSendNotice(): void
+    {
+        $subId = SubscriptionId::fromString('sub-1');
+
+        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
+        $this->policy->method('filterForClient')->willReturn(
+            ScopedFilters::fromMapping([Filter::fromArray([])], [Filter::fromArray(['kinds' => [1]])]),
+        );
+        $this->eventStore->method('findByFilters')->willReturn([]);
+
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $decoded = json_decode($json, true);
+            assert(is_array($decoded));
+            $sent[] = $decoded;
+        });
+        $client = $this->makeClient($connection);
+
+        $this->useCase->execute($client, $subId, [new Filter()]);
+
+        $notices = array_filter($sent, static fn (array $message): bool => 'NOTICE' === $message[0]);
+        $this->assertNotEmpty($notices);
     }
 
     public function testPolicyViolationSendsClosedMessage(): void
@@ -126,7 +152,8 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     public function testSubscriptionLimitSendsClosedMessage(): void
     {
         $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(1);
-        $this->policy->method('filterForClient')->willReturnArgument(1);
+        $this->policy->method('filterForClient')
+            ->willReturnCallback(static fn (RelayClient $client, array $filters): ScopedFilters => ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
         $this->useCase->execute($this->client, SubscriptionId::fromString('sub-1'), [new Filter()]);

@@ -54,7 +54,12 @@ final class CreateSubscriptionUseCase
 
             $this->policy->allowSubscription($client, $filters);
 
-            $modifiedFilters = $this->policy->filterForClient($client, $filters);
+            $scopedFilters = $this->policy->filterForClient($client, $filters);
+            $modifiedFilters = $scopedFilters->getFilters();
+
+            if ($scopedFilters->wasNarrowed()) {
+                $client->send(new NoticeMessage('limited to readable scope: authenticate for full access'));
+            }
 
             $subscription = Subscription::create($subscriptionId, $modifiedFilters)
                 ->withState(SubscriptionState::ACTIVE);

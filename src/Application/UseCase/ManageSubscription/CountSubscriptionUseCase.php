@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Application\UseCase\ManageSubscription;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -38,9 +39,13 @@ final class CountSubscriptionUseCase
 
             $this->policy->allowSubscription($client, $filters);
 
-            $modifiedFilters = $this->policy->filterForClient($client, $filters);
+            $scopedFilters = $this->policy->filterForClient($client, $filters);
 
-            $count = $this->eventStore->countByFilters($modifiedFilters);
+            if ($scopedFilters->wasNarrowed()) {
+                $client->send(new NoticeMessage('limited to readable scope: authenticate for full access'));
+            }
+
+            $count = $this->eventStore->countByFilters($scopedFilters->getFilters());
 
             $client->send(new CountMessage($subscriptionId, $count));
         } catch (AuthRequiredException) {

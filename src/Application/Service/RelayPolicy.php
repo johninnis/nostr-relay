@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
@@ -111,18 +112,20 @@ final class RelayPolicy implements RelayPolicyInterface
         }
     }
 
-    public function filterForClient(RelayClient $client, array $filters): array
+    public function filterForClient(RelayClient $client, array $filters): ScopedFilters
     {
         if ($this->isOpenRelay() || $this->isTenant($client)) {
-            return $filters;
+            return ScopedFilters::unchanged($filters);
         }
 
-        return array_map(
+        $scoped = array_map(
             fn (Filter $filter): Filter => $this->guestFilterRules->injectReadableKinds(
                 $this->guestFilterRules->constrainAuthorsToTenants($filter),
             ),
             $filters
         );
+
+        return ScopedFilters::fromMapping($filters, $scoped);
     }
 
     public function canClientReceiveEvent(RelayClient $client, Event $event): bool

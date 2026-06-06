@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Port;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 
 interface RelayPolicyInterface
@@ -13,7 +14,7 @@ interface RelayPolicyInterface
 
     public function allowSubscription(RelayClient $client, array $filters): void;
 
-    public function filterForClient(RelayClient $client, array $filters): array;
+    public function filterForClient(RelayClient $client, array $filters): ScopedFilters;
 
     public function canClientReceiveEvent(RelayClient $client, Event $event): bool;
 

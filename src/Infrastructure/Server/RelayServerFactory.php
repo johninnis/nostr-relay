@@ -141,7 +141,6 @@ final class RelayServerFactory
             $clientManager,
             $disconnectionHandler,
             $messageRouter,
-            $authManager,
             $this->logger,
             $this->connectionGate ?? new class implements ConnectionGateInterface {
                 public function isIpAllowed(string $ipAddress): bool

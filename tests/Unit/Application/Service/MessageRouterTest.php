@@ -21,6 +21,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
@@ -186,7 +187,7 @@ final class MessageRouterTest extends TestCase
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new ReqMessage($subId, $filters));
         $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
-        $this->policy->method('filterForClient')->willReturn($filters);
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
         $this->router->route($this->client, '["REQ","sub-1",{}]');
@@ -206,7 +207,7 @@ final class MessageRouterTest extends TestCase
                 new CloseMessage($subId),
             );
         $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
-        $this->policy->method('filterForClient')->willReturn($filters);
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
         $this->router->route($this->client, '["REQ","sub-1",{}]');
@@ -254,7 +255,7 @@ final class MessageRouterTest extends TestCase
         $filters = [new Filter()];
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new CountMessage($subId, $filters));
-        $this->policy->method('filterForClient')->willReturn($filters);
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(42);
 
         $connection = $this->createMock(ClientConnectionInterface::class);

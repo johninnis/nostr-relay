@@ -38,7 +38,8 @@ final class ProcessAuthUseCase
 
             $challenge = $this->authManager->getChallenge($client->getId());
             if (null === $challenge) {
-                $client->send(new OkMessage($event->getId(), false, 'auth-required: no challenge issued'));
+                $this->authManager->challenge($client);
+                $client->send(new OkMessage($event->getId(), false, 'auth-required: challenge issued, please retry'));
 
                 return;
             }
