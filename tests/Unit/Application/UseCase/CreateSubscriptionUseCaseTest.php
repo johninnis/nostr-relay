@@ -7,7 +7,6 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
-use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -21,6 +20,7 @@ use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -71,7 +71,6 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionId::fromString('sub-1');
         $filters = [new Filter()];
 
-        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
@@ -84,7 +83,6 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     {
         $subId = SubscriptionId::fromString('sub-1');
 
-        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
         $this->policy->method('filterForClient')->willReturn(
             ScopedFilters::scoped([Filter::fromArray(['kinds' => [1]])], true),
         );
@@ -110,7 +108,6 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     {
         $subId = SubscriptionId::fromString('sub-1');
 
-        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped([], true));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
@@ -165,7 +162,12 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
     public function testSubscriptionLimitSendsClosedMessage(): void
     {
-        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(1);
+        $this->policy->method('allowSubscription')
+            ->willReturnCallback(static function (RelayClient $client, array $filters): void {
+                if ($client->getSubscriptionCount() >= 1) {
+                    throw new PolicyViolationException('too many subscriptions (max 1)');
+                }
+            });
         $this->policy->method('filterForClient')
             ->willReturnCallback(static fn (RelayClient $client, array $filters): ScopedFilters => ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);

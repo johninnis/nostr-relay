@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Application\DTO;
+namespace Innis\Nostr\Relay\Domain\ValueObject;
 
 final readonly class ScopedFilters
 {

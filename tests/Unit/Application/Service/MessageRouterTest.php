@@ -6,7 +6,9 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Service\EventValidationService;
 use Innis\Nostr\Core\Domain\Service\MessageSerialiserInterface;
+use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
@@ -21,7 +23,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
-use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
@@ -43,6 +44,7 @@ use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use InvalidArgumentException;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
@@ -91,6 +93,9 @@ final class MessageRouterTest extends TestCase
             $logger,
         );
 
+        $signatureService = $this->signatureService();
+        $eventValidator = new EventValidationService($signatureService, new NipComplianceValidator($signatureService));
+
         $processEvent = new ProcessEventSubmissionUseCase(
             $this->eventStore,
             $this->policy,
@@ -99,7 +104,7 @@ final class MessageRouterTest extends TestCase
             $rateLimiter,
             $metrics,
             $logger,
-            Secp256k1SignatureAdapter::create(),
+            $eventValidator,
         );
 
         $createSubscription = new CreateSubscriptionUseCase(
@@ -121,7 +126,7 @@ final class MessageRouterTest extends TestCase
             $config,
             $this->policy,
             $logger,
-            Secp256k1SignatureAdapter::create(),
+            $eventValidator,
         );
 
         $countSubscription = new CountSubscriptionUseCase(
@@ -188,7 +193,6 @@ final class MessageRouterTest extends TestCase
         $filters = [new Filter()];
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new ReqMessage($subId, $filters));
-        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
@@ -208,7 +212,6 @@ final class MessageRouterTest extends TestCase
                 new ReqMessage($subId, $filters),
                 new CloseMessage($subId),
             );
-        $this->policy->method('getMaxSubscriptionsPerClient')->willReturn(20);
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 

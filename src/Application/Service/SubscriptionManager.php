@@ -39,7 +39,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         $this->subscriptions[$key] = $subscription;
         $this->clientIdByKey[$key] = $clientId;
         $this->addToKindIndex($subscription, $key);
-        $this->subscriptionsByClient[$clientIdStr][] = $key;
+        $this->subscriptionsByClient[$clientIdStr][$key] = true;
 
         $this->metrics->incrementSubscriptions();
 
@@ -76,9 +76,10 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     public function removeAllForClient(ClientId $clientId): void
     {
         $clientIdStr = (string) $clientId;
-        $keys = $this->subscriptionsByClient[$clientIdStr] ?? [];
+        $keys = array_keys($this->subscriptionsByClient[$clientIdStr] ?? []);
 
         foreach ($keys as $key) {
+            $key = (string) $key;
             if (isset($this->subscriptions[$key])) {
                 $this->removeFromKindIndex($this->subscriptions[$key], $key);
                 unset($this->subscriptions[$key], $this->clientIdByKey[$key]);
@@ -100,13 +101,11 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     public function getSubscriptionsForEvent(int $eventKind): array
     {
-        $keys = array_merge(
-            $this->subscriptionsByKind[$eventKind] ?? [],
-            $this->subscriptionsByKind['*'] ?? []
-        );
+        $keys = ($this->subscriptionsByKind[$eventKind] ?? [])
+            + ($this->subscriptionsByKind['*'] ?? []);
 
         $results = [];
-        foreach (array_unique($keys) as $key) {
+        foreach ($keys as $key => $unused) {
             if (isset($this->subscriptions[$key], $this->clientIdByKey[$key])) {
                 $results[] = new SubscriptionMatch($this->clientIdByKey[$key], $this->subscriptions[$key]);
             }
@@ -117,7 +116,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     public function getSubscriptionsForClient(ClientId $clientId): SubscriptionCollection
     {
-        $keys = $this->subscriptionsByClient[(string) $clientId] ?? [];
+        $keys = array_keys($this->subscriptionsByClient[(string) $clientId] ?? []);
 
         $subscriptions = [];
         foreach ($keys as $key) {
@@ -159,12 +158,12 @@ final class SubscriptionManager implements SubscriptionLookupInterface
                 foreach ($filter->getKinds() as $kind) {
                     $kindInt = $kind->toInt();
                     if (!isset($indexedKinds[$kindInt])) {
-                        $this->subscriptionsByKind[$kindInt][] = $key;
+                        $this->subscriptionsByKind[$kindInt][$key] = true;
                         $indexedKinds[$kindInt] = true;
                     }
                 }
             } elseif (!isset($indexedKinds['*'])) {
-                $this->subscriptionsByKind['*'][] = $key;
+                $this->subscriptionsByKind['*'][$key] = true;
                 $indexedKinds['*'] = true;
             }
         }
@@ -192,14 +191,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     private function removeKindEntry(string|int $kind, string $key): void
     {
-        if (!isset($this->subscriptionsByKind[$kind])) {
-            return;
-        }
-
-        $this->subscriptionsByKind[$kind] = array_filter(
-            $this->subscriptionsByKind[$kind],
-            static fn ($id) => $id !== $key
-        );
+        unset($this->subscriptionsByKind[$kind][$key]);
 
         if (empty($this->subscriptionsByKind[$kind])) {
             unset($this->subscriptionsByKind[$kind]);
@@ -208,14 +200,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     private function removeFromClientIndex(string $clientId, string $key): void
     {
-        if (!isset($this->subscriptionsByClient[$clientId])) {
-            return;
-        }
-
-        $this->subscriptionsByClient[$clientId] = array_filter(
-            $this->subscriptionsByClient[$clientId],
-            static fn ($id) => $id !== $key
-        );
+        unset($this->subscriptionsByClient[$clientId][$key]);
 
         if (empty($this->subscriptionsByClient[$clientId])) {
             unset($this->subscriptionsByClient[$clientId]);

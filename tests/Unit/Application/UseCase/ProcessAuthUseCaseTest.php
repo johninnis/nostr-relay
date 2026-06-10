@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
@@ -42,6 +44,11 @@ final class ProcessAuthUseCaseTest extends TestCase
         return $this->sigService ??= Secp256k1SignatureAdapter::create();
     }
 
+    private function eventValidator(): EventValidationService
+    {
+        return new EventValidationService($this->signatureService(), new NipComplianceValidator($this->signatureService()));
+    }
+
     protected function setUp(): void
     {
         $this->authManager = new AuthenticationManager();
@@ -58,7 +65,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $config,
             $this->policy,
             new NullLogger(),
-            $this->signatureService(),
+            $this->eventValidator(),
         );
 
         $this->connection = $this->createMock(ClientConnectionInterface::class);
@@ -104,7 +111,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $config,
             $policy,
             new NullLogger(),
-            $this->signatureService(),
+            $this->eventValidator(),
         );
 
         $this->connection->expects($this->once())->method('sendText')

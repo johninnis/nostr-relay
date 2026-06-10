@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
@@ -88,7 +90,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $this->rateLimiter,
             $metrics,
             $logger,
-            $this->signatureService(),
+            new EventValidationService($this->signatureService(), new NipComplianceValidator($this->signatureService())),
         );
     }
 

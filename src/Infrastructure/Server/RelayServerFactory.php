@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
+use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Infrastructure\Adapter\JsonMessageSerialiserAdapter;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
@@ -85,6 +87,11 @@ final class RelayServerFactory
         $eventRateLimiter = new TokenBucketRateLimiter($this->config, RateLimitMetric::Events);
         $subscriptionRateLimiter = new TokenBucketRateLimiter($this->config, RateLimitMetric::Subscriptions);
 
+        $eventValidator = new EventValidationService(
+            $this->signatureService,
+            new NipComplianceValidator($this->signatureService)
+        );
+
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $this->eventStore,
             $this->policy,
@@ -93,7 +100,7 @@ final class RelayServerFactory
             $eventRateLimiter,
             $metrics,
             $this->logger,
-            $this->signatureService
+            $eventValidator
         );
 
         $createSubscriptionUseCase = new CreateSubscriptionUseCase(
@@ -115,7 +122,7 @@ final class RelayServerFactory
             $this->config,
             $this->policy,
             $this->logger,
-            $this->signatureService
+            $eventValidator
         );
 
         $countSubscriptionUseCase = new CountSubscriptionUseCase(

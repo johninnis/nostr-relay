@@ -5,26 +5,25 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
-use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
+use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 
 final class RelayPolicy implements RelayPolicyInterface
 {
     private readonly array $tenantPubkeys;
-    private readonly array $tenantHexKeys;
+    private readonly array $tenantHexSet;
     private readonly array $guestReadKinds;
+    private readonly array $guestReadKindSet;
     private readonly bool $guestReadFromTenants;
     private readonly array $guestWriteRules;
-    private readonly int $maxSubscriptions;
     private readonly int $maxEventSize;
     private readonly SubscriptionLimits $subscriptionLimits;
     private readonly GuestFilterRules $guestFilterRules;
@@ -35,8 +34,8 @@ final class RelayPolicy implements RelayPolicyInterface
         array $config = [],
     ) {
         $this->tenantPubkeys = $this->resolveTenants($config['tenants'] ?? []);
-        $this->tenantHexKeys = array_map(static fn (PublicKey $pk) => $pk->toHex(), $this->tenantPubkeys);
-        $this->maxSubscriptions = $config['max_subscriptions'] ?? 20;
+        $tenantHexKeys = array_map(static fn (PublicKey $pk) => $pk->toHex(), $this->tenantPubkeys);
+        $this->tenantHexSet = array_flip($tenantHexKeys);
         $this->maxEventSize = $config['max_event_size'] ?? 65536;
 
         $guest = $config['guest'] ?? [];
@@ -53,14 +52,15 @@ final class RelayPolicy implements RelayPolicyInterface
             }
         }
         $this->guestReadKinds = array_values(array_unique($allKinds));
+        $this->guestReadKindSet = array_flip($this->guestReadKinds);
         $this->guestReadFromTenants = $fromTenants;
 
         $this->subscriptionLimits = new SubscriptionLimits(
-            $this->maxSubscriptions,
+            $config['max_subscriptions'] ?? 20,
             $config['max_filters'] ?? 5,
             $config['max_query_limit'] ?? 1000,
         );
-        $this->guestFilterRules = new GuestFilterRules($this->tenantHexKeys, $this->guestReadKinds);
+        $this->guestFilterRules = new GuestFilterRules($tenantHexKeys, $this->guestReadKinds);
     }
 
     public function allowEventSubmission(RelayClient $client, Event $event): void
@@ -106,24 +106,7 @@ final class RelayPolicy implements RelayPolicyInterface
             return ScopedFilters::unchanged($filters);
         }
 
-        $beyondScope = array_reduce(
-            $filters,
-            fn (bool $carry, Filter $filter): bool => $carry || $this->isBeyondGuestScope($filter),
-            false,
-        );
-
-        $scoped = array_map(fn (Filter $filter): Filter => $this->constrainForGuest($filter), $filters);
-
-        return ScopedFilters::scoped($scoped, $beyondScope);
-    }
-
-    private function constrainForGuest(Filter $filter): Filter
-    {
-        $constrained = $this->guestReadFromTenants
-            ? $this->guestFilterRules->constrainAuthorsToTenants($filter)
-            : $filter;
-
-        return $this->guestFilterRules->constrainKindsToReadable($constrained);
+        return $this->guestFilterRules->scope($filters, $this->guestReadFromTenants);
     }
 
     public function canClientReceiveEvent(RelayClient $client, Event $event): bool
@@ -132,7 +115,7 @@ final class RelayPolicy implements RelayPolicyInterface
             return true;
         }
 
-        if (!empty($this->guestReadKinds) && !in_array($event->getKind()->toInt(), $this->guestReadKinds, true)) {
+        if ([] !== $this->guestReadKindSet && !isset($this->guestReadKindSet[$event->getKind()->toInt()])) {
             return false;
         }
 
@@ -141,11 +124,6 @@ final class RelayPolicy implements RelayPolicyInterface
         }
 
         return true;
-    }
-
-    public function getMaxSubscriptionsPerClient(): int
-    {
-        return $this->maxSubscriptions;
     }
 
     public function isRateLimitExempt(RelayClient $client): bool
@@ -165,8 +143,8 @@ final class RelayPolicy implements RelayPolicyInterface
 
     private function isTenant(RelayClient $client): bool
     {
-        foreach ($this->tenantPubkeys as $tenantPk) {
-            if ($this->authManager->isAuthenticatedAs($client->getId(), $tenantPk)) {
+        foreach ($this->authManager->getAuthenticatedPubkeys($client->getId()) as $pubkey) {
+            if (isset($this->tenantHexSet[$pubkey->toHex()])) {
                 return true;
             }
         }
@@ -176,21 +154,18 @@ final class RelayPolicy implements RelayPolicyInterface
 
     private function isTenantPubkey(PublicKey $pubkey): bool
     {
-        return in_array($pubkey->toHex(), $this->tenantHexKeys, true);
+        return isset($this->tenantHexSet[$pubkey->toHex()]);
     }
 
     private function isTaggedToTenant(Event $event): bool
     {
-        return !empty(array_intersect($event->getTags()->getPubkeys(), $this->tenantHexKeys));
-    }
-
-    private function isBeyondGuestScope(Filter $filter): bool
-    {
-        if ($this->guestReadFromTenants && !$this->guestFilterRules->authorsWithinTenants($filter)) {
-            return true;
+        foreach ($event->getTags()->getPubkeys() as $taggedPubkey) {
+            if (isset($this->tenantHexSet[$taggedPubkey])) {
+                return true;
+            }
         }
 
-        return !$this->guestFilterRules->kindsWithinReadable($filter);
+        return false;
     }
 
     private function resolveTenants(array $tenants): array

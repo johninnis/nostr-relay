@@ -44,13 +44,6 @@ final class CreateSubscriptionUseCase
                 $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
             }
 
-            if (!$this->policy->isRateLimitExempt($client)) {
-                $maxSubscriptions = $this->policy->getMaxSubscriptionsPerClient();
-                if ($client->getSubscriptionCount() >= $maxSubscriptions) {
-                    throw new PolicyViolationException("Too many subscriptions (max {$maxSubscriptions})");
-                }
-            }
-
             $this->policy->allowSubscription($client, $filters);
 
             $scopedFilters = $this->policy->filterForClient($client, $filters);
@@ -61,8 +54,7 @@ final class CreateSubscriptionUseCase
                 $this->authManager->challenge($client);
             }
 
-            $subscription = Subscription::create($subscriptionId, $modifiedFilters)
-                ->withState(SubscriptionState::ACTIVE);
+            $subscription = Subscription::create($subscriptionId, $modifiedFilters, SubscriptionState::ACTIVE);
 
             $this->subscriptionManager->addSubscription($client->getId(), $subscription);
 

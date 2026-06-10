@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\UseCase\ProcessAuth;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Service\EventValidationService;
-use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
-use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
+use Innis\Nostr\Core\Domain\Service\EventValidationServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
@@ -21,16 +19,13 @@ final class ProcessAuthUseCase
 {
     private const int TIMESTAMP_TOLERANCE_SECONDS = 600;
 
-    private readonly EventValidationService $eventValidator;
-
     public function __construct(
         private readonly AuthenticationManager $authManager,
         private readonly RelayConfigInterface $config,
         private readonly RelayPolicyInterface $policy,
         private readonly LoggerInterface $logger,
-        SignatureServiceInterface $signatureService,
+        private readonly EventValidationServiceInterface $eventValidator,
     ) {
-        $this->eventValidator = new EventValidationService($signatureService, new NipComplianceValidator($signatureService));
     }
 
     public function execute(RelayClient $client, Event $event): void

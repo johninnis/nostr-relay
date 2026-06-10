@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Tests\Unit\Application\DTO;
+namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Relay\Application\DTO\ScopedFilters;
+use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use PHPUnit\Framework\TestCase;
 
 final class ScopedFiltersTest extends TestCase

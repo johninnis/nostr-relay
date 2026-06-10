@@ -16,8 +16,10 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
     private const int HARD_MAX_BUCKETS = 5000;
     private const float STALE_AFTER_SECONDS = 60.0;
     private const float OVERFLOW_RETAIN_RATIO = 0.9;
+    private const float EVICTION_INTERVAL_SECONDS = 5.0;
 
     private array $buckets = [];
+    private float $lastEvictionAt = 0.0;
 
     public function __construct(
         private readonly RelayConfigInterface $config,
@@ -62,6 +64,12 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
             return;
         }
 
+        if ($now - $this->lastEvictionAt < self::EVICTION_INTERVAL_SECONDS
+            && count($this->buckets) < self::HARD_MAX_BUCKETS) {
+            return;
+        }
+
+        $this->lastEvictionAt = $now;
         $staleBefore = $now - self::STALE_AFTER_SECONDS;
 
         $this->buckets = array_filter(

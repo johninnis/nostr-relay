@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Domain\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
 {
@@ -13,6 +14,35 @@ final readonly class GuestFilterRules
         private array $tenantHexKeys,
         private array $readableKinds,
     ) {
+    }
+
+    public function scope(array $filters, bool $fromTenantsOnly): ScopedFilters
+    {
+        $beyondScope = false;
+        $scoped = [];
+
+        foreach ($filters as $filter) {
+            $beyondScope = $beyondScope || $this->isBeyondScope($filter, $fromTenantsOnly);
+            $scoped[] = $this->constrain($filter, $fromTenantsOnly);
+        }
+
+        return ScopedFilters::scoped($scoped, $beyondScope);
+    }
+
+    public function isBeyondScope(Filter $filter, bool $fromTenantsOnly): bool
+    {
+        if ($fromTenantsOnly && !$this->authorsWithinTenants($filter)) {
+            return true;
+        }
+
+        return !$this->kindsWithinReadable($filter);
+    }
+
+    private function constrain(Filter $filter, bool $fromTenantsOnly): Filter
+    {
+        $constrained = $fromTenantsOnly ? $this->constrainAuthorsToTenants($filter) : $filter;
+
+        return $this->constrainKindsToReadable($constrained);
     }
 
     public function constrainAuthorsToTenants(Filter $filter): Filter
