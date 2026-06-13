@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
+use Amp\CancelledException;
+use Amp\TimeoutCancellation;
 use Amp\Websocket\WebsocketClient;
 use Amp\Websocket\WebsocketCloseCode;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
@@ -19,12 +21,15 @@ use Throwable;
 
 final class ClientConnectionHandler
 {
+    private const int DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
+
     public function __construct(
         private readonly ClientManager $clientManager,
         private readonly ClientDisconnectionHandler $disconnectionHandler,
         private readonly MessageRouter $messageRouter,
         private readonly LoggerInterface $logger,
         private readonly ConnectionGateInterface $connectionGate,
+        private readonly int $idleTimeoutSeconds = self::DEFAULT_IDLE_TIMEOUT_SECONDS,
     ) {
     }
 
@@ -44,9 +49,11 @@ final class ClientConnectionHandler
             $adapter = new WebsocketClientAdapter($websocketClient);
             $client = $this->clientManager->registerClient($adapter, $connectionInfo);
 
-            while ($message = $websocketClient->receive()) {
+            while ($message = $websocketClient->receive(new TimeoutCancellation($this->idleTimeoutSeconds))) {
                 $this->messageRouter->route($client, $message->buffer());
             }
+        } catch (CancelledException) {
+            $this->logger->info('Client idle timeout', ['ip' => $ipAddress]);
         } catch (ConnectionException $e) {
             $this->logger->warning('Client rejected', [
                 'ip' => $ipAddress,

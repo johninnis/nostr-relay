@@ -7,20 +7,22 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
-use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
-use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
+use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutorAdapter;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -31,6 +33,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     private RelayPolicyInterface&Stub $policy;
     private SubscriptionManager $subscriptionManager;
     private RateLimiterInterface&Stub $rateLimiter;
+    private ClientManager $clientManager;
     private CreateSubscriptionUseCase $useCase;
     private RelayClient $client;
 
@@ -43,13 +46,16 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $logger = new NullLogger();
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
+        $this->clientManager = new ClientManager($this->subscriptionManager, $metrics, $logger);
+        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, new AuthenticationManager(), $this->clientManager);
 
         $this->useCase = new CreateSubscriptionUseCase(
             $this->eventStore,
             $this->policy,
             $this->subscriptionManager,
-            new AuthenticationManager(),
-            $this->rateLimiter,
+            $admission,
+            $this->clientManager,
+            new AmphpDeferredExecutorAdapter(),
             $logger,
         );
 
@@ -58,11 +64,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
     private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
     {
-        return new RelayClient(
-            ClientId::fromString('client-1'),
+        return $this->clientManager->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->subscriptionManager,
         );
     }
 
@@ -172,20 +176,21 @@ final class CreateSubscriptionUseCaseTest extends TestCase
             ->willReturnCallback(static fn (RelayClient $client, array $filters): ScopedFilters => ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
-        $this->useCase->execute($this->client, SubscriptionId::fromString('sub-1'), [new Filter()]);
-
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
-
-                return 'CLOSED' === $data[0] && str_contains((string) $data[2], 'blocked');
-            }));
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $decoded = json_decode($json, true);
+            assert(is_array($decoded));
+            $sent[] = $decoded;
+        });
         $client = $this->makeClient($connection);
 
+        $this->useCase->execute($client, SubscriptionId::fromString('sub-1'), [new Filter()]);
         $this->useCase->execute($client, SubscriptionId::fromString('sub-2'), [new Filter()]);
 
+        $closed = array_values(array_filter($sent, static fn (array $message): bool => 'CLOSED' === $message[0]));
+        $this->assertNotEmpty($closed);
+        $this->assertStringContainsString('blocked', (string) $closed[0][2]);
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($client->getId()));
     }
 }

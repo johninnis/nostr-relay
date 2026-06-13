@@ -22,7 +22,8 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **Built-in RelayPolicy** - Configurable tenant/guest permissions
 - **Real-time distribution** - Events broadcast to matching subscriptions
 - **Rate limiting** - DDoS protection with configurable limits; tenants (and trusted clients via `isRateLimitExempt()`) bypass
-- **CORS support** - `OPTIONS` preflight handling and CORS headers on HTTP responses for browser-based clients
+- **Idle timeout** - Connections with no inbound message for 5 minutes are closed, freeing the slot (mitigates slow-loris)
+- **CORS support** - `OPTIONS` preflight handling and uniform CORS headers on every HTTP response for browser-based clients
 - **Trusted proxies** - `X-Forwarded-For` honoured when the client IP matches a trusted proxy
 - **PSR-3 logging** - Standard logging interface
 
@@ -213,7 +214,7 @@ If no config is passed, the relay is fully open with no restrictions.
 composer test
 ```
 
-Runs the unit test suite (120 tests) and PHPStan level 9 static analysis.
+Runs the unit test suite (173 tests) and PHPStan level 9 static analysis.
 
 Manual testing with [websocat](https://github.com/vi/websocat):
 

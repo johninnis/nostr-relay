@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Service;
 
+use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
@@ -27,6 +28,19 @@ final readonly class GuestFilterRules
         }
 
         return ScopedFilters::scoped($scoped, $beyondScope);
+    }
+
+    public function allowsEvent(Event $event, bool $fromTenantsOnly): bool
+    {
+        if ([] !== $this->readableKinds && !in_array($event->getKind()->toInt(), $this->readableKinds, true)) {
+            return false;
+        }
+
+        if ($fromTenantsOnly) {
+            return in_array($event->getPubkey()->toHex(), $this->tenantHexKeys, true);
+        }
+
+        return true;
     }
 
     public function isBeyondScope(Filter $filter, bool $fromTenantsOnly): bool

@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
-use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 
 final class AuthenticationManager
@@ -14,13 +13,18 @@ final class AuthenticationManager
     private array $authenticatedPubkeys = [];
     private array $challenges = [];
 
-    public function challenge(RelayClient $client): void
+    public function __construct(
+        private readonly ?RandomBytesGeneratorInterface $randomBytes = null,
+    ) {
+    }
+
+    public function issueChallenge(ClientId $clientId): ?string
     {
-        if (null !== $this->getChallenge($client->getId())) {
-            return;
+        if (null !== $this->getChallenge($clientId)) {
+            return null;
         }
 
-        $client->send(new AuthMessage($this->generateChallenge($client->getId())));
+        return $this->generateChallenge($clientId);
     }
 
     public function generateChallenge(ClientId $clientId): string
@@ -31,7 +35,7 @@ final class AuthenticationManager
             return $this->challenges[$key];
         }
 
-        $challenge = bin2hex(random_bytes(16));
+        $challenge = bin2hex(null !== $this->randomBytes ? $this->randomBytes->bytes(16) : random_bytes(16));
         $this->challenges[$key] = $challenge;
 
         return $challenge;

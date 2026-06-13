@@ -7,17 +7,19 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
+use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
-use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
-use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use PHPUnit\Framework\MockObject\Stub;
@@ -29,6 +31,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
+    private ClientManager $clientManager;
     private CountSubscriptionUseCase $useCase;
 
     protected function setUp(): void
@@ -36,23 +39,27 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
+        $this->clientManager = new ClientManager(
+            $this->createStub(SubscriptionLookupInterface::class),
+            $this->createStub(MetricsCollectorInterface::class),
+            new NullLogger(),
+        );
+
+        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, new AuthenticationManager(), $this->clientManager);
 
         $this->useCase = new CountSubscriptionUseCase(
             $this->eventStore,
-            $this->policy,
-            new AuthenticationManager(),
-            $this->rateLimiter,
+            $admission,
+            $this->clientManager,
             new NullLogger(),
         );
     }
 
     private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
     {
-        return new RelayClient(
-            ClientId::fromString('client-1'),
+        return $this->clientManager->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 

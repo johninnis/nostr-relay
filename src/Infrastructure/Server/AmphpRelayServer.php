@@ -113,19 +113,14 @@ final class AmphpRelayServer
         $requestHandler = new ClosureRequestHandler(
             function (Request $request) use ($websocket): Response {
                 if ('OPTIONS' === $request->getMethod()) {
-                    return new Response(204, [
-                        'access-control-allow-origin' => '*',
-                        'access-control-allow-methods' => 'GET, POST, OPTIONS',
-                        'access-control-allow-headers' => 'Content-Type, Authorization',
-                        'access-control-max-age' => '86400',
-                    ]);
+                    return $this->addCorsHeaders(new Response(204));
                 }
 
                 if ('GET' === $request->getMethod() && '/' === $request->getUri()->getPath()) {
                     $acceptHeader = $request->getHeader('accept') ?? '';
 
                     if (str_contains($acceptHeader, 'application/nostr+json')) {
-                        return $this->nip11Handler->handle();
+                        return $this->addCorsHeaders($this->nip11Handler->handle());
                     }
                 }
 
@@ -136,7 +131,7 @@ final class AmphpRelayServer
                     }
                 }
 
-                return $websocket->handleRequest($request);
+                return $this->addCorsHeaders($websocket->handleRequest($request));
             }
         );
 
@@ -188,6 +183,9 @@ final class AmphpRelayServer
     private function addCorsHeaders(Response $response): Response
     {
         $response->setHeader('access-control-allow-origin', '*');
+        $response->setHeader('access-control-allow-methods', 'GET, POST, OPTIONS');
+        $response->setHeader('access-control-allow-headers', 'Content-Type, Authorization');
+        $response->setHeader('access-control-max-age', '86400');
 
         return $response;
     }

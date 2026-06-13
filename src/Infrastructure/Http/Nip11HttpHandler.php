@@ -21,11 +21,7 @@ final class Nip11HttpHandler
 
         return new Response(
             HttpStatus::OK,
-            [
-                'content-type' => 'application/nostr+json',
-                'access-control-allow-origin' => '*',
-                'access-control-allow-methods' => 'GET',
-            ],
+            ['content-type' => 'application/nostr+json'],
             $relayInfo
         );
     }

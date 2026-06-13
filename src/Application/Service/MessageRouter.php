@@ -30,6 +30,7 @@ final class MessageRouter
         private readonly ProcessAuthUseCase $processAuthUseCase,
         private readonly CountSubscriptionUseCase $countSubscriptionUseCase,
         private readonly MessageSerialiserInterface $serialiser,
+        private readonly ClientManager $clientManager,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -62,17 +63,17 @@ final class MessageRouter
                     $clientMessage->getSubscriptionId(),
                     $clientMessage->getFilters()
                 ),
-                default => $client->send(new NoticeMessage('Unknown message type')),
+                default => $this->clientManager->send($client, new NoticeMessage('Unknown message type')),
             };
         } catch (InvalidArgumentException $e) {
-            $client->send(new NoticeMessage('Invalid message: '.$e->getMessage()));
+            $this->clientManager->send($client, new NoticeMessage('Invalid message: '.$e->getMessage()));
             $this->logger->warning('Invalid message received', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
                 'message' => mb_substr($message, 0, 200),
             ]);
         } catch (Throwable $e) {
-            $client->send(new NoticeMessage('Internal server error'));
+            $this->clientManager->send($client, new NoticeMessage('Internal server error'));
             $this->logger->error('Message routing error', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),

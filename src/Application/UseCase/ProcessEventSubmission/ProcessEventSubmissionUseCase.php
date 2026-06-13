@@ -12,12 +12,15 @@ use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
+use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
@@ -26,8 +29,6 @@ use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
 use Throwable;
-
-use function Amp\async;
 
 final class ProcessEventSubmissionUseCase
 {
@@ -40,6 +41,8 @@ final class ProcessEventSubmissionUseCase
         private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
         private readonly EventValidationServiceInterface $eventValidator,
+        private readonly ClientManager $clientManager,
+        private readonly DeferredExecutorInterface $deferredExecutor,
     ) {
     }
 
@@ -128,7 +131,7 @@ final class ProcessEventSubmissionUseCase
         $kind = $event->getKind()->toInt();
         $clientId = (string) $client->getId();
 
-        $client->recordEventReceived();
+        $this->clientManager->recordEventReceived($client->getId());
 
         $this->logger->debug('Event received', [
             'event_id' => $eventId,
@@ -148,9 +151,9 @@ final class ProcessEventSubmissionUseCase
 
             if ($event->getKind()->isEphemeral()) {
                 $this->metrics->incrementEventsReceived();
-                $client->recordEventAccepted();
-                async(fn () => $this->distributor->distributeToSubscribers($event));
-                $client->send(new OkMessage($event->getId(), true, ''));
+                $this->clientManager->recordEventAccepted($client->getId());
+                $this->deferredExecutor->defer(fn () => $this->distributor->distributeToSubscribers($event));
+                $this->clientManager->send($client, new OkMessage($event->getId(), true, ''));
                 $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
 
                 return;
@@ -164,14 +167,17 @@ final class ProcessEventSubmissionUseCase
                 EventStoreOutcome::Superseded => $this->onSuperseded($client, $event, $eventId, $kind),
             };
         } catch (InvalidEventException $e) {
-            $client->send(new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
+            $this->clientManager->send($client, new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
         } catch (AuthRequiredException) {
-            $this->authManager->challenge($client);
-            $client->send(new OkMessage($event->getId(), false, 'auth-required: authentication required'));
+            $newChallenge = $this->authManager->issueChallenge($client->getId());
+            if (null !== $newChallenge) {
+                $this->clientManager->send($client, new AuthMessage($newChallenge));
+            }
+            $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: authentication required'));
             $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
         } catch (PolicyViolationException $e) {
-            $client->send(new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
+            $this->clientManager->send($client, new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Event blocked', [
                 'event_id' => $eventId,
                 'pubkey' => $event->getPubkey()->toHex(),
@@ -179,10 +185,10 @@ final class ProcessEventSubmissionUseCase
                 'reason' => $e->getMessage(),
             ]);
         } catch (RateLimitException) {
-            $client->send(new OkMessage($event->getId(), false, 'rate-limited: slow down'));
+            $this->clientManager->send($client, new OkMessage($event->getId(), false, 'rate-limited: slow down'));
             $this->logger->warning('Event rate-limited', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
         } catch (Throwable $e) {
-            $client->send(new OkMessage($event->getId(), false, 'error: could not process event'));
+            $this->clientManager->send($client, new OkMessage($event->getId(), false, 'error: could not process event'));
             $this->logger->error('Event processing error', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'error' => $e->getMessage()]);
         }
     }
@@ -190,27 +196,27 @@ final class ProcessEventSubmissionUseCase
     private function onStored(RelayClient $client, Event $event, string $eventId, int $kind): void
     {
         $this->metrics->incrementEventsReceived();
-        $client->recordEventAccepted();
+        $this->clientManager->recordEventAccepted($client->getId());
 
         if ($event->isDeletion()) {
             $this->processDeletion($event);
         }
 
-        async(fn () => $this->distributor->distributeToSubscribers($event));
+        $this->deferredExecutor->defer(fn () => $this->distributor->distributeToSubscribers($event));
 
-        $client->send(new OkMessage($event->getId(), true, ''));
+        $this->clientManager->send($client, new OkMessage($event->getId(), true, ''));
         $this->logger->debug('Event stored', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'kind' => $kind]);
     }
 
     private function onDuplicate(RelayClient $client, Event $event, string $eventId): void
     {
-        $client->send(new OkMessage($event->getId(), false, 'duplicate: event already exists'));
+        $this->clientManager->send($client, new OkMessage($event->getId(), false, 'duplicate: event already exists'));
         $this->logger->debug('Event duplicate', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
     }
 
     private function onSuperseded(RelayClient $client, Event $event, string $eventId, int $kind): void
     {
-        $client->send(new OkMessage($event->getId(), false, 'duplicate: newer version already exists'));
+        $this->clientManager->send($client, new OkMessage($event->getId(), false, 'duplicate: newer version already exists'));
         $this->logger->debug('Event superseded', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'kind' => $kind]);
     }
 }

@@ -21,7 +21,6 @@ final class RelayPolicy implements RelayPolicyInterface
     private readonly array $tenantPubkeys;
     private readonly array $tenantHexSet;
     private readonly array $guestReadKinds;
-    private readonly array $guestReadKindSet;
     private readonly bool $guestReadFromTenants;
     private readonly array $guestWriteRules;
     private readonly int $maxEventSize;
@@ -52,7 +51,6 @@ final class RelayPolicy implements RelayPolicyInterface
             }
         }
         $this->guestReadKinds = array_values(array_unique($allKinds));
-        $this->guestReadKindSet = array_flip($this->guestReadKinds);
         $this->guestReadFromTenants = $fromTenants;
 
         $this->subscriptionLimits = new SubscriptionLimits(
@@ -115,15 +113,7 @@ final class RelayPolicy implements RelayPolicyInterface
             return true;
         }
 
-        if ([] !== $this->guestReadKindSet && !isset($this->guestReadKindSet[$event->getKind()->toInt()])) {
-            return false;
-        }
-
-        if ($this->guestReadFromTenants) {
-            return $this->isTenantPubkey($event->getPubkey());
-        }
-
-        return true;
+        return $this->guestFilterRules->allowsEvent($event, $this->guestReadFromTenants);
     }
 
     public function isRateLimitExempt(RelayClient $client): bool

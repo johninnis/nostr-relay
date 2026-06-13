@@ -16,6 +16,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -30,10 +31,8 @@ use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
-use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
-use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutorAdapter;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -42,6 +41,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 {
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
+    private ClientManager $clientManager;
     private ProcessEventSubmissionUseCase $useCase;
     private RelayClient $client;
     private SignatureServiceInterface $sigService;
@@ -68,7 +68,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $logger = new NullLogger();
 
         $subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $clientManager = new ClientManager(
+        $this->clientManager = new ClientManager(
             $subscriptionManager,
             $metrics,
             $logger,
@@ -77,7 +77,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $distributor = new EventDistributor(
             $this->policy,
             $subscriptionManager,
-            $clientManager,
+            $this->clientManager,
             $metrics,
             $logger,
         );
@@ -91,16 +91,16 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $metrics,
             $logger,
             new EventValidationService($this->signatureService(), new NipComplianceValidator($this->signatureService())),
+            $this->clientManager,
+            new AmphpDeferredExecutorAdapter(),
         );
     }
 
     private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
     {
-        return new RelayClient(
-            ClientId::fromString('client-1'),
+        return $this->clientManager->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createStub(SubscriptionLookupInterface::class),
         );
     }
 

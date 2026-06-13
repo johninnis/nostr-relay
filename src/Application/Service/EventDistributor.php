@@ -67,7 +67,7 @@ final class EventDistributor
         }
 
         try {
-            $client->send(new EventMessage($match->getSubscription()->getId(), $event));
+            $this->clientManager->send($client, new EventMessage($match->getSubscription()->getId(), $event));
         } catch (ConnectionException $e) {
             $this->logger->debug('Skipping send to disconnected subscriber', [
                 'client_id' => (string) $match->getClientId(),

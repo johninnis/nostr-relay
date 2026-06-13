@@ -20,6 +20,7 @@ use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
@@ -27,6 +28,7 @@ use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionU
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
+use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutorAdapter;
 use Innis\Nostr\Relay\Infrastructure\Http\ConfigNip11InfoAdapter;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
@@ -92,6 +94,15 @@ final class RelayServerFactory
             new NipComplianceValidator($this->signatureService)
         );
 
+        $deferredExecutor = new AmphpDeferredExecutorAdapter();
+
+        $subscriptionAdmission = new SubscriptionAdmission(
+            $this->policy,
+            $subscriptionRateLimiter,
+            $authManager,
+            $clientManager
+        );
+
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $this->eventStore,
             $this->policy,
@@ -100,15 +111,18 @@ final class RelayServerFactory
             $eventRateLimiter,
             $metrics,
             $this->logger,
-            $eventValidator
+            $eventValidator,
+            $clientManager,
+            $deferredExecutor
         );
 
         $createSubscriptionUseCase = new CreateSubscriptionUseCase(
             $this->eventStore,
             $this->policy,
             $subscriptionManager,
-            $authManager,
-            $subscriptionRateLimiter,
+            $subscriptionAdmission,
+            $clientManager,
+            $deferredExecutor,
             $this->logger
         );
 
@@ -122,14 +136,14 @@ final class RelayServerFactory
             $this->config,
             $this->policy,
             $this->logger,
-            $eventValidator
+            $eventValidator,
+            $clientManager
         );
 
         $countSubscriptionUseCase = new CountSubscriptionUseCase(
             $this->eventStore,
-            $this->policy,
-            $authManager,
-            $subscriptionRateLimiter,
+            $subscriptionAdmission,
+            $clientManager,
             $this->logger
         );
 
@@ -142,6 +156,7 @@ final class RelayServerFactory
             $processAuthUseCase,
             $countSubscriptionUseCase,
             $serialiser,
+            $clientManager,
             $this->logger
         );
 

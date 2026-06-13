@@ -11,10 +11,11 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EoseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
-use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
+use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
@@ -23,16 +24,15 @@ use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
-use function Amp\async;
-
 final class CreateSubscriptionUseCase
 {
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
         private readonly SubscriptionManager $subscriptionManager,
-        private readonly AuthenticationManager $authManager,
-        private readonly RateLimiterInterface $rateLimiter,
+        private readonly SubscriptionAdmission $admission,
+        private readonly ClientManager $clientManager,
+        private readonly DeferredExecutorInterface $deferredExecutor,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -40,29 +40,15 @@ final class CreateSubscriptionUseCase
     public function execute(RelayClient $client, SubscriptionId $subscriptionId, array $filters): void
     {
         try {
-            if (!$this->policy->isRateLimitExempt($client)) {
-                $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
-            }
-
-            $this->policy->allowSubscription($client, $filters);
-
-            $scopedFilters = $this->policy->filterForClient($client, $filters);
-            $modifiedFilters = $scopedFilters->getFilters();
-
-            if ($scopedFilters->isBeyondScope()) {
-                $client->send(new NoticeMessage('limited to readable scope: authenticate for full access'));
-                $this->authManager->challenge($client);
-            }
+            $modifiedFilters = $this->admission->admit($client, $filters)->getFilters();
 
             $subscription = Subscription::create($subscriptionId, $modifiedFilters, SubscriptionState::ACTIVE);
 
             $this->subscriptionManager->addSubscription($client->getId(), $subscription);
 
-            async(function () use ($client, $subscription, $modifiedFilters) {
-                $this->sendStoredEvents($client, $subscription, $modifiedFilters);
-            });
+            $this->deferredExecutor->defer(fn () => $this->sendStoredEvents($client, $subscription, $modifiedFilters));
         } catch (PolicyViolationException $e) {
-            $client->send(new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
+            $this->clientManager->send($client, new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Subscription rejected by policy', [
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
@@ -70,10 +56,10 @@ final class CreateSubscriptionUseCase
                 'filters' => array_map(static fn ($filter) => $filter->toArray(), $filters),
             ]);
         } catch (RateLimitException) {
-            $client->send(new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
+            $this->clientManager->send($client, new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
         } catch (Throwable $e) {
             $this->subscriptionManager->removeSubscription($client->getId(), $subscriptionId);
-            $client->send(new ClosedMessage($subscriptionId, 'error: invalid subscription'));
+            $this->clientManager->send($client, new ClosedMessage($subscriptionId, 'error: invalid subscription'));
             $this->logger->error('Subscription creation error', [
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
@@ -89,11 +75,11 @@ final class CreateSubscriptionUseCase
 
             foreach ($events as $event) {
                 if ($this->policy->canClientReceiveEvent($client, $event)) {
-                    $client->send(new EventMessage($subscription->getId(), $event));
+                    $this->clientManager->send($client, new EventMessage($subscription->getId(), $event));
                 }
             }
 
-            $client->send(new EoseMessage($subscription->getId()));
+            $this->clientManager->send($client, new EoseMessage($subscription->getId()));
 
             $this->subscriptionManager->updateSubscriptionState($client->getId(), $subscription->getId(), SubscriptionState::LIVE);
 
@@ -114,7 +100,7 @@ final class CreateSubscriptionUseCase
             ]);
 
             try {
-                $client->send(new NoticeMessage('error: failed to fetch events'));
+                $this->clientManager->send($client, new NoticeMessage('error: failed to fetch events'));
             } catch (ConnectionException) {
             }
         }

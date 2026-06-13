@@ -16,15 +16,16 @@ use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
-use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -32,6 +33,7 @@ use Psr\Log\NullLogger;
 final class ProcessAuthUseCaseTest extends TestCase
 {
     private AuthenticationManager $authManager;
+    private ClientManager $clientManager;
     private ProcessAuthUseCase $useCase;
     private RelayPolicyInterface $policy;
     private RelayClient $client;
@@ -60,20 +62,24 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->policy->method('allowsAuthentication')->willReturn(true);
 
+        $this->connection = $this->createMock(ClientConnectionInterface::class);
+        $this->clientManager = new ClientManager(
+            $this->createStub(SubscriptionLookupInterface::class),
+            new InMemoryMetricsCollector(),
+            new NullLogger(),
+        );
+        $this->client = $this->clientManager->registerClient(
+            $this->connection,
+            new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
+        );
+
         $this->useCase = new ProcessAuthUseCase(
             $this->authManager,
             $config,
             $this->policy,
             new NullLogger(),
             $this->eventValidator(),
-        );
-
-        $this->connection = $this->createMock(ClientConnectionInterface::class);
-        $this->client = new RelayClient(
-            ClientId::fromString('client-1'),
-            $this->connection,
-            new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
-            $this->createStub(SubscriptionLookupInterface::class),
+            $this->clientManager,
         );
     }
 
@@ -112,6 +118,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $policy,
             new NullLogger(),
             $this->eventValidator(),
+            $this->clientManager,
         );
 
         $this->connection->expects($this->once())->method('sendText')

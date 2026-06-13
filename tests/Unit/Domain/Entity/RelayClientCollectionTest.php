@@ -7,7 +7,6 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\Entity;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Entity\RelayClientCollection;
-use Innis\Nostr\Relay\Domain\Service\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
@@ -20,7 +19,6 @@ final class RelayClientCollectionTest extends TestCase
     {
         return new RelayClient(
             ClientId::fromString($id),
-            $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
             $this->createStub(SubscriptionLookupInterface::class),
         );
