@@ -134,6 +134,8 @@ final class MessageRouterTest extends TestCase
             $logger,
             $eventValidator,
             $this->clientManager,
+            $this->subscriptionManager,
+            $createSubscription,
         );
 
         $countSubscription = new CountSubscriptionUseCase(

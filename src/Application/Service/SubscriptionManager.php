@@ -20,6 +20,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     private array $clientIdByKey = [];
     private array $subscriptionsByKind = [];
     private array $subscriptionsByClient = [];
+    private array $originalFiltersByKey = [];
 
     public function __construct(
         private readonly MetricsCollectorInterface $metrics,
@@ -27,7 +28,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     ) {
     }
 
-    public function addSubscription(ClientId $clientId, Subscription $subscription): void
+    public function addSubscription(ClientId $clientId, Subscription $subscription, array $originalFilters = []): void
     {
         $key = $this->compositeKey($clientId, $subscription->getId());
         $clientIdStr = (string) $clientId;
@@ -38,6 +39,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
         $this->subscriptions[$key] = $subscription;
         $this->clientIdByKey[$key] = $clientId;
+        $this->originalFiltersByKey[$key] = $originalFilters;
         $this->addToKindIndex($subscription, $key);
         $this->subscriptionsByClient[$clientIdStr][$key] = true;
 
@@ -64,7 +66,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         $this->removeFromKindIndex($subscription, $key);
         $this->removeFromClientIndex($clientIdStr, $key);
 
-        unset($this->subscriptions[$key], $this->clientIdByKey[$key]);
+        unset($this->subscriptions[$key], $this->clientIdByKey[$key], $this->originalFiltersByKey[$key]);
         $this->metrics->decrementSubscriptions();
 
         $this->logger->debug('Subscription closed', [
@@ -82,7 +84,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
             $key = (string) $key;
             if (isset($this->subscriptions[$key])) {
                 $this->removeFromKindIndex($this->subscriptions[$key], $key);
-                unset($this->subscriptions[$key], $this->clientIdByKey[$key]);
+                unset($this->subscriptions[$key], $this->clientIdByKey[$key], $this->originalFiltersByKey[$key]);
                 $this->metrics->decrementSubscriptions();
             }
         }
@@ -132,6 +134,25 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     public function getSubscriptionCountForClient(ClientId $clientId): int
     {
         return count($this->subscriptionsByClient[(string) $clientId] ?? []);
+    }
+
+    public function getOriginalFilters(ClientId $clientId, SubscriptionId $subscriptionId): array
+    {
+        return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? [];
+    }
+
+    public function getSubscriptionIdsForClient(ClientId $clientId): array
+    {
+        $ids = [];
+
+        foreach (array_keys($this->subscriptionsByClient[(string) $clientId] ?? []) as $key) {
+            $key = (string) $key;
+            if (isset($this->subscriptions[$key])) {
+                $ids[] = $this->subscriptions[$key]->getId();
+            }
+        }
+
+        return $ids;
     }
 
     public function getAllSubscriptions(): SubscriptionCollection

@@ -34,6 +34,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     private SubscriptionManager $subscriptionManager;
     private RateLimiterInterface&Stub $rateLimiter;
     private ClientManager $clientManager;
+    private AuthenticationManager $authManager;
     private CreateSubscriptionUseCase $useCase;
     private RelayClient $client;
 
@@ -47,7 +48,8 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->clientManager = new ClientManager($this->subscriptionManager, $metrics, $logger);
-        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, new AuthenticationManager(), $this->clientManager);
+        $this->authManager = new AuthenticationManager();
+        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $this->clientManager);
 
         $this->useCase = new CreateSubscriptionUseCase(
             $this->eventStore,
@@ -106,6 +108,32 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
         $this->assertContains('NOTICE', $types);
         $this->assertContains('AUTH', $types);
+    }
+
+    public function testBeyondScopeReissuesChallengeWhenConnectChallengeWasIgnored(): void
+    {
+        $subId = SubscriptionId::fromString('sub-1');
+
+        $this->policy->method('filterForClient')->willReturn(
+            ScopedFilters::scoped([Filter::fromArray(['kinds' => [1]])], true),
+        );
+        $this->eventStore->method('findByFilters')->willReturn([]);
+
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $decoded = json_decode($json, true);
+            assert(is_array($decoded));
+            $sent[] = $decoded;
+        });
+        $client = $this->makeClient($connection);
+
+        $this->authManager->getOrCreateChallenge($client->getId());
+
+        $this->useCase->execute($client, $subId, [new Filter()]);
+
+        $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
+        $this->assertContains('AUTH', $types, 'a beyond-scope request must re-issue an AUTH challenge even if one was already sent on connect');
     }
 
     public function testFullyOutOfScopeSubscriptionIsCreatedNotRejected(): void

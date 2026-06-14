@@ -197,4 +197,51 @@ final class SubscriptionManagerTest extends TestCase
             $this->manager,
         );
     }
+
+    public function testRecordsAndReturnsOriginalFilters(): void
+    {
+        $clientId = ClientId::fromString('client-1');
+        $originalFilters = [new Filter(kinds: [EventKind::TEXT_NOTE])];
+
+        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
+
+        $this->assertSame(
+            $originalFilters,
+            $this->manager->getOriginalFilters($clientId, SubscriptionId::fromString('sub-1')),
+        );
+    }
+
+    public function testGetOriginalFiltersDefaultsToEmptyWhenUnknown(): void
+    {
+        $this->assertSame(
+            [],
+            $this->manager->getOriginalFilters(ClientId::fromString('client-1'), SubscriptionId::fromString('missing')),
+        );
+    }
+
+    public function testGetSubscriptionIdsForClientReturnsSubscriptionIds(): void
+    {
+        $clientId = ClientId::fromString('client-1');
+        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'));
+        $this->manager->addSubscription($clientId, $this->createSubscription('sub-2'));
+
+        $ids = array_map(
+            static fn (SubscriptionId $id): string => (string) $id,
+            $this->manager->getSubscriptionIdsForClient($clientId),
+        );
+        sort($ids);
+
+        $this->assertSame(['sub-1', 'sub-2'], $ids);
+    }
+
+    public function testRemoveSubscriptionClearsOriginalFilters(): void
+    {
+        $clientId = ClientId::fromString('client-1');
+        $originalFilters = [new Filter(kinds: [EventKind::TEXT_NOTE])];
+        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
+
+        $this->manager->removeSubscription($clientId, SubscriptionId::fromString('sub-1'));
+
+        $this->assertSame([], $this->manager->getOriginalFilters($clientId, SubscriptionId::fromString('sub-1')));
+    }
 }

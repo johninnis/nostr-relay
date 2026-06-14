@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
+use Closure;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\Subscription;
+use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\Service\EventValidationService;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
@@ -12,19 +16,27 @@ use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
+use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
+use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
+use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
+use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
@@ -40,6 +52,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     private ClientConnectionInterface&MockObject $connection;
     private KeyPair $keyPair;
     private SignatureServiceInterface $sigService;
+    private SubscriptionManager $subscriptionManager;
 
     private function signatureService(): SignatureServiceInterface
     {
@@ -73,6 +86,8 @@ final class ProcessAuthUseCaseTest extends TestCase
             new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
         );
 
+        $this->subscriptionManager = new SubscriptionManager(new InMemoryMetricsCollector(), new NullLogger());
+
         $this->useCase = new ProcessAuthUseCase(
             $this->authManager,
             $config,
@@ -80,6 +95,35 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
             $this->eventValidator(),
             $this->clientManager,
+            $this->subscriptionManager,
+            $this->buildCreateSubscription($this->policy, $this->createStub(RelayEventStoreInterface::class)),
+        );
+    }
+
+    private function buildCreateSubscription(RelayPolicyInterface $policy, RelayEventStoreInterface $eventStore): CreateSubscriptionUseCase
+    {
+        $admission = new SubscriptionAdmission(
+            $policy,
+            $this->createStub(RateLimiterInterface::class),
+            $this->authManager,
+            $this->clientManager,
+        );
+
+        $synchronousExecutor = new class implements DeferredExecutorInterface {
+            public function defer(Closure $task): void
+            {
+                $task();
+            }
+        };
+
+        return new CreateSubscriptionUseCase(
+            $eventStore,
+            $policy,
+            $this->subscriptionManager,
+            $admission,
+            $this->clientManager,
+            $synchronousExecutor,
+            new NullLogger(),
         );
     }
 
@@ -101,6 +145,56 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
     }
 
+    public function testReevaluatesClientSubscriptionsOnSuccessfulAuth(): void
+    {
+        $sent = [];
+        $this->connection->expects($this->atLeastOnce())->method('sendText')
+            ->willReturnCallback(static function (string $json) use (&$sent): void {
+                $sent[] = $json;
+            });
+
+        $config = $this->createStub(RelayConfigInterface::class);
+        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+
+        $policy = $this->createStub(RelayPolicyInterface::class);
+        $policy->method('allowsAuthentication')->willReturn(true);
+        $policy->method('isRateLimitExempt')->willReturn(true);
+        $policy->method('canClientReceiveEvent')->willReturn(true);
+        $policy->method('filterForClient')->willReturnCallback(
+            static fn (RelayClient $client, array $filters): ScopedFilters => ScopedFilters::unchanged($filters)
+        );
+
+        $request = $this->createNostrConnectRequest();
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('findByFilters')->willReturn([$request]);
+
+        $originalFilters = [Filter::fromArray([
+            'kinds' => [EventKind::nostrConnect()->toInt()],
+            '#p' => [$this->keyPair->getPublicKey()->toHex()],
+        ])];
+        $subscription = Subscription::create(SubscriptionId::fromString('bunker'), $originalFilters, SubscriptionState::LIVE);
+        $this->subscriptionManager->addSubscription($this->client->getId(), $subscription, $originalFilters);
+
+        $useCase = new ProcessAuthUseCase(
+            $this->authManager,
+            $config,
+            $policy,
+            new NullLogger(),
+            $this->eventValidator(),
+            $this->clientManager,
+            $this->subscriptionManager,
+            $this->buildCreateSubscription($policy, $eventStore),
+        );
+
+        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $useCase->execute($this->client, $this->createAuthEvent($challenge, 'wss://relay.example.com'));
+
+        $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
+
+        $eventMessages = array_filter($sent, static fn (string $json): bool => str_starts_with($json, '["EVENT"'));
+        $this->assertNotEmpty($eventMessages, 'auth should re-run the subscription and stream the now-visible request');
+    }
+
     public function testRejectsAuthenticationFromNonTenantPubkey(): void
     {
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
@@ -119,6 +213,8 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
             $this->eventValidator(),
             $this->clientManager,
+            $this->subscriptionManager,
+            $this->buildCreateSubscription($policy, $this->createStub(RelayEventStoreInterface::class)),
         );
 
         $this->connection->expects($this->once())->method('sendText')
@@ -240,6 +336,19 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->useCase->execute($this->client, $event);
 
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+    }
+
+    private function createNostrConnectRequest(): Event
+    {
+        $author = KeyPair::generate($this->signatureService());
+
+        return (new Event(
+            $author->getPublicKey(),
+            Timestamp::now(),
+            EventKind::nostrConnect(),
+            new TagCollection([Tag::fromArray(['p', $this->keyPair->getPublicKey()->toHex()])]),
+            EventContent::fromString('encrypted-request'),
+        ))->sign($author, $this->signatureService());
     }
 
     private function createAuthEvent(string $challenge, string $relayUrl): Event

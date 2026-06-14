@@ -44,7 +44,7 @@ final class CreateSubscriptionUseCase
 
             $subscription = Subscription::create($subscriptionId, $modifiedFilters, SubscriptionState::ACTIVE);
 
-            $this->subscriptionManager->addSubscription($client->getId(), $subscription);
+            $this->subscriptionManager->addSubscription($client->getId(), $subscription, $filters);
 
             $this->deferredExecutor->defer(fn () => $this->sendStoredEvents($client, $subscription, $modifiedFilters));
         } catch (PolicyViolationException $e) {

@@ -14,7 +14,7 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **NIP-01 compliant** - EVENT, REQ, CLOSE message handling
 - **NIP-09 deletion** - Kind 5 event processing
 - **NIP-11 support** - Relay information document
-- **NIP-42 AUTH** - Challenge/response authentication (challenge sent only once per client)
+- **NIP-42 AUTH** - Challenge/response authentication; challenge issued on connect and re-issued on out-of-scope requests, with the client's live subscriptions re-evaluated once it authenticates
 - **NIP-45 COUNT** - COUNT message support
 - **Ephemeral events** - Kinds 20000-29999 skip storage
 - **Custom HTTP handlers** - Inject handlers for additional HTTP endpoints (e.g. management APIs, landing pages)
@@ -166,6 +166,14 @@ Unauthenticated clients are treated as guests. Guest permissions are defined und
 - `tagged_to_tenant` (optional, `true`) - Require the event to tag a tenant pubkey
 
 If no config is passed, the relay is fully open with no restrictions.
+
+### Authentication (NIP-42)
+
+The relay sends an `AUTH` challenge as soon as a client connects, so a client that wants elevated access can authenticate before its first request. Clients that never authenticate simply ignore the challenge and continue as guests.
+
+A challenge is also (re-)issued whenever a subscription request falls outside the guest scope, so a client that missed or ignored the connect challenge is still prompted when it asks for something a guest cannot read.
+
+When a client authenticates, its already-open subscriptions are re-evaluated against its new scope: each is re-admitted with its original filters and the now-visible stored events are streamed. This means a subscription opened as a guest (and narrowed by guest rules) widens automatically once the client proves its identity, without the client having to re-subscribe.
 
 ---
 

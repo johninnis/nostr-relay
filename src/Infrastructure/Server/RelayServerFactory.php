@@ -137,7 +137,9 @@ final class RelayServerFactory
             $this->policy,
             $this->logger,
             $eventValidator,
-            $clientManager
+            $clientManager,
+            $subscriptionManager,
+            $createSubscriptionUseCase
         );
 
         $countSubscriptionUseCase = new CountSubscriptionUseCase(
@@ -162,6 +164,7 @@ final class RelayServerFactory
 
         $connectionHandler = new ClientConnectionHandler(
             $clientManager,
+            $authManager,
             $disconnectionHandler,
             $messageRouter,
             $this->logger,

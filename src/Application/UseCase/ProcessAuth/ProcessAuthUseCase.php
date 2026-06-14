@@ -14,6 +14,8 @@ use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -29,6 +31,8 @@ final class ProcessAuthUseCase
         private readonly LoggerInterface $logger,
         private readonly EventValidationServiceInterface $eventValidator,
         private readonly ClientManager $clientManager,
+        private readonly SubscriptionManager $subscriptionManager,
+        private readonly CreateSubscriptionUseCase $createSubscription,
     ) {
     }
 
@@ -77,6 +81,8 @@ final class ProcessAuthUseCase
             $this->authManager->authenticate($client->getId(), $event->getPubkey());
             $this->clientManager->send($client, new OkMessage($event->getId(), true, ''));
 
+            $this->reevaluateSubscriptions($client);
+
             $this->logger->info('Client authenticated', [
                 'client_id' => (string) $client->getId(),
                 'pubkey' => $event->getPubkey()->toHex(),
@@ -93,6 +99,19 @@ final class ProcessAuthUseCase
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
+        }
+    }
+
+    private function reevaluateSubscriptions(RelayClient $client): void
+    {
+        foreach ($this->subscriptionManager->getSubscriptionIdsForClient($client->getId()) as $subscriptionId) {
+            $originalFilters = $this->subscriptionManager->getOriginalFilters($client->getId(), $subscriptionId);
+
+            if ([] === $originalFilters) {
+                continue;
+            }
+
+            $this->createSubscription->execute($client, $subscriptionId, $originalFilters);
         }
     }
 }

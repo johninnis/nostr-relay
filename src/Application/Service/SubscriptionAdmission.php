@@ -33,10 +33,7 @@ final readonly class SubscriptionAdmission
 
         if ($scopedFilters->isBeyondScope()) {
             $this->clientManager->send($client, new NoticeMessage('limited to readable scope: authenticate for full access'));
-
-            if (null === $this->authManager->getChallenge($client->getId())) {
-                $this->clientManager->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
-            }
+            $this->clientManager->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
         }
 
         return $scopedFilters;
