@@ -170,9 +170,8 @@ final class ProcessEventSubmissionUseCase
             $this->clientManager->send($client, new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
         } catch (AuthRequiredException) {
-            $newChallenge = $this->authManager->issueChallenge($client->getId());
-            if (null !== $newChallenge) {
-                $this->clientManager->send($client, new AuthMessage($newChallenge));
+            if (null === $this->authManager->getChallenge($client->getId())) {
+                $this->clientManager->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
             }
             $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: authentication required'));
             $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);

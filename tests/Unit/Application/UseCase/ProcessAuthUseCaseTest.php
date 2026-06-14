@@ -85,7 +85,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testSuccessfulAuthentication(): void
     {
-        $challenge = $this->authManager->generateChallenge($this->client->getId());
+        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
 
         $this->connection->expects($this->once())->method('sendText')
@@ -103,7 +103,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testRejectsAuthenticationFromNonTenantPubkey(): void
     {
-        $challenge = $this->authManager->generateChallenge($this->client->getId());
+        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
 
         $config = $this->createStub(RelayConfigInterface::class);
@@ -158,7 +158,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testRejectsInvalidChallenge(): void
     {
-        $this->authManager->generateChallenge($this->client->getId());
+        $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent('wrong-challenge', 'wss://relay.example.com');
 
         $this->connection->expects($this->once())->method('sendText')
@@ -176,7 +176,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testRejectsInvalidRelayUrl(): void
     {
-        $challenge = $this->authManager->generateChallenge($this->client->getId());
+        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://wrong-relay.example.com');
 
         $this->connection->expects($this->once())->method('sendText')
@@ -195,7 +195,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     public function testRejectsUnsignedAuthEventClaimingVictimPubkey(): void
     {
         $victim = KeyPair::generate($this->signatureService())->getPublicKey();
-        $challenge = $this->authManager->generateChallenge($this->client->getId());
+        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
 
         $forged = Event::fromArray([
             'id' => str_repeat('a', 64),
@@ -226,7 +226,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testRejectsExpiredTimestamp(): void
     {
-        $challenge = $this->authManager->generateChallenge($this->client->getId());
+        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEventWithTimestamp($challenge, 'wss://relay.example.com', time() - 700);
 
         $this->connection->expects($this->once())->method('sendText')

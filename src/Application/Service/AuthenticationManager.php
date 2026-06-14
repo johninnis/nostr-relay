@@ -12,16 +12,7 @@ final class AuthenticationManager
     private array $authenticatedPubkeys = [];
     private array $challenges = [];
 
-    public function issueChallenge(ClientId $clientId): ?string
-    {
-        if (null !== $this->getChallenge($clientId)) {
-            return null;
-        }
-
-        return $this->generateChallenge($clientId);
-    }
-
-    public function generateChallenge(ClientId $clientId): string
+    public function getOrCreateChallenge(ClientId $clientId): string
     {
         $key = (string) $clientId;
 

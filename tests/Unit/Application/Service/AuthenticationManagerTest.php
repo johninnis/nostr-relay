@@ -23,7 +23,7 @@ final class AuthenticationManagerTest extends TestCase
 
     public function testGenerateChallengeReturnsNonEmptyString(): void
     {
-        $challenge = $this->authManager->generateChallenge($this->clientId);
+        $challenge = $this->authManager->getOrCreateChallenge($this->clientId);
 
         $this->assertNotEmpty($challenge);
         $this->assertSame(32, strlen($challenge));
@@ -31,7 +31,7 @@ final class AuthenticationManagerTest extends TestCase
 
     public function testGetChallengeReturnsStoredChallenge(): void
     {
-        $challenge = $this->authManager->generateChallenge($this->clientId);
+        $challenge = $this->authManager->getOrCreateChallenge($this->clientId);
 
         $this->assertSame($challenge, $this->authManager->getChallenge($this->clientId));
     }
@@ -92,7 +92,7 @@ final class AuthenticationManagerTest extends TestCase
     public function testRemoveClientClearsAuthStateAndChallenge(): void
     {
         $pubkey = self::createPubkey();
-        $this->authManager->generateChallenge($this->clientId);
+        $this->authManager->getOrCreateChallenge($this->clientId);
         $this->authManager->authenticate($this->clientId, $pubkey);
 
         $this->authManager->removeClient($this->clientId);

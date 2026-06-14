@@ -239,7 +239,7 @@ final class MessageRouterTest extends TestCase
                 return 'OK' === $data[0] && true === $data[2];
             }));
         $client = $this->makeClient($connection);
-        $challenge = $this->authManager->generateChallenge($client->getId());
+        $challenge = $this->authManager->getOrCreateChallenge($client->getId());
 
         $event = (new Event(
             $keyPair->getPublicKey(),
