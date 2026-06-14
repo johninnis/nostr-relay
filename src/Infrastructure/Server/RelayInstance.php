@@ -11,7 +11,9 @@ use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClientCollection;
+use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayMetrics;
+use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
 
 final class RelayInstance
 {
@@ -47,5 +49,15 @@ final class RelayInstance
     public function getSubscriptions(): SubscriptionCollection
     {
         return $this->subscriptionManager->getAllSubscriptions();
+    }
+
+    public function getSubscriptionsForClient(ClientId $clientId): SubscriptionCollection
+    {
+        return $this->subscriptionManager->getSubscriptionsForClient($clientId);
+    }
+
+    public function getSessionCounters(ClientId $clientId): SessionCounters
+    {
+        return $this->clientManager->getSessionCounters($clientId);
     }
 }
