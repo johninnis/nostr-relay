@@ -45,11 +45,32 @@ final readonly class GuestFilterRules
 
     public function isBeyondScope(Filter $filter, bool $fromTenantsOnly): bool
     {
+        if ($fromTenantsOnly && $this->referencesTenantInPTag($filter)) {
+            return true;
+        }
+
         if ($fromTenantsOnly && !$this->authorsWithinTenants($filter)) {
             return true;
         }
 
         return !$this->kindsWithinReadable($filter);
+    }
+
+    public function referencesTenantInPTag(Filter $filter): bool
+    {
+        $pubkeys = $filter->getTags()['p'] ?? null;
+
+        if (!is_array($pubkeys)) {
+            return false;
+        }
+
+        foreach ($pubkeys as $pubkey) {
+            if (is_string($pubkey) && in_array(strtolower($pubkey), $this->tenantHexKeys, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function constrain(Filter $filter, bool $fromTenantsOnly): Filter

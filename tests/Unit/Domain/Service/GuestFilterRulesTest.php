@@ -124,4 +124,31 @@ final class GuestFilterRulesTest extends TestCase
         self::assertFalse($scoped->isBeyondScope());
         self::assertSame([self::OTHER], $scoped->getFilters()[0]->getAuthors());
     }
+
+    public function testBeyondScopeWhenPTagReferencesTenant(): void
+    {
+        $rules = new GuestFilterRules([self::TENANT], [24133]);
+
+        $scoped = $rules->scope([new Filter(kinds: [24133], tags: ['p' => [self::TENANT]])], true);
+
+        self::assertTrue($scoped->isBeyondScope());
+    }
+
+    public function testNotBeyondScopeWhenPTagReferencesNonTenant(): void
+    {
+        $rules = new GuestFilterRules([self::TENANT], [24133]);
+
+        $scoped = $rules->scope([new Filter(kinds: [24133], tags: ['p' => [self::OTHER]])], true);
+
+        self::assertFalse($scoped->isBeyondScope());
+    }
+
+    public function testPTagToTenantDoesNotTriggerChallengeWhenNotFromTenantsOnly(): void
+    {
+        $rules = new GuestFilterRules([self::TENANT], [24133]);
+
+        $scoped = $rules->scope([new Filter(kinds: [24133], tags: ['p' => [self::TENANT]])], false);
+
+        self::assertFalse($scoped->isBeyondScope());
+    }
 }

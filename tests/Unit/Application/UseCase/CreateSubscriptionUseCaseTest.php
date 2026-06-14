@@ -110,7 +110,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->assertContains('AUTH', $types);
     }
 
-    public function testBeyondScopeReissuesChallengeWhenConnectChallengeWasIgnored(): void
+    public function testBeyondScopeReissuesChallengeEvenWhenOneAlreadyExists(): void
     {
         $subId = SubscriptionId::fromString('sub-1');
 
@@ -133,7 +133,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->useCase->execute($client, $subId, [new Filter()]);
 
         $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
-        $this->assertContains('AUTH', $types, 'a beyond-scope request must re-issue an AUTH challenge even if one was already sent on connect');
+        $this->assertContains('AUTH', $types, 'a beyond-scope request must re-issue an AUTH challenge even if one was already issued earlier');
     }
 
     public function testFullyOutOfScopeSubscriptionIsCreatedNotRejected(): void

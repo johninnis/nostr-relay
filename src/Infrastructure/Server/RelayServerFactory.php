@@ -164,7 +164,6 @@ final class RelayServerFactory
 
         $connectionHandler = new ClientConnectionHandler(
             $clientManager,
-            $authManager,
             $disconnectionHandler,
             $messageRouter,
             $this->logger,
