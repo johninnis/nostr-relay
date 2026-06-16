@@ -10,6 +10,7 @@ use Innis\Nostr\Core\Domain\Service\EventValidationServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
+use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
@@ -64,9 +65,7 @@ final class ProcessAuthUseCase
                 return;
             }
 
-            $now = time();
-            $eventTime = $event->getCreatedAt()->toInt();
-            if (abs($now - $eventTime) > self::TIMESTAMP_TOLERANCE_SECONDS) {
+            if (Timestamp::now()->differenceInSeconds($event->getCreatedAt()) > self::TIMESTAMP_TOLERANCE_SECONDS) {
                 $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: timestamp out of range'));
 
                 return;
