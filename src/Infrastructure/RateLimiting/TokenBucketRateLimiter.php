@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Infrastructure\RateLimiting;
 
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
-use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
+use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitToken;
@@ -22,14 +22,14 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
     private float $lastEvictionAt = 0.0;
 
     public function __construct(
-        private readonly RelayConfigInterface $config,
+        private readonly RateLimitPolicyInterface $rateLimitPolicy,
         private readonly RateLimitMetric $metric,
     ) {
     }
 
     public function checkLimit(string $key): void
     {
-        $capacity = (float) $this->config->getRateLimitConfig()->perMinute($this->metric);
+        $capacity = (float) $this->rateLimitPolicy->limitFor($this->metric);
         $now = microtime(true);
 
         $this->evictStaleBuckets($now);

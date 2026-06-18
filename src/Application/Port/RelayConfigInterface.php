@@ -6,7 +6,6 @@ namespace Innis\Nostr\Relay\Application\Port;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
-use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 
 interface RelayConfigInterface
 {
@@ -17,8 +16,6 @@ interface RelayConfigInterface
     public function getMaxConnections(): int;
 
     public function getRelayInfo(): Nip11Info;
-
-    public function getRateLimitConfig(): RateLimitConfig;
 
     public function getRelayUrl(): RelayUrl;
 

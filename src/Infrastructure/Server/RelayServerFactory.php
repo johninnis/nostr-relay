@@ -12,6 +12,7 @@ use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
 use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
+use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
@@ -43,6 +44,7 @@ final class RelayServerFactory
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
         private readonly RelayConfigInterface $config,
+        private readonly RateLimitPolicyInterface $rateLimitPolicy,
         private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
@@ -86,8 +88,8 @@ final class RelayServerFactory
             $this->logger
         );
 
-        $eventRateLimiter = new TokenBucketRateLimiter($this->config, RateLimitMetric::Events);
-        $subscriptionRateLimiter = new TokenBucketRateLimiter($this->config, RateLimitMetric::Subscriptions);
+        $eventRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Events);
+        $subscriptionRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Subscriptions);
 
         $eventValidator = new EventValidationService(
             $this->signatureService,

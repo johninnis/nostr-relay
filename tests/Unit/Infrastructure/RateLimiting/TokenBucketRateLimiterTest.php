@@ -4,23 +4,21 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\RateLimiting;
 
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
-use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
+use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
+use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
-use RuntimeException;
 
 final class TokenBucketRateLimiterTest extends TestCase
 {
     public function testAllowsRequestsWithinCapacity(): void
     {
         $limiter = new TokenBucketRateLimiter(
-            $this->configReturning(new RateLimitConfig(3, 3)),
+            new StaticRateLimitPolicy(new RateLimitConfig(3, 3)),
             RateLimitMetric::Events,
         );
 
@@ -34,51 +32,21 @@ final class TokenBucketRateLimiterTest extends TestCase
 
     public function testCapacityIsReadOnEachCheck(): void
     {
-        $config = new class(new RateLimitConfig(1, 1)) implements RelayConfigInterface {
-            public function __construct(public RateLimitConfig $rateLimitConfig)
+        $policy = new class(1) implements RateLimitPolicyInterface {
+            public function __construct(public int $limit)
             {
             }
 
-            public function getRateLimitConfig(): RateLimitConfig
+            public function limitFor(RateLimitMetric $metric): int
             {
-                return $this->rateLimitConfig;
-            }
-
-            public function getHost(): string
-            {
-                return '';
-            }
-
-            public function getPort(): int
-            {
-                return 0;
-            }
-
-            public function getMaxConnections(): int
-            {
-                return 0;
-            }
-
-            public function getRelayInfo(): Nip11Info
-            {
-                throw new RuntimeException('not used');
-            }
-
-            public function getRelayUrl(): RelayUrl
-            {
-                throw new RuntimeException('not used');
-            }
-
-            public function getTrustedProxies(): array
-            {
-                return [];
+                return $this->limit;
             }
         };
 
-        $limiter = new TokenBucketRateLimiter($config, RateLimitMetric::Events);
+        $limiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events);
         $limiter->checkLimit('key');
 
-        $config->rateLimitConfig = new RateLimitConfig(10, 10);
+        $policy->limit = 10;
         $limiter->reset('key');
         for ($i = 0; $i < 10; ++$i) {
             $limiter->checkLimit('key');
@@ -90,9 +58,9 @@ final class TokenBucketRateLimiterTest extends TestCase
 
     public function testMetricSelectsCorrectField(): void
     {
-        $config = $this->configReturning(new RateLimitConfig(eventsPerMinute: 1, subscriptionsPerMinute: 10));
-        $eventLimiter = new TokenBucketRateLimiter($config, RateLimitMetric::Events);
-        $subLimiter = new TokenBucketRateLimiter($config, RateLimitMetric::Subscriptions);
+        $policy = new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 1, subscriptionsPerMinute: 10));
+        $eventLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events);
+        $subLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Subscriptions);
 
         $eventLimiter->checkLimit('key');
         for ($i = 0; $i < 10; ++$i) {
@@ -106,7 +74,7 @@ final class TokenBucketRateLimiterTest extends TestCase
     public function testBucketTableIsBoundedWhenAllBucketsAreFresh(): void
     {
         $limiter = new TokenBucketRateLimiter(
-            $this->configReturning(new RateLimitConfig(60, 60)),
+            new StaticRateLimitPolicy(new RateLimitConfig(60, 60)),
             RateLimitMetric::Events,
         );
 
@@ -126,7 +94,7 @@ final class TokenBucketRateLimiterTest extends TestCase
     public function testOldestBucketsEvictedFirstWhenAtHardCap(): void
     {
         $limiter = new TokenBucketRateLimiter(
-            $this->configReturning(new RateLimitConfig(60, 60)),
+            new StaticRateLimitPolicy(new RateLimitConfig(60, 60)),
             RateLimitMetric::Events,
         );
 
@@ -143,13 +111,5 @@ final class TokenBucketRateLimiterTest extends TestCase
 
         $this->assertArrayNotHasKey('key-0', $buckets);
         $this->assertArrayHasKey('key-'.($hardMax + 499), $buckets);
-    }
-
-    private function configReturning(RateLimitConfig $rateLimitConfig): RelayConfigInterface
-    {
-        $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getRateLimitConfig')->willReturn($rateLimitConfig);
-
-        return $config;
     }
 }
