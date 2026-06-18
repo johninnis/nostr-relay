@@ -31,6 +31,11 @@ final class RelayInstance
         $this->server->start();
     }
 
+    public function stop(): void
+    {
+        $this->server->stop();
+    }
+
     public function distributeEvent(Event $event): void
     {
         $this->distributor->distributeToSubscribers($event);

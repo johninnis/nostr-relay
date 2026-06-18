@@ -33,6 +33,8 @@ final class AmphpRelayServer
     private const int HTTP_BODY_SIZE_LIMIT = 32 * 1024;
     private const int HTTP_STREAM_TIMEOUT_SECONDS = 15;
 
+    private ?SocketHttpServer $server = null;
+
     public function __construct(
         private readonly RelayConfigInterface $config,
         private readonly ClientConnectionHandler $connectionHandler,
@@ -143,11 +145,14 @@ final class AmphpRelayServer
             throw ConnectionException::bindFailed($host, $port, $e);
         }
 
-        $this->logger->info('Relay server started successfully');
+        $this->server = $server;
 
-        $signal = \Amp\trapSignal([SIGINT, SIGTERM]);
-        $this->logger->info('Received shutdown signal', ['signal' => $signal]);
-        $server->stop();
+        $this->logger->info('Relay server started successfully');
+    }
+
+    public function stop(): void
+    {
+        $this->server?->stop();
     }
 
     private function delegateToHttpHandler(Request $request, HttpRequestHandlerInterface $handler): ?Response
