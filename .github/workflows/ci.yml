@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: intl, sodium, ffi, gmp
+          coverage: none
+          tools: composer:v2
+
+      - name: Install libsecp256k1 (exercise the FFI crypto path)
+        run: sudo apt-get update && sudo apt-get install -y libsecp256k1-1
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: vendor
+          key: composer-${{ hashFiles('composer.json') }}
+          restore-keys: composer-
+
+      - name: Install dependencies
+        run: composer install --no-progress --no-interaction --prefer-dist
+
+      - name: Run tests + PHPStan
+        run: composer test
+
+      - name: Check code style
+        run: composer check-style

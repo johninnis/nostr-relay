@@ -1,5 +1,7 @@
 # innis/nostr-relay
 
+[![CI](https://github.com/johninnis/nostr-relay/actions/workflows/ci.yml/badge.svg)](https://github.com/johninnis/nostr-relay/actions/workflows/ci.yml)
+
 **AMPHP-based async WebSocket relay server for Nostr protocol**
 
 A private, high-performance Nostr relay implementation designed to be embedded in PHP applications. Built with AMPHP for concurrent connection handling and clean architecture principles.
