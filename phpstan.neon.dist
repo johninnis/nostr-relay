@@ -9,10 +9,10 @@ parameters:
     tmpDir: var/phpstan
     reportUnmatchedIgnoredErrors: true
     ignoreErrors:
-        # PHP cannot express generic array types natively (e.g. array<string,mixed>)
+        # PHP cannot express an array's value type natively (e.g. list<string>)
         -
             identifier: missingType.iterableValue
-        # PHP cannot express generic class types natively (e.g. Collection<Event>)
+        # PHP cannot express generic type parameters natively (e.g. IteratorAggregate<int, Event>)
         -
             identifier: missingType.generics
         # PHPStan infers port range but the explicit bounds check is intentional defensive code

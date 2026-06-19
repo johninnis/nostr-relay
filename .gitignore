@@ -1,14 +1,16 @@
 /vendor/
 /var/
-.claude/
-composer.lock
 
+/phpunit.xml
+.php-cs-fixer.cache
 .phpunit.result.cache
 .phpunit.cache
 
-.php-cs-fixer.cache
-
 *.swp
-/.idea
-
 .#*
+/.idea/
+/.vscode/
+
+.claude/
+
+composer.lock
