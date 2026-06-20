@@ -40,6 +40,16 @@ final class MessageRouter
         try {
             $clientMessage = $this->deserialiser->deserialiseClientMessage($message);
 
+            if (null === $clientMessage) {
+                $this->clientManager->send($client, new NoticeMessage('Invalid message'));
+                $this->logger->warning('Invalid message received', [
+                    'client_id' => (string) $client->getId(),
+                    'message' => mb_substr($message, 0, 200),
+                ]);
+
+                return;
+            }
+
             match (true) {
                 $clientMessage instanceof EventMessage => $this->processEventSubmissionUseCase->execute(
                     $client,
