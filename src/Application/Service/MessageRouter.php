@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Domain\Service\MessageSerialiserInterface;
+use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
@@ -29,7 +29,7 @@ final class MessageRouter
         private readonly CloseSubscriptionUseCase $closeSubscriptionUseCase,
         private readonly ProcessAuthUseCase $processAuthUseCase,
         private readonly CountSubscriptionUseCase $countSubscriptionUseCase,
-        private readonly MessageSerialiserInterface $serialiser,
+        private readonly MessageDeserialiserInterface $deserialiser,
         private readonly ClientManager $clientManager,
         private readonly LoggerInterface $logger,
     ) {
@@ -38,7 +38,7 @@ final class MessageRouter
     public function route(RelayClient $client, string $message): void
     {
         try {
-            $clientMessage = $this->serialiser->deserialiseClientMessage($message);
+            $clientMessage = $this->deserialiser->deserialiseClientMessage($message);
 
             match (true) {
                 $clientMessage instanceof EventMessage => $this->processEventSubmissionUseCase->execute(

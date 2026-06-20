@@ -8,7 +8,7 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
-use Innis\Nostr\Core\Domain\Service\MessageSerialiserInterface;
+use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
@@ -59,7 +59,7 @@ final class MessageRouterTest extends TestCase
         return Secp256k1Signer::create();
     }
 
-    private MessageSerialiserInterface&Stub $serialiser;
+    private MessageDeserialiserInterface&Stub $deserialiser;
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
     private SubscriptionManager $subscriptionManager;
@@ -70,7 +70,7 @@ final class MessageRouterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->serialiser = $this->createStub(MessageSerialiserInterface::class);
+        $this->deserialiser = $this->createStub(MessageDeserialiserInterface::class);
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->policy->method('allowsAuthentication')->willReturn(true);
@@ -152,7 +152,7 @@ final class MessageRouterTest extends TestCase
             $closeSubscription,
             $processAuth,
             $countSubscription,
-            $this->serialiser,
+            $this->deserialiser,
             $this->clientManager,
             $logger,
         );
@@ -179,7 +179,7 @@ final class MessageRouterTest extends TestCase
             EventContent::fromString('test'),
         ))->sign($keyPair, $this->signatureService());
 
-        $this->serialiser->method('deserialiseClientMessage')->willReturn(new EventMessage($event));
+        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new EventMessage($event));
         $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
 
         $connection = $this->createMock(ClientConnectionInterface::class);
@@ -200,7 +200,7 @@ final class MessageRouterTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
         $filters = new FilterCollection([new Filter()]);
 
-        $this->serialiser->method('deserialiseClientMessage')->willReturn(new ReqMessage($subId, $filters));
+        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new ReqMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn([]);
 
@@ -215,7 +215,7 @@ final class MessageRouterTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
         $filters = new FilterCollection([new Filter()]);
 
-        $this->serialiser->method('deserialiseClientMessage')
+        $this->deserialiser->method('deserialiseClientMessage')
             ->willReturnOnConsecutiveCalls(
                 new ReqMessage($subId, $filters),
                 new CloseMessage($subId),
@@ -255,7 +255,7 @@ final class MessageRouterTest extends TestCase
             EventContent::fromString(''),
         ))->sign($keyPair, $this->signatureService());
 
-        $this->serialiser->method('deserialiseClientMessage')->willReturn(new AuthMessage($event));
+        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new AuthMessage($event));
 
         $this->router->route($client, '["AUTH",{}]');
 
@@ -267,7 +267,7 @@ final class MessageRouterTest extends TestCase
         $subId = SubscriptionIdMother::from('count-1');
         $filters = new FilterCollection([new Filter()]);
 
-        $this->serialiser->method('deserialiseClientMessage')->willReturn(new CountMessage($subId, $filters));
+        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new CountMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(42);
 
@@ -286,7 +286,7 @@ final class MessageRouterTest extends TestCase
 
     public function testSendsNoticeForInvalidMessage(): void
     {
-        $this->serialiser
+        $this->deserialiser
             ->method('deserialiseClientMessage')
             ->willThrowException(new InvalidArgumentException('bad json'));
 
@@ -305,7 +305,7 @@ final class MessageRouterTest extends TestCase
 
     public function testSendsNoticeForUnexpectedError(): void
     {
-        $this->serialiser
+        $this->deserialiser
             ->method('deserialiseClientMessage')
             ->willThrowException(new RuntimeException('unexpected'));
 

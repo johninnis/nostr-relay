@@ -9,7 +9,7 @@ use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
-use Innis\Nostr\Core\Infrastructure\Encoding\JsonMessageSerialiser;
+use Innis\Nostr\Core\Infrastructure\Encoding\JsonMessageDeserialiser;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
 use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
@@ -153,7 +153,7 @@ final class RelayServerFactory
             $this->logger
         );
 
-        $serialiser = new JsonMessageSerialiser();
+        $deserialiser = new JsonMessageDeserialiser();
 
         $messageRouter = new MessageRouter(
             $processEventUseCase,
@@ -161,7 +161,7 @@ final class RelayServerFactory
             $closeSubscriptionUseCase,
             $processAuthUseCase,
             $countSubscriptionUseCase,
-            $serialiser,
+            $deserialiser,
             $clientManager,
             $this->logger
         );
