@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -40,8 +41,8 @@ final class CloseSubscriptionUseCaseTest extends TestCase
 
     public function testExecuteRemovesSubscription(): void
     {
-        $subId = SubscriptionId::fromString('sub-1');
-        $subscription = Subscription::create($subId, [new Filter()]);
+        $subId = SubscriptionIdMother::from('sub-1');
+        $subscription = Subscription::create($subId, new FilterCollection([new Filter()]));
         $this->subscriptionManager->addSubscription($this->client->getId(), $subscription);
 
         $this->useCase->execute($this->client, $subId);
@@ -51,7 +52,7 @@ final class CloseSubscriptionUseCaseTest extends TestCase
 
     public function testExecuteHandlesNonExistentSubscription(): void
     {
-        $this->useCase->execute($this->client, SubscriptionId::fromString('missing'));
+        $this->useCase->execute($this->client, SubscriptionIdMother::from('missing'));
 
         $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
     }

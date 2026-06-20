@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Application\UseCase\ManageSubscription;
+namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;

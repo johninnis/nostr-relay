@@ -2,8 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Application\UseCase\ManageSubscription;
+namespace Innis\Nostr\Relay\Application\UseCase;
 
+use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
@@ -37,7 +39,7 @@ final class CreateSubscriptionUseCase
     ) {
     }
 
-    public function execute(RelayClient $client, SubscriptionId $subscriptionId, array $filters): void
+    public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): void
     {
         try {
             $modifiedFilters = $this->admission->admit($client, $filters)->getFilters();
@@ -53,7 +55,7 @@ final class CreateSubscriptionUseCase
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'reason' => $e->getMessage(),
-                'filters' => array_map(static fn ($filter) => $filter->toArray(), $filters),
+                'filters' => array_map(static fn (Filter $filter) => $filter->toArray(), $filters->toArray()),
             ]);
         } catch (RateLimitException) {
             $this->clientManager->send($client, new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
@@ -68,7 +70,7 @@ final class CreateSubscriptionUseCase
         }
     }
 
-    private function sendStoredEvents(RelayClient $client, Subscription $subscription, array $filters): void
+    private function sendStoredEvents(RelayClient $client, Subscription $subscription, FilterCollection $filters): void
     {
         try {
             $events = $this->eventStore->findByFilters($filters, 1000);

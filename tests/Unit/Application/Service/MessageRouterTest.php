@@ -6,7 +6,8 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
+use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\MessageSerialiserInterface;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
@@ -18,11 +19,10 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
-use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -35,16 +35,17 @@ use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
-use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutorAdapter;
+use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
+use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
 use InvalidArgumentException;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
@@ -55,7 +56,7 @@ final class MessageRouterTest extends TestCase
 {
     private function signatureService(): \Innis\Nostr\Core\Domain\Service\SignatureServiceInterface
     {
-        return Secp256k1SignatureAdapter::create();
+        return Secp256k1Signer::create();
     }
 
     private MessageSerialiserInterface&Stub $serialiser;
@@ -95,7 +96,7 @@ final class MessageRouterTest extends TestCase
         );
 
         $signatureService = $this->signatureService();
-        $eventValidator = new EventValidationService($signatureService, new NipComplianceValidator($signatureService));
+        $eventValidator = new EventValidator($signatureService, new NipComplianceValidator($signatureService));
 
         $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authManager, $this->clientManager);
 
@@ -109,7 +110,7 @@ final class MessageRouterTest extends TestCase
             $logger,
             $eventValidator,
             $this->clientManager,
-            new AmphpDeferredExecutorAdapter(),
+            new AmphpDeferredExecutor(),
         );
 
         $createSubscription = new CreateSubscriptionUseCase(
@@ -118,7 +119,7 @@ final class MessageRouterTest extends TestCase
             $this->subscriptionManager,
             $admission,
             $this->clientManager,
-            new AmphpDeferredExecutorAdapter(),
+            new AmphpDeferredExecutor(),
             $logger,
         );
 
@@ -196,8 +197,8 @@ final class MessageRouterTest extends TestCase
 
     public function testRoutesReqMessage(): void
     {
-        $subId = SubscriptionId::fromString('sub-1');
-        $filters = [new Filter()];
+        $subId = SubscriptionIdMother::from('sub-1');
+        $filters = new FilterCollection([new Filter()]);
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new ReqMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
@@ -211,8 +212,8 @@ final class MessageRouterTest extends TestCase
 
     public function testRoutesCloseMessage(): void
     {
-        $subId = SubscriptionId::fromString('sub-1');
-        $filters = [new Filter()];
+        $subId = SubscriptionIdMother::from('sub-1');
+        $filters = new FilterCollection([new Filter()]);
 
         $this->serialiser->method('deserialiseClientMessage')
             ->willReturnOnConsecutiveCalls(
@@ -263,8 +264,8 @@ final class MessageRouterTest extends TestCase
 
     public function testRoutesCountMessage(): void
     {
-        $subId = SubscriptionId::fromString('count-1');
-        $filters = [new Filter()];
+        $subId = SubscriptionIdMother::from('count-1');
+        $filters = new FilterCollection([new Filter()]);
 
         $this->serialiser->method('deserialiseClientMessage')->willReturn(new CountMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));

@@ -46,7 +46,7 @@ final class ClientConnectionHandler
                 throw ConnectionException::ipBlocked($ipAddress);
             }
 
-            $adapter = new WebsocketClientAdapter($websocketClient);
+            $adapter = new WebsocketClientConnection($websocketClient);
             $client = $this->clientManager->registerClient($adapter, $connectionInfo);
 
             while ($message = $websocketClient->receive(new TimeoutCancellation($this->idleTimeoutSeconds))) {
@@ -59,7 +59,7 @@ final class ClientConnectionHandler
                 'ip' => $ipAddress,
                 'reason' => $e->getMessage(),
             ]);
-            $websocketClient->sendText((new NoticeMessage($e->getMessage()))->toJson());
+            $websocketClient->sendText(new NoticeMessage($e->getMessage())->toJson());
         } catch (Throwable $e) {
             $this->logger->error('Client connection error', [
                 'ip' => $ipAddress,

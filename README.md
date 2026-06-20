@@ -33,7 +33,7 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 
 ## Requirements
 
-- PHP 8.3 or higher
+- PHP 8.4 or higher
 - `innis/nostr-core` - Core Nostr protocol entities
 - `amphp/amp` ^3.0 - Async runtime
 - `amphp/http-server` ^3.0 - HTTP server

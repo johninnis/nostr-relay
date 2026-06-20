@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Entity\SubscriptionCollection;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
@@ -12,6 +13,7 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
+use Override;
 use Psr\Log\LoggerInterface;
 
 final class SubscriptionManager implements SubscriptionLookupInterface
@@ -28,7 +30,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     ) {
     }
 
-    public function addSubscription(ClientId $clientId, Subscription $subscription, array $originalFilters = []): void
+    public function addSubscription(ClientId $clientId, Subscription $subscription, ?FilterCollection $originalFilters = null): void
     {
         $key = $this->compositeKey($clientId, $subscription->getId());
         $clientIdStr = (string) $clientId;
@@ -39,7 +41,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
         $this->subscriptions[$key] = $subscription;
         $this->clientIdByKey[$key] = $clientId;
-        $this->originalFiltersByKey[$key] = $originalFilters;
+        $this->originalFiltersByKey[$key] = $originalFilters ?? FilterCollection::empty();
         $this->addToKindIndex($subscription, $key);
         $this->subscriptionsByClient[$clientIdStr][$key] = true;
 
@@ -116,6 +118,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         return $results;
     }
 
+    #[Override]
     public function getSubscriptionsForClient(ClientId $clientId): SubscriptionCollection
     {
         $keys = array_keys($this->subscriptionsByClient[(string) $clientId] ?? []);
@@ -131,14 +134,15 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         return new SubscriptionCollection($subscriptions);
     }
 
+    #[Override]
     public function getSubscriptionCountForClient(ClientId $clientId): int
     {
         return count($this->subscriptionsByClient[(string) $clientId] ?? []);
     }
 
-    public function getOriginalFilters(ClientId $clientId, SubscriptionId $subscriptionId): array
+    public function getOriginalFilters(ClientId $clientId, SubscriptionId $subscriptionId): FilterCollection
     {
-        return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? [];
+        return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? FilterCollection::empty();
     }
 
     public function getSubscriptionIdsForClient(ClientId $clientId): array
@@ -176,7 +180,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
         foreach ($subscription->getFilters() as $filter) {
             if ($filter->hasKinds()) {
-                foreach ($filter->getKinds() as $kind) {
+                foreach ($filter->getKinds() ?? [] as $kind) {
                     $kindInt = $kind->toInt();
                     if (!isset($indexedKinds[$kindInt])) {
                         $this->subscriptionsByKind[$kindInt][$key] = true;
@@ -196,7 +200,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
         foreach ($subscription->getFilters() as $filter) {
             if ($filter->hasKinds()) {
-                foreach ($filter->getKinds() as $kind) {
+                foreach ($filter->getKinds() ?? [] as $kind) {
                     $kindInt = $kind->toInt();
                     if (!isset($removedKinds[$kindInt])) {
                         $this->removeKindEntry($kindInt, $key);

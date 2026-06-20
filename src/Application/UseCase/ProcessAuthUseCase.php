@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Application\UseCase\ProcessAuth;
+namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
-use Innis\Nostr\Core\Domain\Service\EventValidationServiceInterface;
+use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
@@ -16,7 +16,6 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -30,7 +29,7 @@ final class ProcessAuthUseCase
         private readonly RelayConfigInterface $config,
         private readonly RelayPolicyInterface $policy,
         private readonly LoggerInterface $logger,
-        private readonly EventValidationServiceInterface $eventValidator,
+        private readonly EventValidatorInterface $eventValidator,
         private readonly ClientManager $clientManager,
         private readonly SubscriptionManager $subscriptionManager,
         private readonly CreateSubscriptionUseCase $createSubscription,
@@ -106,7 +105,7 @@ final class ProcessAuthUseCase
         foreach ($this->subscriptionManager->getSubscriptionIdsForClient($client->getId()) as $subscriptionId) {
             $originalFilters = $this->subscriptionManager->getOriginalFilters($client->getId(), $subscriptionId);
 
-            if ([] === $originalFilters) {
+            if ($originalFilters->isEmpty()) {
                 continue;
             }
 

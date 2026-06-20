@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
@@ -12,6 +13,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
+use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -34,9 +36,9 @@ final class SubscriptionManagerTest extends TestCase
 
     private function createSubscription(string $subId, ?array $kinds = null): Subscription
     {
-        $filters = [new Filter(kinds: $kinds)];
+        $filters = new FilterCollection([new Filter(kinds: $kinds)]);
 
-        return Subscription::create(SubscriptionId::fromString($subId), $filters);
+        return Subscription::create(SubscriptionIdMother::from($subId), $filters);
     }
 
     public function testAddSubscriptionIncrementsMetrics(): void
@@ -91,7 +93,7 @@ final class SubscriptionManagerTest extends TestCase
 
         $manager->removeSubscription(
             ClientId::fromString('client-1'),
-            SubscriptionId::fromString('missing'),
+            SubscriptionIdMother::from('missing'),
         );
     }
 
@@ -113,7 +115,7 @@ final class SubscriptionManagerTest extends TestCase
     public function testUpdateSubscriptionStateChangesState(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $subId = SubscriptionId::fromString('sub-1');
+        $subId = SubscriptionIdMother::from('sub-1');
         $subscription = $this->createSubscription('sub-1');
 
         $this->manager->addSubscription($clientId, $subscription);
@@ -201,21 +203,20 @@ final class SubscriptionManagerTest extends TestCase
     public function testRecordsAndReturnsOriginalFilters(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $originalFilters = [new Filter(kinds: [EventKind::TEXT_NOTE])];
+        $originalFilters = new FilterCollection([new Filter(kinds: [EventKind::TEXT_NOTE])]);
 
         $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
 
         $this->assertSame(
             $originalFilters,
-            $this->manager->getOriginalFilters($clientId, SubscriptionId::fromString('sub-1')),
+            $this->manager->getOriginalFilters($clientId, SubscriptionIdMother::from('sub-1')),
         );
     }
 
     public function testGetOriginalFiltersDefaultsToEmptyWhenUnknown(): void
     {
-        $this->assertSame(
-            [],
-            $this->manager->getOriginalFilters(ClientId::fromString('client-1'), SubscriptionId::fromString('missing')),
+        $this->assertTrue(
+            $this->manager->getOriginalFilters(ClientId::fromString('client-1'), SubscriptionIdMother::from('missing'))->isEmpty(),
         );
     }
 
@@ -237,11 +238,11 @@ final class SubscriptionManagerTest extends TestCase
     public function testRemoveSubscriptionClearsOriginalFilters(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $originalFilters = [new Filter(kinds: [EventKind::TEXT_NOTE])];
+        $originalFilters = new FilterCollection([new Filter(kinds: [EventKind::TEXT_NOTE])]);
         $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
 
-        $this->manager->removeSubscription($clientId, SubscriptionId::fromString('sub-1'));
+        $this->manager->removeSubscription($clientId, SubscriptionIdMother::from('sub-1'));
 
-        $this->assertSame([], $this->manager->getOriginalFilters($clientId, SubscriptionId::fromString('sub-1')));
+        $this->assertTrue($this->manager->getOriginalFilters($clientId, SubscriptionIdMother::from('sub-1'))->isEmpty());
     }
 }

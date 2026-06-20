@@ -6,15 +6,15 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
-use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
@@ -24,6 +24,7 @@ use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
@@ -61,7 +62,7 @@ final class EventDistributorTest extends TestCase
 
     private function createEvent(): Event
     {
-        $keyPair = KeyPair::generate(Secp256k1SignatureAdapter::create());
+        $keyPair = KeyPair::generate(Secp256k1Signer::create());
 
         return new Event(
             $keyPair->getPublicKey(),
@@ -79,7 +80,7 @@ final class EventDistributorTest extends TestCase
         $client = $this->clientManager->registerClient($connection, $connectionInfo);
 
         $filter = new Filter(kinds: $kinds);
-        $subscription = Subscription::create(SubscriptionId::fromString($subIdStr), [$filter])
+        $subscription = Subscription::create(SubscriptionIdMother::from($subIdStr), new FilterCollection([$filter]))
             ->withState(SubscriptionState::ACTIVE);
 
         $this->subscriptionManager->addSubscription($client->getId(), $subscription);

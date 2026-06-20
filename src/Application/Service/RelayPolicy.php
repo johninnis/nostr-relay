@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -14,6 +15,7 @@ use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use InvalidArgumentException;
+use Override;
 use Psr\Log\LoggerInterface;
 
 final class RelayPolicy implements RelayPolicyInterface
@@ -61,6 +63,7 @@ final class RelayPolicy implements RelayPolicyInterface
         $this->guestFilterRules = new GuestFilterRules($tenantHexKeys, $this->guestReadKinds);
     }
 
+    #[Override]
     public function allowEventSubmission(RelayClient $client, Event $event): void
     {
         if ($event->getContent()->getLength() > $this->maxEventSize) {
@@ -93,12 +96,14 @@ final class RelayPolicy implements RelayPolicyInterface
         throw new AuthRequiredException('authentication required to publish this event kind');
     }
 
-    public function allowSubscription(RelayClient $client, array $filters): void
+    #[Override]
+    public function allowSubscription(RelayClient $client, FilterCollection $filters): void
     {
         $this->subscriptionLimits->enforce($client, $filters);
     }
 
-    public function filterForClient(RelayClient $client, array $filters): ScopedFilters
+    #[Override]
+    public function filterForClient(RelayClient $client, FilterCollection $filters): ScopedFilters
     {
         if ($this->isOpenRelay() || $this->isTenant($client)) {
             return ScopedFilters::unchanged($filters);
@@ -107,6 +112,7 @@ final class RelayPolicy implements RelayPolicyInterface
         return $this->guestFilterRules->scope($filters, $this->guestReadFromTenants);
     }
 
+    #[Override]
     public function canClientReceiveEvent(RelayClient $client, Event $event): bool
     {
         if ($this->isOpenRelay() || $this->isTenant($client)) {
@@ -116,11 +122,13 @@ final class RelayPolicy implements RelayPolicyInterface
         return $this->guestFilterRules->allowsEvent($event, $this->guestReadFromTenants);
     }
 
+    #[Override]
     public function isRateLimitExempt(RelayClient $client): bool
     {
         return $this->isOpenRelay() || $this->isTenant($client);
     }
 
+    #[Override]
     public function allowsAuthentication(PublicKey $pubkey): bool
     {
         return $this->isOpenRelay() || $this->isTenantPubkey($pubkey);

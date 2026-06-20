@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission;
+namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\EventReference;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
-use Innis\Nostr\Core\Domain\Service\EventValidationServiceInterface;
+use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
 use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
@@ -40,7 +42,7 @@ final class ProcessEventSubmissionUseCase
         private readonly RateLimiterInterface $rateLimiter,
         private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
-        private readonly EventValidationServiceInterface $eventValidator,
+        private readonly EventValidatorInterface $eventValidator,
         private readonly ClientManager $clientManager,
         private readonly DeferredExecutorInterface $deferredExecutor,
     ) {
@@ -53,10 +55,10 @@ final class ProcessEventSubmissionUseCase
         $deletedCount = 0;
 
         $requestedEventIds = array_map(
-            static fn ($ref) => $ref->getEventId(),
-            $references->getEvents()
+            static fn (EventReference $ref) => $ref->getEventId(),
+            $references->getEvents()->toArray()
         );
-        $requestedCoordinates = $references->getAddressable();
+        $requestedCoordinates = $references->getAddressable()->toArray();
         $requestedCount = count($requestedEventIds) + count($requestedCoordinates);
 
         $verifiedEventIds = $this->verifyOwnedEventIds($requestedEventIds, $author);
@@ -113,7 +115,7 @@ final class ProcessEventSubmissionUseCase
             array_chunk($eventIds, Filter::MAX_VALUES_PER_FIELD)
         );
 
-        $storedEvents = $this->eventStore->findByFilters($filters, count($eventIds));
+        $storedEvents = $this->eventStore->findByFilters(new FilterCollection($filters), count($eventIds));
 
         $verified = [];
         foreach ($storedEvents as $storedEvent) {

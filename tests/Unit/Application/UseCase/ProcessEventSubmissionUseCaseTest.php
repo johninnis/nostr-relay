@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
@@ -15,7 +15,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
-use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -25,14 +25,14 @@ use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
-use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutorAdapter;
+use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -48,7 +48,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
     private function signatureService(): SignatureServiceInterface
     {
-        return $this->sigService ??= Secp256k1SignatureAdapter::create();
+        return $this->sigService ??= Secp256k1Signer::create();
     }
 
     protected function setUp(): void
@@ -90,9 +90,9 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $this->rateLimiter,
             $metrics,
             $logger,
-            new EventValidationService($this->signatureService(), new NipComplianceValidator($this->signatureService())),
+            new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
             $this->clientManager,
-            new AmphpDeferredExecutorAdapter(),
+            new AmphpDeferredExecutor(),
         );
     }
 

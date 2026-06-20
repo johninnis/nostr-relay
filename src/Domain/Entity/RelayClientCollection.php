@@ -9,6 +9,7 @@ use Countable;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use InvalidArgumentException;
 use IteratorAggregate;
+use Override;
 
 final class RelayClientCollection implements IteratorAggregate, Countable
 {
@@ -62,11 +63,13 @@ final class RelayClientCollection implements IteratorAggregate, Countable
         return array_values($this->clients);
     }
 
+    #[Override]
     public function getIterator(): ArrayIterator
     {
         return new ArrayIterator(array_values($this->clients));
     }
 
+    #[Override]
     public function count(): int
     {
         return count($this->clients);

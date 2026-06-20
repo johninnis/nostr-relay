@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Domain\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
@@ -17,7 +18,7 @@ final readonly class GuestFilterRules
     ) {
     }
 
-    public function scope(array $filters, bool $fromTenantsOnly): ScopedFilters
+    public function scope(FilterCollection $filters, bool $fromTenantsOnly): ScopedFilters
     {
         $beyondScope = false;
         $scoped = [];
@@ -27,7 +28,7 @@ final readonly class GuestFilterRules
             $scoped[] = $this->constrain($filter, $fromTenantsOnly);
         }
 
-        return ScopedFilters::scoped($scoped, $beyondScope);
+        return ScopedFilters::scoped(new FilterCollection($scoped), $beyondScope);
     }
 
     public function allowsEvent(Event $event, bool $fromTenantsOnly): bool

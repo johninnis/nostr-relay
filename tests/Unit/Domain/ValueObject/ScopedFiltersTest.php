@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use PHPUnit\Framework\TestCase;
 
@@ -12,7 +13,7 @@ final class ScopedFiltersTest extends TestCase
 {
     public function testUnchangedIsNotBeyondScope(): void
     {
-        $filters = [new Filter()];
+        $filters = new FilterCollection([new Filter()]);
 
         $scoped = ScopedFilters::unchanged($filters);
 
@@ -22,7 +23,7 @@ final class ScopedFiltersTest extends TestCase
 
     public function testScopedCarriesFiltersAndBeyondScopeFlag(): void
     {
-        $filters = [new Filter(kinds: [1])];
+        $filters = new FilterCollection([new Filter(kinds: [1])]);
 
         $scoped = ScopedFilters::scoped($filters, true);
 
@@ -32,9 +33,11 @@ final class ScopedFiltersTest extends TestCase
 
     public function testScopedCanDropAllFiltersWhileFlaggingBeyondScope(): void
     {
-        $scoped = ScopedFilters::scoped([], true);
+        $filters = FilterCollection::empty();
 
-        $this->assertSame([], $scoped->getFilters());
+        $scoped = ScopedFilters::scoped($filters, true);
+
+        $this->assertSame($filters, $scoped->getFilters());
         $this->assertTrue($scoped->isBeyondScope());
     }
 }

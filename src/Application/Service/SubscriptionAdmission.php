@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -21,7 +22,7 @@ final readonly class SubscriptionAdmission
     ) {
     }
 
-    public function admit(RelayClient $client, array $filters): ScopedFilters
+    public function admit(RelayClient $client, FilterCollection $filters): ScopedFilters
     {
         if (!$this->policy->isRateLimitExempt($client)) {
             $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());

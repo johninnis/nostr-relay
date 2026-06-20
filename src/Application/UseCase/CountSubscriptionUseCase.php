@@ -2,8 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Application\UseCase\ManageSubscription;
+namespace Innis\Nostr\Relay\Application\UseCase;
 
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
@@ -26,7 +27,7 @@ final class CountSubscriptionUseCase
     ) {
     }
 
-    public function execute(RelayClient $client, SubscriptionId $subscriptionId, array $filters): void
+    public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): void
     {
         try {
             $scopedFilters = $this->admission->admit($client, $filters);

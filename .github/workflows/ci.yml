@@ -38,3 +38,6 @@ jobs:
 
       - name: Check code style
         run: composer check-style
+
+      - name: Check Rector (8.4 modernisation)
+        run: composer check-rector

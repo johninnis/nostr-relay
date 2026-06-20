@@ -6,7 +6,7 @@ namespace Innis\Nostr\Relay\Domain\ValueObject;
 
 final readonly class RateLimitToken
 {
-    private const SECONDS_PER_MINUTE = 60.0;
+    private const float SECONDS_PER_MINUTE = 60.0;
 
     public function __construct(
         private float $tokens,

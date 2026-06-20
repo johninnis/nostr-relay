@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
-use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Amp\Http\Server\ErrorHandler;
+use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
-use Innis\Nostr\Core\Infrastructure\Adapter\JsonMessageSerialiserAdapter;
-use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
+use Innis\Nostr\Core\Infrastructure\Encoding\JsonMessageSerialiser;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
 use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
@@ -23,14 +24,14 @@ use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CloseSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CountSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmission\ProcessEventSubmissionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
-use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutorAdapter;
-use Innis\Nostr\Relay\Infrastructure\Http\ConfigNip11InfoAdapter;
+use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
+use Innis\Nostr\Relay\Infrastructure\Http\ConfigNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
@@ -51,8 +52,9 @@ final class RelayServerFactory
         private readonly ?Nip11InfoProviderInterface $nip11InfoProvider = null,
         ?SignatureServiceInterface $signatureService = null,
         private readonly ?ConnectionGateInterface $connectionGate = null,
+        private readonly ?ErrorHandler $errorHandler = null,
     ) {
-        $this->signatureService = $signatureService ?? Secp256k1SignatureAdapter::create();
+        $this->signatureService = $signatureService ?? Secp256k1Signer::create();
     }
 
     public function create(): RelayInstance
@@ -91,12 +93,12 @@ final class RelayServerFactory
         $eventRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Events);
         $subscriptionRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Subscriptions);
 
-        $eventValidator = new EventValidationService(
+        $eventValidator = new EventValidator(
             $this->signatureService,
             new NipComplianceValidator($this->signatureService)
         );
 
-        $deferredExecutor = new AmphpDeferredExecutorAdapter();
+        $deferredExecutor = new AmphpDeferredExecutor();
 
         $subscriptionAdmission = new SubscriptionAdmission(
             $this->policy,
@@ -151,7 +153,7 @@ final class RelayServerFactory
             $this->logger
         );
 
-        $serialiser = new JsonMessageSerialiserAdapter();
+        $serialiser = new JsonMessageSerialiser();
 
         $messageRouter = new MessageRouter(
             $processEventUseCase,
@@ -177,7 +179,7 @@ final class RelayServerFactory
             },
         );
 
-        $nip11InfoProvider = $this->nip11InfoProvider ?? new ConfigNip11InfoAdapter($this->config);
+        $nip11InfoProvider = $this->nip11InfoProvider ?? new ConfigNip11InfoProvider($this->config);
         $nip11Handler = new Nip11HttpHandler($nip11InfoProvider);
 
         $server = new AmphpRelayServer(
@@ -186,6 +188,7 @@ final class RelayServerFactory
             $nip11Handler,
             $this->logger,
             $this->httpHandler,
+            $this->errorHandler,
         );
 
         return new RelayInstance(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Service;
 
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 
@@ -16,7 +17,7 @@ final readonly class SubscriptionLimits
     ) {
     }
 
-    public function enforce(RelayClient $client, array $filters): void
+    public function enforce(RelayClient $client, FilterCollection $filters): void
     {
         if ($client->getSubscriptionCount() >= $this->maxSubscriptions) {
             throw new PolicyViolationException('too many subscriptions (max '.$this->maxSubscriptions.')');

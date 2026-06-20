@@ -7,20 +7,20 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 use Closure;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
-use Innis\Nostr\Core\Domain\Service\EventValidationService;
+use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
-use Innis\Nostr\Core\Infrastructure\Adapter\Secp256k1SignatureAdapter;
+use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -31,13 +31,14 @@ use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Application\UseCase\ManageSubscription\CreateSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessAuth\ProcessAuthUseCase;
+use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
+use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -56,12 +57,12 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     private function signatureService(): SignatureServiceInterface
     {
-        return $this->sigService ??= Secp256k1SignatureAdapter::create();
+        return $this->sigService ??= Secp256k1Signer::create();
     }
 
-    private function eventValidator(): EventValidationService
+    private function eventValidator(): EventValidator
     {
-        return new EventValidationService($this->signatureService(), new NipComplianceValidator($this->signatureService()));
+        return new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService()));
     }
 
     protected function setUp(): void
@@ -161,18 +162,18 @@ final class ProcessAuthUseCaseTest extends TestCase
         $policy->method('isRateLimitExempt')->willReturn(true);
         $policy->method('canClientReceiveEvent')->willReturn(true);
         $policy->method('filterForClient')->willReturnCallback(
-            static fn (RelayClient $client, array $filters): ScopedFilters => ScopedFilters::unchanged($filters)
+            static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters)
         );
 
         $request = $this->createNostrConnectRequest();
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willReturn([$request]);
 
-        $originalFilters = [Filter::fromArray([
+        $originalFilters = new FilterCollection([Filter::fromArray([
             'kinds' => [EventKind::nostrConnect()->toInt()],
             '#p' => [$this->keyPair->getPublicKey()->toHex()],
-        ])];
-        $subscription = Subscription::create(SubscriptionId::fromString('bunker'), $originalFilters, SubscriptionState::LIVE);
+        ])]);
+        $subscription = Subscription::create(SubscriptionIdMother::from('bunker'), $originalFilters, SubscriptionState::LIVE);
         $this->subscriptionManager->addSubscription($this->client->getId(), $subscription, $originalFilters);
 
         $useCase = new ProcessAuthUseCase(

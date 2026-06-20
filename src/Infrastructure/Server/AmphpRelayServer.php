@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Infrastructure\Server;
 
 use Amp\Http\Server\DefaultErrorHandler;
 use Amp\Http\Server\Driver\DefaultHttpDriverFactory;
+use Amp\Http\Server\ErrorHandler;
 use Amp\Http\Server\Middleware\Forwarded;
 use Amp\Http\Server\Middleware\ForwardedHeaderType;
 use Amp\Http\Server\Request;
@@ -41,6 +42,7 @@ final class AmphpRelayServer
         private readonly Nip11HttpHandler $nip11Handler,
         private readonly LoggerInterface $logger,
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
+        private readonly ?ErrorHandler $errorHandler = null,
     ) {
     }
 
@@ -71,7 +73,7 @@ final class AmphpRelayServer
             httpDriverFactory: $httpDriverFactory,
         );
 
-        $bindContext = (new BindContext())->withTcpNoDelay();
+        $bindContext = new BindContext()->withTcpNoDelay();
 
         $server->expose(new Socket\InternetAddress($host, $port), $bindContext);
 
@@ -137,7 +139,7 @@ final class AmphpRelayServer
             }
         );
 
-        $errorHandler = new DefaultErrorHandler();
+        $errorHandler = $this->errorHandler ?? new DefaultErrorHandler();
 
         try {
             $server->start($requestHandler, $errorHandler);

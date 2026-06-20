@@ -8,14 +8,16 @@ use Amp\ByteStream\StreamException;
 use Amp\Websocket\WebsocketClient;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
+use Override;
 
-final readonly class WebsocketClientAdapter implements ClientConnectionInterface
+final readonly class WebsocketClientConnection implements ClientConnectionInterface
 {
     public function __construct(
         private WebsocketClient $websocketClient,
     ) {
     }
 
+    #[Override]
     public function sendText(string $text): void
     {
         try {

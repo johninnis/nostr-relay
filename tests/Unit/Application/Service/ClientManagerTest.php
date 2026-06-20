@@ -10,7 +10,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -20,6 +19,7 @@ use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -177,7 +177,7 @@ final class ClientManagerTest extends TestCase
     public function testSendingEventMessageIncrementsEventsSent(): void
     {
         $client = $this->manager->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
-        $message = new EventMessage(SubscriptionId::fromString('sub-1'), $this->createEvent());
+        $message = new EventMessage(SubscriptionIdMother::from('sub-1'), $this->createEvent());
 
         $this->manager->send($client, $message);
         $this->manager->send($client, $message);
@@ -199,7 +199,7 @@ final class ClientManagerTest extends TestCase
         $connection = $this->createStub(ClientConnectionInterface::class);
         $connection->method('sendText')->willThrowException(ConnectionException::peerDisconnected());
         $client = $this->manager->registerClient($connection, $this->createConnectionInfo());
-        $message = new EventMessage(SubscriptionId::fromString('sub-1'), $this->createEvent());
+        $message = new EventMessage(SubscriptionIdMother::from('sub-1'), $this->createEvent());
 
         $this->expectException(ConnectionException::class);
 

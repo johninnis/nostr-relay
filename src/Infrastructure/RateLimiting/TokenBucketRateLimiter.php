@@ -9,6 +9,7 @@ use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitToken;
+use Override;
 
 final class TokenBucketRateLimiter implements RateLimiterInterface
 {
@@ -27,6 +28,7 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
     ) {
     }
 
+    #[Override]
     public function checkLimit(string $key): void
     {
         $capacity = (float) $this->rateLimitPolicy->limitFor($this->metric);
@@ -44,6 +46,7 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
         $this->buckets[$key] = $bucket->withConsumedToken();
     }
 
+    #[Override]
     public function reset(string $key): void
     {
         unset($this->buckets[$key]);
