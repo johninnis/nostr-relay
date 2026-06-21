@@ -9,7 +9,9 @@ use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinateCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventIdCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Reference\EventReference;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -53,11 +55,11 @@ final class EventDeletionProcessor
         }
 
         if (!empty($verifiedEventIds)) {
-            $deletedCount += $this->eventStore->deleteByEventIds($verifiedEventIds, $author);
+            $deletedCount += $this->eventStore->deleteByEventIds(new EventIdCollection($verifiedEventIds), $author);
         }
 
         if (!empty($verifiedCoordinates)) {
-            $deletedCount += $this->eventStore->deleteByCoordinates($verifiedCoordinates, $author);
+            $deletedCount += $this->eventStore->deleteByCoordinates(new EventCoordinateCollection($verifiedCoordinates), $author);
         }
 
         if ($deletedCount > 0) {

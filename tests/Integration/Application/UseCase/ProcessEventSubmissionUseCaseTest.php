@@ -11,6 +11,8 @@ use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinateCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventIdCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
@@ -326,8 +328,8 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $eventStore->expects($this->once())
             ->method('deleteByEventIds')
             ->with(
-                $this->callback(static function (array $eventIds) use ($targetEvent): bool {
-                    return 1 === count($eventIds) && $targetEvent->getId()->toHex() === $eventIds[0]->toHex();
+                $this->callback(static function (EventIdCollection $eventIds) use ($targetEvent): bool {
+                    return 1 === $eventIds->count() && $targetEvent->getId()->toHex() === $eventIds->toArray()[0]->toHex();
                 }),
                 $this->callback(static function (PublicKey $author) use ($keyPair): bool {
                     return $author->equals($keyPair->getPublicKey());
@@ -397,8 +399,8 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $eventStore->expects($this->once())
             ->method('deleteByCoordinates')
             ->with(
-                $this->callback(static function (array $coordinates) use ($coordinate): bool {
-                    return 1 === count($coordinates) && $coordinate === (string) $coordinates[0];
+                $this->callback(static function (EventCoordinateCollection $coordinates) use ($coordinate): bool {
+                    return 1 === $coordinates->count() && $coordinate === (string) $coordinates->toArray()[0];
                 }),
                 $this->callback(static function (PublicKey $author) use ($keyPair): bool {
                     return $author->equals($keyPair->getPublicKey());

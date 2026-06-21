@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventIdCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
@@ -31,7 +32,7 @@ final class EventDeletionProcessorTest extends TestCase
         $eventStore->expects($this->once())
             ->method('deleteByEventIds')
             ->with(
-                $this->callback(static fn (array $ids): bool => 1 === count($ids) && $target->getId()->toHex() === $ids[0]->toHex()),
+                $this->callback(static fn (EventIdCollection $ids): bool => 1 === $ids->count() && $target->getId()->toHex() === $ids->toArray()[0]->toHex()),
                 $this->callback(static fn (PublicKey $pubkey): bool => $pubkey->equals($author)),
             )
             ->willReturn(1);

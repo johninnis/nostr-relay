@@ -7,6 +7,8 @@ namespace Innis\Nostr\Relay\Application\Port;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinateCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventIdCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 
@@ -18,7 +20,7 @@ interface RelayEventStoreInterface
 
     public function countByFilters(FilterCollection $filters): int;
 
-    public function deleteByEventIds(array $eventIds, PublicKey $author): int;
+    public function deleteByEventIds(EventIdCollection $eventIds, PublicKey $author): int;
 
-    public function deleteByCoordinates(array $coordinates, PublicKey $author): int;
+    public function deleteByCoordinates(EventCoordinateCollection $coordinates, PublicKey $author): int;
 }
