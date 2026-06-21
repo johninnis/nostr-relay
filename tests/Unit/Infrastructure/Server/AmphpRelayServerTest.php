@@ -22,37 +22,37 @@ final class AmphpRelayServerTest extends TestCase
 
     public function testAcceptsEmptyList(): void
     {
-        self::invokeValidator([]);
+        $this->expectNotToPerformAssertions();
 
-        $this->assertTrue(true);
+        self::invokeValidator([]);
     }
 
     public function testAcceptsPlainIpv4(): void
     {
-        self::invokeValidator(['10.0.0.1']);
+        $this->expectNotToPerformAssertions();
 
-        $this->assertTrue(true);
+        self::invokeValidator(['10.0.0.1']);
     }
 
     public function testAcceptsPlainIpv6(): void
     {
-        self::invokeValidator(['2001:db8::1']);
+        $this->expectNotToPerformAssertions();
 
-        $this->assertTrue(true);
+        self::invokeValidator(['2001:db8::1']);
     }
 
     public function testAcceptsIpv4Cidr(): void
     {
-        self::invokeValidator(['172.18.0.0/24']);
+        $this->expectNotToPerformAssertions();
 
-        $this->assertTrue(true);
+        self::invokeValidator(['172.18.0.0/24']);
     }
 
     public function testAcceptsIpv6Cidr(): void
     {
-        self::invokeValidator(['2001:db8::/32']);
+        $this->expectNotToPerformAssertions();
 
-        $this->assertTrue(true);
+        self::invokeValidator(['2001:db8::/32']);
     }
 
     public function testRejectsHostname(): void
