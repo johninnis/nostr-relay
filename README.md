@@ -252,6 +252,19 @@ websocat ws://localhost:8080
 
 ---
 
+## Error handling
+
+The relay splits failures into two kinds. Anticipated domain outcomes — a well-formed request whose answer is "no" — are **returned** as typed values (`?T` or a `*Failure`), never thrown, so the caller is forced to handle the failure branch. Faults — violated invariants, programmer errors and infrastructure failures — are **thrown** as exceptions. Some validation commands return `void` and so throw a typed exception on rejection (policy, rate-limit and AUTH checks): the server boundary catches these and maps them to the appropriate `CLOSED`, `NOTICE` or `OK` response.
+
+Faults are rooted by whose code raises them, not by the dependency graph. Nostr library code — including nostr-relay — roots its faults at `NostrException` (defined in nostr-core):
+
+- `RelayException` (abstract) extends `NostrException`.
+- The final leaves extend `RelayException`: `AuthRequiredException`, `ConnectionException`, `PolicyViolationException` and `RateLimitException`.
+
+A consumer application embedding nostr-relay roots its **own** faults at its own independent base. For example, Hubstr code throws a `HubstrException` (extending `\Exception`), which does **not** extend `NostrException` even though Hubstr depends on the Nostr libraries. What decides the root is whose code raises the fault, not what it depends on.
+
+---
+
 ## License
 
 MIT License. See LICENSE file for details.
