@@ -56,4 +56,12 @@ final class ConnectionExceptionTest extends TestCase
         $this->assertStringContainsString('Address already in use', $exception->getMessage());
         $this->assertSame($previous, $exception->getPrevious());
     }
+
+    public function testInvalidPortIncludesPortAndRange(): void
+    {
+        $exception = ConnectionException::invalidPort(70000);
+
+        $this->assertStringContainsString('70000', $exception->getMessage());
+        $this->assertStringContainsString('between 0 and 65535', $exception->getMessage());
+    }
 }

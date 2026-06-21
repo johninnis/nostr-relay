@@ -50,6 +50,9 @@ final class AmphpRelayServer
     {
         $host = $this->config->getHost();
         $port = $this->config->getPort();
+        if ($port < 0 || $port > 65535) {
+            throw ConnectionException::invalidPort($port);
+        }
         $trustedProxies = $this->config->getTrustedProxies();
         self::validateTrustedProxies($trustedProxies);
 

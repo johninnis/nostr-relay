@@ -16,10 +16,6 @@ parameters:
         -
             identifier: missingType.generics
             reportUnmatched: false
-        # PHPStan infers port range but the explicit bounds check is intentional defensive code
-        -
-            message: '#expects int<0, 65535>, int given#'
-            path: src/Infrastructure/Server/AmphpRelayServer.php
         # Test assertions that verify runtime behaviour are valid even when PHPStan can infer the result statically
         -
             identifier: method.alreadyNarrowedType
