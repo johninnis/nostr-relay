@@ -50,7 +50,7 @@ use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
-use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
+use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use InvalidArgumentException;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
