@@ -265,6 +265,18 @@ A consumer application embedding nostr-relay roots its **own** faults at its own
 
 ---
 
+## Why value objects use `getX()` methods, not property hooks
+
+PHP 8.4 property hooks let a property carry a computed read, so the idiomatic move is often to expose a property and drop the accessor. This library deliberately keeps `getX()` methods on its value objects:
+
+1. **`readonly` forbids hooks.** A property hook requires a non-readonly property, and a `final readonly class` makes every property readonly — so a hook is not available inside these value objects at all. A value computed on read can only be a method.
+2. **A partial migration is worse than none.** Computed and interface-bound accessors must stay methods, so converting only the trivial pass-throughs would split the public API into two access styles (a bare property next to a `getX()` call). A uniform `getX()` surface is the only internally consistent option.
+3. **No behavioural or type-safety gain.** Getter-to-property is purely syntactic: it would rewrite call sites for no change in behaviour or analyser coverage.
+
+Setters do not arise: value objects are immutable and transform by returning a new instance.
+
+---
+
 ## License
 
 MIT License. See LICENSE file for details.
