@@ -67,7 +67,7 @@ final class EventDistributorTest extends TestCase
         return new Event(
             $keyPair->getPublicKey(),
             Timestamp::now(),
-            EventKind::textNote(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
             TagCollection::empty(),
             EventContent::fromString('test content'),
         );

@@ -23,8 +23,8 @@ final class EventDeletionProcessorTest extends TestCase
     public function testDeletesEventsOwnedByTheAuthor(): void
     {
         $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
-        $target = $this->event($author, EventKind::textNote());
-        $deletion = $this->event($author, EventKind::eventDeletion(), new TagCollection([Tag::event($target->getId()->toHex())]));
+        $target = $this->event($author, EventKind::fromInt(EventKind::TEXT_NOTE));
+        $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($target->getId()->toHex())]));
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willReturn(new EventCollection([$target]));
@@ -43,8 +43,8 @@ final class EventDeletionProcessorTest extends TestCase
     {
         $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
         $stranger = PublicKey::fromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
-        $strangerEvent = $this->event($stranger, EventKind::textNote());
-        $deletion = $this->event($author, EventKind::eventDeletion(), new TagCollection([Tag::event($strangerEvent->getId()->toHex())]));
+        $strangerEvent = $this->event($stranger, EventKind::fromInt(EventKind::TEXT_NOTE));
+        $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($strangerEvent->getId()->toHex())]));
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willReturn(new EventCollection([$strangerEvent]));

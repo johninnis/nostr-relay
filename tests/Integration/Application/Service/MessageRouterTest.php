@@ -180,7 +180,7 @@ final class MessageRouterTest extends TestCase
         $event = (new Event(
             $keyPair->getPublicKey(),
             Timestamp::now(),
-            EventKind::textNote(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
             TagCollection::empty(),
             EventContent::fromString('test'),
         ))->sign($keyPair, $this->signatureService());
@@ -253,7 +253,7 @@ final class MessageRouterTest extends TestCase
         $event = (new Event(
             $keyPair->getPublicKey(),
             Timestamp::now(),
-            EventKind::clientAuth(),
+            EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
                 Tag::fromArray(['relay', 'wss://relay.example.com']),
                 Tag::fromArray(['challenge', $challenge]),

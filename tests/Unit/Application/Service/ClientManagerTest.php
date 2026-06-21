@@ -218,7 +218,7 @@ final class ClientManagerTest extends TestCase
         return new Event(
             $pubkey,
             Timestamp::now(),
-            EventKind::textNote(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
             TagCollection::empty(),
             EventContent::fromString('test'),
         );

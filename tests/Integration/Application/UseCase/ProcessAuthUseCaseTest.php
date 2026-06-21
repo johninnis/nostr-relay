@@ -174,7 +174,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $eventStore->method('findByFilters')->willReturn(new EventCollection([$request]));
 
         $originalFilters = new FilterCollection([Filter::fromArray([
-            'kinds' => [EventKind::nostrConnect()->toInt()],
+            'kinds' => [EventKind::fromInt(EventKind::NOSTR_CONNECT)->toInt()],
             '#p' => [$this->keyPair->getPublicKey()->toHex()],
         ])]);
         $subscription = Subscription::create(SubscriptionIdMother::from('bunker'), $originalFilters, SubscriptionState::LIVE);
@@ -298,7 +298,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             'id' => str_repeat('a', 64),
             'pubkey' => $victim->toHex(),
             'created_at' => time(),
-            'kind' => EventKind::clientAuth()->toInt(),
+            'kind' => EventKind::fromInt(EventKind::CLIENT_AUTH)->toInt(),
             'tags' => [
                 ['relay', 'wss://relay.example.com'],
                 ['challenge', $challenge],
@@ -344,7 +344,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         return (new Event(
             $author->getPublicKey(),
             Timestamp::now(),
-            EventKind::nostrConnect(),
+            EventKind::fromInt(EventKind::NOSTR_CONNECT),
             new TagCollection([Tag::fromArray(['p', $this->keyPair->getPublicKey()->toHex()])]),
             EventContent::fromString('encrypted-request'),
         ))->sign($author, $this->signatureService());
@@ -360,7 +360,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         return (new Event(
             $this->keyPair->getPublicKey(),
             Timestamp::fromInt($timestamp),
-            EventKind::clientAuth(),
+            EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
                 Tag::fromArray(['relay', $relayUrl]),
                 Tag::fromArray(['challenge', $challenge]),
