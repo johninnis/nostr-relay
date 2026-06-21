@@ -6,16 +6,14 @@ namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
-use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
-use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
-use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -30,13 +28,11 @@ final class ProcessEventSubmissionUseCase
 {
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
-        private readonly RelayPolicyInterface $policy,
+        private readonly EventAdmission $admission,
         private readonly EventDistributor $distributor,
         private readonly AuthenticationManager $authManager,
-        private readonly RateLimiterInterface $rateLimiter,
         private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
-        private readonly EventValidatorInterface $eventValidator,
         private readonly ClientManager $clientManager,
         private readonly DeferredExecutorInterface $deferredExecutor,
         private readonly EventDeletionProcessor $deletionProcessor,
@@ -59,13 +55,7 @@ final class ProcessEventSubmissionUseCase
         ]);
 
         try {
-            if (!$this->policy->isRateLimitExempt($client)) {
-                $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
-            }
-
-            $this->eventValidator->validateEvent($event);
-
-            $this->policy->allowEventSubmission($client, $event);
+            $this->admission->admit($client, $event);
 
             if ($event->getKind()->isEphemeral()) {
                 $this->metrics->incrementEventsReceived();

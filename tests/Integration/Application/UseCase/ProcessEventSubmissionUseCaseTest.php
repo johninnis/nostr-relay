@@ -26,6 +26,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
@@ -88,13 +89,15 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         return new ProcessEventSubmissionUseCase(
             $eventStore,
-            $this->policy,
+            new EventAdmission(
+                $this->policy,
+                $this->rateLimiter,
+                new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
+            ),
             $distributor,
             new AuthenticationManager(),
-            $this->rateLimiter,
             $metrics,
             $logger,
-            new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
             $this->clientManager,
             new AmphpDeferredExecutor(),
             new EventDeletionProcessor($eventStore, $logger),

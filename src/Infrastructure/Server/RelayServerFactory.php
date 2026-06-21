@@ -20,6 +20,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
@@ -110,15 +111,19 @@ final class RelayServerFactory
 
         $eventDeletionProcessor = new EventDeletionProcessor($this->eventStore, $this->logger);
 
+        $eventAdmission = new EventAdmission(
+            $this->policy,
+            $eventRateLimiter,
+            $eventValidator
+        );
+
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $this->eventStore,
-            $this->policy,
+            $eventAdmission,
             $eventDistributor,
             $authManager,
-            $eventRateLimiter,
             $metrics,
             $this->logger,
-            $eventValidator,
             $clientManager,
             $deferredExecutor,
             $eventDeletionProcessor

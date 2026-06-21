@@ -34,6 +34,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
@@ -104,15 +105,15 @@ final class MessageRouterTest extends TestCase
 
         $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authManager, $this->clientManager);
 
+        $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
+
         $processEvent = new ProcessEventSubmissionUseCase(
             $this->eventStore,
-            $this->policy,
+            $eventAdmission,
             $distributor,
             $this->authManager,
-            $rateLimiter,
             $metrics,
             $logger,
-            $eventValidator,
             $this->clientManager,
             new AmphpDeferredExecutor(),
             new EventDeletionProcessor($this->eventStore, $logger),
