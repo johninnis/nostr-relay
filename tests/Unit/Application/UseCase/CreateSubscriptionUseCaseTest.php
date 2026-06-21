@@ -6,8 +6,8 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -162,10 +162,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = ClosedMessage::fromJson($json);
 
-                return 'CLOSED' === $data[0] && str_contains((string) $data[2], 'blocked');
+                return null !== $message && str_contains($message->getMessage(), 'blocked');
             }));
         $client = $this->makeClient($connection);
 
@@ -185,10 +184,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = ClosedMessage::fromJson($json);
 
-                return 'CLOSED' === $data[0] && str_contains((string) $data[2], 'rate-limited');
+                return null !== $message && str_contains($message->getMessage(), 'rate-limited');
             }));
         $client = $this->makeClient($connection);
 
@@ -210,18 +208,16 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $sent = [];
         $connection = $this->createStub(ClientConnectionInterface::class);
         $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
-            $decoded = json_decode($json, true);
-            assert(is_array($decoded));
-            $sent[] = $decoded;
+            $sent[] = $json;
         });
         $client = $this->makeClient($connection);
 
         $this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([new Filter()]));
         $this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([new Filter()]));
 
-        $closed = array_values(array_filter($sent, static fn (array $message): bool => 'CLOSED' === $message[0]));
+        $closed = array_values(array_filter(array_map(ClosedMessage::fromJson(...), $sent)));
         $this->assertNotEmpty($closed);
-        $this->assertStringContainsString('blocked', (string) $closed[0][2]);
+        $this->assertStringContainsString('blocked', $closed[0]->getMessage());
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($client->getId()));
     }
 }

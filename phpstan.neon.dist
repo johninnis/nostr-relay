@@ -19,15 +19,7 @@ parameters:
         -
             message: '#expects int<0, 65535>, int given#'
             path: src/Infrastructure/Server/AmphpRelayServer.php
-        # Test assertion callbacks cast mixed JSON values - types verified by runtime assertions
-        -
-            identifier: cast.string
-            path: tests/
         # Test assertions that verify runtime behaviour are valid even when PHPStan can infer the result statically
         -
             identifier: method.alreadyNarrowedType
-            path: tests/
-        # Test callbacks access json_decode mixed results - verified at runtime
-        -
-            identifier: offsetAccess.nonOffsetAccessible
             path: tests/

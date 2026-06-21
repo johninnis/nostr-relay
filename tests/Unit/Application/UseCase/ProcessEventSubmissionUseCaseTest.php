@@ -13,6 +13,8 @@ use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
@@ -218,10 +220,9 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = OkMessage::fromJson($json);
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'blocked');
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'blocked');
             }));
         $client = $this->makeClient($connection);
 
@@ -238,10 +239,9 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = OkMessage::fromJson($json);
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'rate-limited');
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'rate-limited');
             }));
         $client = $this->makeClient($connection);
 
@@ -284,17 +284,18 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $connection = $this->createStub(ClientConnectionInterface::class);
         $connection->method('sendText')
             ->willReturnCallback(static function (string $json) use (&$sentMessages): void {
-                $sentMessages[] = json_decode($json, true);
+                $sentMessages[] = $json;
             });
         $client = $this->makeClient($connection);
 
         $this->useCase->execute($client, $event);
 
         $this->assertCount(2, $sentMessages);
-        $this->assertSame('AUTH', $sentMessages[0][0]);
-        $this->assertSame('OK', $sentMessages[1][0]);
-        $this->assertFalse($sentMessages[1][2]);
-        $this->assertStringContainsString('auth-required', (string) $sentMessages[1][3]);
+        $this->assertNotNull(AuthMessage::fromJson($sentMessages[0]));
+        $ok = OkMessage::fromJson($sentMessages[1]);
+        $this->assertNotNull($ok);
+        $this->assertFalse($ok->isAccepted());
+        $this->assertStringContainsString('auth-required', $ok->getMessage());
     }
 
     public function testDeletionEventTriggersDeleteByEventIds(): void

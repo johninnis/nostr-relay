@@ -17,6 +17,8 @@ use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
@@ -222,10 +224,9 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = OkMessage::fromJson($json);
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'restricted');
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'restricted');
             }));
 
         $useCase->execute($this->client, $event);
@@ -240,17 +241,16 @@ final class ProcessAuthUseCaseTest extends TestCase
         $sent = [];
         $this->connection->expects($this->exactly(2))->method('sendText')
             ->willReturnCallback(static function (string $json) use (&$sent): void {
-                $decoded = json_decode($json, true);
-                assert(is_array($decoded));
-                $sent[] = $decoded;
+                $sent[] = $json;
             });
 
         $this->useCase->execute($this->client, $event);
 
-        $this->assertSame('AUTH', $sent[0][0]);
-        $this->assertSame('OK', $sent[1][0]);
-        $this->assertFalse($sent[1][2]);
-        $this->assertStringContainsString('auth-required', (string) $sent[1][3]);
+        $this->assertNotNull(AuthMessage::fromJson($sent[0]));
+        $ok = OkMessage::fromJson($sent[1]);
+        $this->assertNotNull($ok);
+        $this->assertFalse($ok->isAccepted());
+        $this->assertStringContainsString('auth-required', $ok->getMessage());
         $this->assertNotNull($this->authManager->getChallenge($this->client->getId()));
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
@@ -262,10 +262,9 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = OkMessage::fromJson($json);
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'invalid challenge');
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'invalid challenge');
             }));
 
         $this->useCase->execute($this->client, $event);
@@ -280,10 +279,9 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = OkMessage::fromJson($json);
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'invalid relay URL');
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'invalid relay URL');
             }));
 
         $this->useCase->execute($this->client, $event);
@@ -311,10 +309,9 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = OkMessage::fromJson($json);
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'signature is invalid');
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'signature is invalid');
             }));
 
         $this->useCase->execute($this->client, $forged);
@@ -330,10 +327,9 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = OkMessage::fromJson($json);
 
-                return 'OK' === $data[0] && false === $data[2] && str_contains((string) $data[3], 'timestamp');
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'timestamp');
             }));
 
         $this->useCase->execute($this->client, $event);

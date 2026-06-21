@@ -19,6 +19,8 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage as RelayCountMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
@@ -277,10 +279,9 @@ final class MessageRouterTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = RelayCountMessage::fromJson($json);
 
-                return 'COUNT' === $data[0] && 'count-1' === $data[1] && 42 === $data[2]['count'];
+                return null !== $message && 'count-1' === (string) $message->getSubscriptionId() && 42 === $message->getCount();
             }));
         $client = $this->makeClient($connection);
 
@@ -296,10 +297,9 @@ final class MessageRouterTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = NoticeMessage::fromJson($json);
 
-                return 'NOTICE' === $data[0] && str_contains((string) $data[1], 'Invalid message');
+                return null !== $message && str_contains($message->getMessage(), 'Invalid message');
             }));
         $client = $this->makeClient($connection);
 
@@ -315,10 +315,9 @@ final class MessageRouterTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = NoticeMessage::fromJson($json);
 
-                return 'NOTICE' === $data[0] && str_contains((string) $data[1], 'Internal server error');
+                return null !== $message && str_contains($message->getMessage(), 'Internal server error');
             }));
         $client = $this->makeClient($connection);
 

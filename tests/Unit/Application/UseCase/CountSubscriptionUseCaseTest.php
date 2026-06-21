@@ -6,6 +6,8 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -75,10 +77,9 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = CountMessage::fromJson($json);
 
-                return 'COUNT' === $data[0] && 'count-1' === $data[1] && 42 === $data[2]['count'];
+                return null !== $message && 'count-1' === (string) $message->getSubscriptionId() && 42 === $message->getCount();
             }));
         $client = $this->makeClient($connection);
 
@@ -121,10 +122,9 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = ClosedMessage::fromJson($json);
 
-                return 'CLOSED' === $data[0] && str_contains((string) $data[2], 'blocked');
+                return null !== $message && str_contains($message->getMessage(), 'blocked');
             }));
         $client = $this->makeClient($connection);
 
@@ -142,10 +142,9 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+                $message = ClosedMessage::fromJson($json);
 
-                return 'CLOSED' === $data[0] && str_contains((string) $data[2], 'rate-limited');
+                return null !== $message && str_contains($message->getMessage(), 'rate-limited');
             }));
         $client = $this->makeClient($connection);
 
