@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
+use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -79,7 +81,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $filters = new FilterCollection([new Filter()]);
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn([]);
+        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $this->useCase->execute($this->client, $subId, $filters);
 
@@ -93,7 +95,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(
             ScopedFilters::scoped(new FilterCollection([Filter::fromArray(['kinds' => [1]])]), true),
         );
-        $this->eventStore->method('findByFilters')->willReturn([]);
+        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $sent = [];
         $connection = $this->createStub(ClientConnectionInterface::class);
@@ -118,7 +120,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(
             ScopedFilters::scoped(new FilterCollection([Filter::fromArray(['kinds' => [1]])]), true),
         );
-        $this->eventStore->method('findByFilters')->willReturn([]);
+        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $sent = [];
         $connection = $this->createStub(ClientConnectionInterface::class);
@@ -142,7 +144,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(FilterCollection::empty(), true));
-        $this->eventStore->method('findByFilters')->willReturn([]);
+        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: ['ff'])]));
 
@@ -203,7 +205,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
             });
         $this->policy->method('filterForClient')
             ->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn([]);
+        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $sent = [];
         $connection = $this->createStub(ClientConnectionInterface::class);

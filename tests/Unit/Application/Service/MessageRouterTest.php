@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
@@ -31,6 +32,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
@@ -111,6 +113,7 @@ final class MessageRouterTest extends TestCase
             $eventValidator,
             $this->clientManager,
             new AmphpDeferredExecutor(),
+            new EventDeletionProcessor($this->eventStore, $logger),
         );
 
         $createSubscription = new CreateSubscriptionUseCase(
@@ -202,7 +205,7 @@ final class MessageRouterTest extends TestCase
 
         $this->deserialiser->method('deserialiseClientMessage')->willReturn(new ReqMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn([]);
+        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $this->router->route($this->client, '["REQ","sub-1",{}]');
 
@@ -221,7 +224,7 @@ final class MessageRouterTest extends TestCase
                 new CloseMessage($subId),
             );
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn([]);
+        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $this->router->route($this->client, '["REQ","sub-1",{}]');
         $this->router->route($this->client, '["CLOSE","sub-1"]');

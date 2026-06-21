@@ -1,0 +1,67 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
+
+use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\EventCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
+use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use RuntimeException;
+
+final class EventDeletionProcessorTest extends TestCase
+{
+    public function testDeletesEventsOwnedByTheAuthor(): void
+    {
+        $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        $target = $this->event($author, EventKind::textNote());
+        $deletion = $this->event($author, EventKind::eventDeletion(), new TagCollection([Tag::event($target->getId()->toHex())]));
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('findByFilters')->willReturn(new EventCollection([$target]));
+        $eventStore->expects($this->once())
+            ->method('deleteByEventIds')
+            ->with(
+                $this->callback(static fn (array $ids): bool => 1 === count($ids) && $target->getId()->toHex() === $ids[0]->toHex()),
+                $this->callback(static fn (PublicKey $pubkey): bool => $pubkey->equals($author)),
+            )
+            ->willReturn(1);
+
+        new EventDeletionProcessor($eventStore, new NullLogger())->process($deletion);
+    }
+
+    public function testSkipsEventsOwnedBySomeoneElse(): void
+    {
+        $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        $stranger = PublicKey::fromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        $strangerEvent = $this->event($stranger, EventKind::textNote());
+        $deletion = $this->event($author, EventKind::eventDeletion(), new TagCollection([Tag::event($strangerEvent->getId()->toHex())]));
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('findByFilters')->willReturn(new EventCollection([$strangerEvent]));
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+        $eventStore->expects($this->never())->method('deleteByCoordinates');
+
+        new EventDeletionProcessor($eventStore, new NullLogger())->process($deletion);
+    }
+
+    private function event(PublicKey $author, EventKind $kind, ?TagCollection $tags = null): Event
+    {
+        return new Event(
+            $author,
+            Timestamp::now(),
+            $kind,
+            $tags ?? TagCollection::empty(),
+            EventContent::fromString('x'),
+        );
+    }
+}

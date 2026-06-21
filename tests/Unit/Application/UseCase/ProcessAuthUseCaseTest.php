@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Closure;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
@@ -168,7 +169,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $request = $this->createNostrConnectRequest();
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
-        $eventStore->method('findByFilters')->willReturn([$request]);
+        $eventStore->method('findByFilters')->willReturn(new EventCollection([$request]));
 
         $originalFilters = new FilterCollection([Filter::fromArray([
             'kinds' => [EventKind::nostrConnect()->toInt()],

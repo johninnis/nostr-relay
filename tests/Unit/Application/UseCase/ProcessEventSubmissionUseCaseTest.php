@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
@@ -23,6 +24,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
@@ -93,6 +95,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
             $this->clientManager,
             new AmphpDeferredExecutor(),
+            new EventDeletionProcessor($eventStore, $logger),
         );
     }
 
@@ -315,7 +318,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
         $eventStore->expects($this->once())
             ->method('findByFilters')
-            ->willReturn([$targetEvent]);
+            ->willReturn(new EventCollection([$targetEvent]));
         $eventStore->expects($this->once())
             ->method('deleteByEventIds')
             ->with(
@@ -365,7 +368,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
         $eventStore->expects($this->once())
             ->method('findByFilters')
-            ->willReturn([$victimEvent]);
+            ->willReturn(new EventCollection([$victimEvent]));
         $eventStore->expects($this->never())->method('deleteByEventIds');
         $eventStore->expects($this->never())->method('deleteByCoordinates');
 

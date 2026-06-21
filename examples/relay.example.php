@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Entity\EventCollection;
+use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
@@ -10,21 +12,22 @@ use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
+use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 
 class ExampleEventStore implements RelayEventStoreInterface
 {
-    public function store(Event $event): bool
+    public function store(Event $event): EventStoreOutcome
     {
-        return true;
+        return EventStoreOutcome::Stored;
     }
 
-    public function findByFilters(array $filters, int $limit = 100): array
+    public function findByFilters(FilterCollection $filters, int $limit = 100): EventCollection
     {
-        return [];
+        return new EventCollection([]);
     }
 
-    public function countByFilters(array $filters): int
+    public function countByFilters(FilterCollection $filters): int
     {
         return 0;
     }
