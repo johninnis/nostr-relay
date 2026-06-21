@@ -124,7 +124,6 @@ final class RelayClientCollectionTest extends TestCase
 
         $iterated = [];
         foreach ($collection as $client) {
-            assert($client instanceof RelayClient);
             $iterated[] = (string) $client->getId();
         }
 

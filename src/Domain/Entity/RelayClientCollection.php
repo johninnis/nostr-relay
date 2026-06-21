@@ -4,74 +4,71 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Entity;
 
-use ArrayIterator;
-use Countable;
+use Innis\Nostr\Core\Domain\Collection\TypedCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
-use InvalidArgumentException;
-use IteratorAggregate;
 use Override;
 
-final class RelayClientCollection implements IteratorAggregate, Countable
+/**
+ * @extends TypedCollection<RelayClient>
+ */
+final class RelayClientCollection extends TypedCollection
 {
-    private array $clients;
-
     public function __construct(array $clients = [])
     {
-        $this->clients = [];
+        parent::__construct($clients);
 
-        foreach ($clients as $client) {
-            if (!$client instanceof RelayClient) {
-                throw new InvalidArgumentException('All items must be RelayClient instances');
-            }
-            $this->clients[(string) $client->getId()] = $client;
+        $deduplicated = [];
+
+        foreach ($this->items as $client) {
+            $deduplicated[(string) $client->getId()] = $client;
         }
+
+        $this->items = array_values($deduplicated);
+    }
+
+    #[Override]
+    protected function elementType(): string
+    {
+        return RelayClient::class;
     }
 
     public function add(RelayClient $client): self
     {
-        $copy = clone $this;
-        $copy->clients[(string) $client->getId()] = $client;
-
-        return $copy;
+        return new self([
+            ...array_filter(
+                $this->items,
+                static fn (RelayClient $existing): bool => !$existing->getId()->equals($client->getId()),
+            ),
+            $client,
+        ]);
     }
 
     public function remove(ClientId $clientId): self
     {
-        $copy = clone $this;
-        unset($copy->clients[(string) $clientId]);
-
-        return $copy;
+        return new self(array_filter(
+            $this->items,
+            static fn (RelayClient $client): bool => !$client->getId()->equals($clientId),
+        ));
     }
 
     public function get(ClientId $clientId): ?RelayClient
     {
-        return $this->clients[(string) $clientId] ?? null;
+        return array_find(
+            $this->items,
+            static fn (RelayClient $client): bool => $client->getId()->equals($clientId),
+        );
     }
 
     public function has(ClientId $clientId): bool
     {
-        return isset($this->clients[(string) $clientId]);
-    }
-
-    public function isEmpty(): bool
-    {
-        return empty($this->clients);
+        return array_any(
+            $this->items,
+            static fn (RelayClient $client): bool => $client->getId()->equals($clientId),
+        );
     }
 
     public function toArray(): array
     {
-        return array_values($this->clients);
-    }
-
-    #[Override]
-    public function getIterator(): ArrayIterator
-    {
-        return new ArrayIterator(array_values($this->clients));
-    }
-
-    #[Override]
-    public function count(): int
-    {
-        return count($this->clients);
+        return $this->items;
     }
 }

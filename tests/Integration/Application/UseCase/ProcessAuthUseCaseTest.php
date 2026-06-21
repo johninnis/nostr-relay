@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
+namespace Innis\Nostr\Relay\Tests\Integration\Application\UseCase;
 
 use Closure;
 use Innis\Nostr\Core\Domain\Entity\Event;

@@ -15,6 +15,7 @@ parameters:
         # PHP cannot express generic type parameters natively (e.g. IteratorAggregate<int, Event>)
         -
             identifier: missingType.generics
+            reportUnmatched: false
         # PHPStan infers port range but the explicit bounds check is intentional defensive code
         -
             message: '#expects int<0, 65535>, int given#'
