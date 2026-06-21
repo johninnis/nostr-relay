@@ -14,75 +14,88 @@ final class GuestFilterRulesTest extends TestCase
     private const TENANT = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     private const OTHER = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-    public function testConstrainAuthorsIntersectsRequestedAuthorsWithTenants(): void
+    public function testScopeIntersectsRequestedAuthorsWithTenants(): void
     {
         $rules = new GuestFilterRules([self::TENANT], [1]);
 
-        $constrained = $rules->constrainAuthorsToTenants(new Filter(authors: [self::TENANT, self::OTHER]));
+        $scoped = $rules->scope(new FilterCollection([new Filter(authors: [self::TENANT, self::OTHER], kinds: [1])]), true);
 
-        self::assertSame([self::TENANT], $constrained->getAuthors());
+        self::assertSame([self::TENANT], $scoped->getFilters()->toArray()[0]->getAuthors());
     }
 
-    public function testConstrainAuthorsDefaultsToTenantsWhenNoAuthorsRequested(): void
+    public function testScopeDefaultsAuthorsToTenantsWhenNoneRequested(): void
     {
         $rules = new GuestFilterRules([self::TENANT], [1]);
 
-        $constrained = $rules->constrainAuthorsToTenants(new Filter(kinds: [1]));
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [1])]), true);
 
-        self::assertSame([self::TENANT], $constrained->getAuthors());
+        self::assertSame([self::TENANT], $scoped->getFilters()->toArray()[0]->getAuthors());
     }
 
-    public function testConstrainKindsFillsReadableWhenFilterHasNone(): void
+    public function testScopeFillsReadableKindsWhenFilterHasNone(): void
     {
         $rules = new GuestFilterRules([self::TENANT], [1, 7]);
 
-        $constrained = $rules->constrainKindsToReadable(new Filter());
+        $scoped = $rules->scope(new FilterCollection([new Filter()]), false);
 
-        self::assertTrue($constrained->hasKinds());
-        self::assertSame([1, 7], array_map(static fn ($kind) => $kind->toInt(), $constrained->getKinds() ?? []));
+        $filter = $scoped->getFilters()->toArray()[0];
+        self::assertTrue($filter->hasKinds());
+        self::assertSame([1, 7], array_map(static fn ($kind) => $kind->toInt(), $filter->getKinds() ?? []));
     }
 
-    public function testConstrainKindsIntersectsRequestedWithReadable(): void
+    public function testScopeIntersectsRequestedKindsWithReadable(): void
     {
         $rules = new GuestFilterRules([self::TENANT], [1, 7]);
 
-        $constrained = $rules->constrainKindsToReadable(new Filter(kinds: [1, 4]));
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [1, 4])]), false);
 
-        self::assertSame([1], array_map(static fn ($kind) => $kind->toInt(), $constrained->getKinds() ?? []));
+        self::assertSame([1], array_map(static fn ($kind) => $kind->toInt(), $scoped->getFilters()->toArray()[0]->getKinds() ?? []));
     }
 
-    public function testConstrainKindsEmptyWhenAllRequestedAreUnreadable(): void
+    public function testScopeEmptiesKindsWhenAllRequestedAreUnreadable(): void
     {
         $rules = new GuestFilterRules([self::TENANT], [1, 7]);
 
-        $constrained = $rules->constrainKindsToReadable(new Filter(kinds: [4]));
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [4])]), false);
 
-        self::assertSame([], $constrained->getKinds());
+        self::assertSame([], $scoped->getFilters()->toArray()[0]->getKinds());
     }
 
-    public function testAuthorsWithinTenants(): void
+    public function testScopeNotBeyondScopeWhenAuthorsWithinTenants(): void
     {
         $rules = new GuestFilterRules([self::TENANT], []);
 
-        self::assertTrue($rules->authorsWithinTenants(new Filter(authors: [self::TENANT])));
-        self::assertTrue($rules->authorsWithinTenants(new Filter(kinds: [1])));
-        self::assertFalse($rules->authorsWithinTenants(new Filter(authors: [self::TENANT, self::OTHER])));
+        self::assertFalse($rules->scope(new FilterCollection([new Filter(authors: [self::TENANT])]), true)->isBeyondScope());
+        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: [1])]), true)->isBeyondScope());
     }
 
-    public function testKindsWithinReadable(): void
-    {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
-
-        self::assertTrue($rules->kindsWithinReadable(new Filter(kinds: [1, 7])));
-        self::assertTrue($rules->kindsWithinReadable(new Filter(authors: [self::TENANT])));
-        self::assertFalse($rules->kindsWithinReadable(new Filter(kinds: [1, 4])));
-    }
-
-    public function testKindsWithinReadableAllowsEverythingWhenNoReadableKindsConfigured(): void
+    public function testScopeBeyondScopeWhenAuthorsExceedTenants(): void
     {
         $rules = new GuestFilterRules([self::TENANT], []);
 
-        self::assertTrue($rules->kindsWithinReadable(new Filter(kinds: [9999])));
+        self::assertTrue($rules->scope(new FilterCollection([new Filter(authors: [self::TENANT, self::OTHER])]), true)->isBeyondScope());
+    }
+
+    public function testScopeNotBeyondScopeWhenKindsWithinReadable(): void
+    {
+        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+
+        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: [1, 7])]), false)->isBeyondScope());
+        self::assertFalse($rules->scope(new FilterCollection([new Filter(authors: [self::TENANT])]), false)->isBeyondScope());
+    }
+
+    public function testScopeBeyondScopeWhenKindsExceedReadable(): void
+    {
+        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+
+        self::assertTrue($rules->scope(new FilterCollection([new Filter(kinds: [1, 4])]), false)->isBeyondScope());
+    }
+
+    public function testScopeNotBeyondScopeWhenNoReadableKindsConfigured(): void
+    {
+        $rules = new GuestFilterRules([self::TENANT], []);
+
+        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: [9999])]), false)->isBeyondScope());
     }
 
     public function testScopeConstrainsFiltersWithinScope(): void

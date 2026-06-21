@@ -42,6 +42,7 @@ use Innis\Nostr\Relay\Tests\Fixture\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
+use RuntimeException;
 
 final class ProcessAuthUseCaseTest extends TestCase
 {
@@ -305,7 +306,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             ],
             'content' => '',
             'sig' => '',
-        ]);
+        ]) ?? throw new RuntimeException('Invalid forged event');
 
         $this->connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {

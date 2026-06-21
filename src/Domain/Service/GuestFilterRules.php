@@ -44,7 +44,7 @@ final readonly class GuestFilterRules
         return true;
     }
 
-    public function isBeyondScope(Filter $filter, bool $fromTenantsOnly): bool
+    private function isBeyondScope(Filter $filter, bool $fromTenantsOnly): bool
     {
         if ($fromTenantsOnly && $this->referencesTenantInPTag($filter)) {
             return true;
@@ -57,7 +57,7 @@ final readonly class GuestFilterRules
         return !$this->kindsWithinReadable($filter);
     }
 
-    public function referencesTenantInPTag(Filter $filter): bool
+    private function referencesTenantInPTag(Filter $filter): bool
     {
         $pubkeys = $filter->getTags()['p'] ?? null;
 
@@ -81,7 +81,7 @@ final readonly class GuestFilterRules
         return $this->constrainKindsToReadable($constrained);
     }
 
-    public function constrainAuthorsToTenants(Filter $filter): Filter
+    private function constrainAuthorsToTenants(Filter $filter): Filter
     {
         if ($filter->hasAuthors()) {
             $requested = array_map(strtolower(...), $filter->getAuthors() ?? []);
@@ -92,7 +92,7 @@ final readonly class GuestFilterRules
         return $filter->withAuthors($this->tenantHexKeys);
     }
 
-    public function constrainKindsToReadable(Filter $filter): Filter
+    private function constrainKindsToReadable(Filter $filter): Filter
     {
         if ([] === $this->readableKinds) {
             return $filter;
@@ -107,7 +107,7 @@ final readonly class GuestFilterRules
         return $filter->withKinds(array_values(array_intersect($requested, $this->readableKinds)));
     }
 
-    public function authorsWithinTenants(Filter $filter): bool
+    private function authorsWithinTenants(Filter $filter): bool
     {
         if (!$filter->hasAuthors()) {
             return true;
@@ -118,7 +118,7 @@ final readonly class GuestFilterRules
         return [] === array_diff($requested, $this->tenantHexKeys);
     }
 
-    public function kindsWithinReadable(Filter $filter): bool
+    private function kindsWithinReadable(Filter $filter): bool
     {
         if ([] === $this->readableKinds || !$filter->hasKinds()) {
             return true;
