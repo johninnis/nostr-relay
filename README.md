@@ -11,7 +11,7 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 ## Features
 
 - **Interface-driven design** - Storage and policies provided by host application
-- **AMPHP async** - Non-blocking concurrent connections (100-1000+)
+- **AMPHP async** - Non-blocking concurrent connection handling
 - **Private relay focus** - Built for single-user/controlled access scenarios
 - **NIP-01 compliant** - EVENT, REQ, CLOSE message handling
 - **NIP-09 deletion** - Kind 5 event processing
@@ -23,8 +23,9 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **Mutable NIP-11 metadata** - Swap in a custom `Nip11InfoProviderInterface` to update relay info at runtime
 - **Built-in RelayPolicy** - Configurable tenant/guest permissions
 - **Real-time distribution** - Events broadcast to matching subscriptions
+- **Metrics** - `RelayInstance::getMetrics()` returns a `RelayMetrics` snapshot (active connections, events received/sent, subscriptions, start time) via the `MetricsCollectorInterface` port
 - **Rate limiting** - DDoS protection with configurable limits; tenants (and trusted clients via `isRateLimitExempt()`) bypass
-- **Idle timeout** - Connections with no inbound message for 5 minutes are closed, freeing the slot (mitigates slow-loris)
+- **Idle timeout** - Connections with no inbound message for 5 minutes are closed, freeing the slot (see [ADR-0005](docs/adr/0005-idle-connections-closed-after-a-fixed-timeout.md))
 - **CORS support** - `OPTIONS` preflight handling and uniform CORS headers on every HTTP response for browser-based clients
 - **Trusted proxies** - `X-Forwarded-For` honoured when the client IP matches a trusted proxy
 - **PSR-3 logging** - Standard logging interface
@@ -54,17 +55,19 @@ composer require innis/nostr-relay
 
 ### 1. Implement Required Interfaces
 
-The relay requires two interfaces to be implemented by your host application:
+The relay requires three interfaces to be implemented by your host application:
 
 - **`RelayEventStoreInterface`** - Event persistence and queries
 - **`RelayConfigInterface`** - Server and relay configuration
+- **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Use the built-in `StaticRateLimitPolicy` for fixed limits, or implement the interface to vary limits at runtime.
 
 Access control can use the built-in `RelayPolicy` or a custom implementation of `RelayPolicyInterface`.
 
-Two optional interfaces extend the relay's HTTP handling:
+Optional interfaces extend the relay's behaviour:
 
 - **`HttpRequestHandlerInterface`** - Handle additional HTTP requests (e.g. management API, landing page). Return a response or `null` to fall through to WebSocket.
 - **`Nip11InfoProviderInterface`** - Provide NIP-11 metadata dynamically. Defaults to reading from `RelayConfigInterface` if not provided.
+- **`ConnectionGateInterface`** - Decide whether an IP may connect, before the WebSocket session is established. Defaults to allowing every IP; implement it to enforce an allow-list or deny-list.
 
 ### 2. Create and Start the Relay
 
@@ -154,7 +157,7 @@ The built-in `RelayPolicy` accepts a configuration array that controls access fo
 
 Optional keys with sensible defaults:
 
-- `max_subscriptions` - Maximum concurrent subscriptions per client. Also gates `COUNT` requests: a `COUNT` from a client already at the cap is rejected with `blocked: too many subscriptions`. Both messages execute the same filter against the event store, so they share the cap as a single load-shedding signal.
+- `max_subscriptions` - Maximum concurrent subscriptions per client. Also gates `COUNT` requests: a `COUNT` from a client already at the cap is rejected with `blocked: too many subscriptions` (see [ADR-0006](docs/adr/0006-count-and-req-share-one-subscription-cap.md)).
 - `max_filters` - Maximum filters per subscription
 - `max_event_size` - Maximum event payload size in bytes
 - `max_query_limit` - Maximum limit value in REQ filters
@@ -181,7 +184,7 @@ If no config is passed, the relay is fully open with no restrictions.
 
 The relay does **not** challenge on connect. It issues an `AUTH` challenge only when a subscription requests something outside the guest's scope — when the requested kinds aren't guest-readable, when the requested authors aren't tenants (under `from = 'tenants'`), or when the filter reads a **tenant's mailbox** (a `#p` tag referencing a tenant). The challenge is an offer: a client that authenticates gains full scope, while a client that ignores it still receives the guest-scoped results. The connection is never blocked for not authenticating. (Why a scope-exceeding request rather than every connection: see [ADR-0004](docs/adr/0004-auth-challenge-only-on-scope-exceeding-request.md).)
 
-When a client authenticates, its already-open subscriptions are re-evaluated against its new scope: each is re-admitted with its original filters and the now-visible stored events are streamed. So a subscription opened as a guest (and narrowed by guest rules) widens automatically once the client proves its identity, without the client having to re-subscribe.
+When a client authenticates, its already-open subscriptions are re-evaluated against its new scope: each is re-admitted with its original filters and the now-visible stored events are streamed, so a subscription opened as a guest widens automatically without the client having to re-subscribe (see [ADR-0007](docs/adr/0007-authentication-restreams-already-open-subscriptions.md)).
 
 ---
 
@@ -244,16 +247,12 @@ websocat ws://localhost:8080
 
 ## Performance
 
-**Target Scale:**
-- 100-1000 concurrent WebSocket connections
-- <10ms event distribution to 100 subscribers
-- <5ms filter matching for 1000 subscriptions
-- ~50 MB memory overhead for relay logic
+The relay is designed for concurrent connection handling. Concrete throughput, latency, and memory figures depend on the host's event store and hardware and are not benchmarked here.
 
-**Optimisations:**
-- AMPHP fibers for concurrent clients
-- Subscription indexing by event kind
-- Filter matching via nostr-core
+**Design choices that bear on performance:**
+- AMPHP fibres for concurrent clients
+- Subscriptions pre-indexed by event kind, so event distribution looks up only the subscriptions whose filters declare a matching kind (plus kind-agnostic filters) rather than scanning every subscription
+- Per-event filter matching delegated to nostr-core's `Filter`
 - Non-blocking I/O throughout
 
 ---

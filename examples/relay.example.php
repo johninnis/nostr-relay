@@ -99,7 +99,7 @@ final class ExampleRelayConfig implements RelayConfigInterface
             'description' => 'Private Nostr relay',
             'pubkey' => $this->ownerPubkeyHex,
             'contact' => 'admin@example.com',
-            'supported_nips' => [1, 11, 42],
+            'supported_nips' => [1, 9, 11, 42, 45],
             'software' => 'innis/nostr-relay',
             'version' => '1.0.0',
         ]);
