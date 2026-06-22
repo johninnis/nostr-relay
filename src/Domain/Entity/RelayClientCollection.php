@@ -13,19 +13,6 @@ use Override;
  */
 final class RelayClientCollection extends TypedCollection
 {
-    public function __construct(array $clients = [])
-    {
-        parent::__construct($clients);
-
-        $deduplicated = [];
-
-        foreach ($this->items as $client) {
-            $deduplicated[(string) $client->getId()] = $client;
-        }
-
-        $this->items = array_values($deduplicated);
-    }
-
     #[Override]
     protected function elementType(): string
     {
@@ -65,10 +52,5 @@ final class RelayClientCollection extends TypedCollection
             $this->items,
             static fn (RelayClient $client): bool => $client->getId()->equals($clientId),
         );
-    }
-
-    public function toArray(): array
-    {
-        return $this->items;
     }
 }
