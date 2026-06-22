@@ -1,4 +1,4 @@
-# 1. Anticipated outcomes are returned; faults are thrown
+# 3. Anticipated outcomes are returned; faults are thrown
 
 ## Status
 
