@@ -99,6 +99,10 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): void
     {
+        if ($this->isOpenRelay() || $this->isTenant($client)) {
+            return;
+        }
+
         $this->subscriptionLimits->enforce($currentSubscriptionCount, $filters);
     }
 

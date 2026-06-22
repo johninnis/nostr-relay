@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Integration\Application\UseCase;
 
 use Closure;
+use Innis\Nostr\Core\Application\Port\ClockInterface;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
@@ -332,6 +333,44 @@ final class ProcessAuthUseCaseTest extends TestCase
             }));
 
         $this->useCase->execute($this->client, $event);
+
+        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+    }
+
+    public function testRejectsTimestampAgainstTheInjectedClockNotWallClock(): void
+    {
+        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $event = $this->createAuthEventWithTimestamp($challenge, 'wss://relay.example.com', time());
+
+        $config = $this->createStub(RelayConfigInterface::class);
+        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+
+        $policy = $this->createStub(RelayPolicyInterface::class);
+        $policy->method('allowsAuthentication')->willReturn(true);
+
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn(Timestamp::fromInt(time() + 601));
+
+        $useCase = new ProcessAuthUseCase(
+            $this->authManager,
+            $config,
+            $policy,
+            new NullLogger(),
+            $this->eventValidator(),
+            $this->clientManager,
+            $this->subscriptionManager,
+            $this->buildCreateSubscription($policy, $this->createStub(RelayEventStoreInterface::class)),
+            $clock,
+        );
+
+        $this->connection->expects($this->once())->method('sendText')
+            ->with($this->callback(static function (string $json): bool {
+                $message = OkMessage::fromJson($json);
+
+                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'timestamp');
+            }));
+
+        $useCase->execute($this->client, $event);
 
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }

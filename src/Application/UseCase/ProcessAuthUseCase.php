@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\UseCase;
 
+use Innis\Nostr\Core\Application\Port\ClockInterface;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
-use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
@@ -33,6 +34,7 @@ final class ProcessAuthUseCase
         private readonly ClientManager $clientManager,
         private readonly SubscriptionManager $subscriptionManager,
         private readonly CreateSubscriptionUseCase $createSubscription,
+        private readonly ClockInterface $clock = new SystemClock(),
     ) {
     }
 
@@ -64,7 +66,7 @@ final class ProcessAuthUseCase
                 return;
             }
 
-            if (Timestamp::now()->differenceInSeconds($event->getCreatedAt()) > self::TIMESTAMP_TOLERANCE_SECONDS) {
+            if ($this->clock->now()->differenceInSeconds($event->getCreatedAt()) > self::TIMESTAMP_TOLERANCE_SECONDS) {
                 $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: timestamp out of range'));
 
                 return;

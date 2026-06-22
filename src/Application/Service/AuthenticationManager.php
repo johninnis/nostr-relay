@@ -4,14 +4,23 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKeyCollection;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 
 final class AuthenticationManager
 {
+    private const int CHALLENGE_BYTES = 16;
+
     private array $authenticatedPubkeys = [];
     private array $challenges = [];
+
+    public function __construct(
+        private readonly RandomBytesGeneratorInterface $randomBytes = new NativeRandomBytesGenerator(),
+    ) {
+    }
 
     public function getOrCreateChallenge(ClientId $clientId): string
     {
@@ -21,7 +30,7 @@ final class AuthenticationManager
             return $this->challenges[$key];
         }
 
-        $challenge = bin2hex(random_bytes(16));
+        $challenge = bin2hex($this->randomBytes->bytes(self::CHALLENGE_BYTES));
         $this->challenges[$key] = $challenge;
 
         return $challenge;
