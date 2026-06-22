@@ -38,6 +38,7 @@ final readonly class SubscriptionAdmission
 
         $scopedFilters = $this->policy->filterForClient($client, $filters);
 
+        // Deliberate: the AUTH challenge is offered lazily on a scope-exceeding request, never on connect — see ADR-0004
         if ($scopedFilters->isBeyondScope()) {
             $this->clientManager->send($client, new NoticeMessage('limited to readable scope: authenticate for full access'));
             $this->clientManager->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));

@@ -54,6 +54,7 @@ final class ProcessEventSubmissionUseCase
             'client_id' => $clientId,
         ]);
 
+        // Deliberate: rejections are caught and framed as this message's wire reply here (OK), not centralised in the router — see ADR-0003
         try {
             $this->admission->admit($client, $event);
 

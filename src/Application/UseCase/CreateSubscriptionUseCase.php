@@ -41,6 +41,7 @@ final class CreateSubscriptionUseCase
 
     public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): void
     {
+        // Deliberate: rejections are caught and framed as this message's wire reply here (CLOSED), not centralised in the router — see ADR-0003
         try {
             $modifiedFilters = $this->admission->admit($client, $filters)->getFilters();
 
