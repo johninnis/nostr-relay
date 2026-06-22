@@ -11,7 +11,6 @@ use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use PHPUnit\Framework\TestCase;
@@ -30,7 +29,6 @@ final class ClientDisconnectionHandlerTest extends TestCase
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->clientManager = new ClientManager(
-            $this->createStub(SubscriptionLookupInterface::class),
             $metrics,
             $logger,
         );

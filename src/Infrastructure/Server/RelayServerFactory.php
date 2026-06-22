@@ -69,7 +69,6 @@ final class RelayServerFactory
         );
 
         $clientManager = new ClientManager(
-            $subscriptionManager,
             $metrics,
             $this->logger,
             $this->config->getMaxConnections()
@@ -106,7 +105,8 @@ final class RelayServerFactory
             $this->policy,
             $subscriptionRateLimiter,
             $authManager,
-            $clientManager
+            $clientManager,
+            $subscriptionManager
         );
 
         $eventDeletionProcessor = new EventDeletionProcessor($this->eventStore, $this->logger);

@@ -50,9 +50,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $logger = new NullLogger();
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $this->clientManager = new ClientManager($this->subscriptionManager, $metrics, $logger);
+        $this->clientManager = new ClientManager($metrics, $logger);
         $this->authManager = new AuthenticationManager();
-        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $this->clientManager);
+        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $this->clientManager, $this->subscriptionManager);
 
         $this->useCase = new CreateSubscriptionUseCase(
             $this->eventStore,
@@ -196,8 +196,8 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     public function testSubscriptionLimitSendsClosedMessage(): void
     {
         $this->policy->method('allowSubscription')
-            ->willReturnCallback(static function (RelayClient $client, FilterCollection $filters): void {
-                if ($client->getSubscriptionCount() >= 1) {
+            ->willReturnCallback(static function (RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): void {
+                if ($currentSubscriptionCount >= 1) {
                     throw new PolicyViolationException('too many subscriptions (max 1)');
                 }
             });

@@ -13,6 +13,7 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
+use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatchCollection;
 use Override;
 use Psr\Log\LoggerInterface;
 
@@ -103,7 +104,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         }
     }
 
-    public function getSubscriptionsForEvent(int $eventKind): array
+    public function getSubscriptionsForEvent(int $eventKind): SubscriptionMatchCollection
     {
         $keys = ($this->subscriptionsByKind[$eventKind] ?? [])
             + ($this->subscriptionsByKind['*'] ?? []);
@@ -115,7 +116,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
             }
         }
 
-        return $results;
+        return new SubscriptionMatchCollection($results);
     }
 
     #[Override]

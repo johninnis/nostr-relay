@@ -137,7 +137,7 @@ final class SubscriptionManagerTest extends TestCase
         $results = $this->manager->getSubscriptionsForEvent(EventKind::TEXT_NOTE);
 
         $this->assertCount(1, $results);
-        $this->assertTrue($clientId->equals($results[0]->getClientId()));
+        $this->assertTrue($clientId->equals($results->toArray()[0]->getClientId()));
     }
 
     public function testGetSubscriptionsForEventReturnsWildcardSubscriptions(): void

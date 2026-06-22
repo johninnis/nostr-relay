@@ -71,6 +71,8 @@ Two optional interfaces extend the relay's HTTP handling:
 ```php
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
+use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
+use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 
 $authManager = new AuthenticationManager();
@@ -88,10 +90,16 @@ $policy = new RelayPolicy($authManager, $logger, [
     ],
 ]);
 
+$rateLimitPolicy = new StaticRateLimitPolicy(new RateLimitConfig(
+    eventsPerMinute: 60,
+    subscriptionsPerMinute: 20,
+));
+
 $factory = new RelayServerFactory(
     eventStore: new MyEventStore(),
     policy: $policy,
     config: new MyRelayConfig(),
+    rateLimitPolicy: $rateLimitPolicy,
     authManager: $authManager,
     logger: $logger,
     // Optional: custom HTTP handler for additional endpoints
@@ -222,7 +230,7 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 composer test
 ```
 
-Runs the unit test suite (173 tests) and PHPStan level 9 static analysis.
+Runs the full test suite and PHPStan level 9 static analysis.
 
 Manual testing with [websocat](https://github.com/vi/websocat):
 

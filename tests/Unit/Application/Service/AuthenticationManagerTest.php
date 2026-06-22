@@ -86,7 +86,7 @@ final class AuthenticationManagerTest extends TestCase
 
     public function testGetAuthenticatedPubkeysReturnsEmptyForUnknownClient(): void
     {
-        $this->assertSame([], $this->authManager->getAuthenticatedPubkeys(ClientId::fromString('unknown')));
+        $this->assertCount(0, $this->authManager->getAuthenticatedPubkeys(ClientId::fromString('unknown')));
     }
 
     public function testRemoveClientClearsAuthStateAndChallenge(): void

@@ -87,7 +87,6 @@ final class MessageRouterTest extends TestCase
         $this->authManager = new AuthenticationManager();
 
         $this->clientManager = new ClientManager(
-            $this->subscriptionManager,
             $metrics,
             $logger,
         );
@@ -103,7 +102,7 @@ final class MessageRouterTest extends TestCase
         $signatureService = $this->signatureService();
         $eventValidator = new EventValidator($signatureService, new NipComplianceValidator($signatureService));
 
-        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authManager, $this->clientManager);
+        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authManager, $this->clientManager, $this->subscriptionManager);
 
         $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
 

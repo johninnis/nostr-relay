@@ -16,30 +16,25 @@ use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
-use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
 
 final class ClientManagerTest extends TestCase
 {
-    private SubscriptionLookupInterface&Stub $subscriptionLookup;
     private ClientManager $manager;
 
     protected function setUp(): void
     {
-        $this->subscriptionLookup = $this->createStub(SubscriptionLookupInterface::class);
         $this->manager = $this->makeManager();
     }
 
     private function makeManager(?MetricsCollectorInterface $metrics = null): ClientManager
     {
         return new ClientManager(
-            $this->subscriptionLookup,
             $metrics ?? $this->createStub(MetricsCollectorInterface::class),
             new NullLogger(),
             2,

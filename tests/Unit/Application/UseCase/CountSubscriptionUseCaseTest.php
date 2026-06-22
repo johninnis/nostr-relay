@@ -43,12 +43,17 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
         $this->clientManager = new ClientManager(
-            $this->createStub(SubscriptionLookupInterface::class),
             $this->createStub(MetricsCollectorInterface::class),
             new NullLogger(),
         );
 
-        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, new AuthenticationManager(), $this->clientManager);
+        $admission = new SubscriptionAdmission(
+            $this->policy,
+            $this->rateLimiter,
+            new AuthenticationManager(),
+            $this->clientManager,
+            $this->createStub(SubscriptionLookupInterface::class),
+        );
 
         $this->useCase = new CountSubscriptionUseCase(
             $this->eventStore,

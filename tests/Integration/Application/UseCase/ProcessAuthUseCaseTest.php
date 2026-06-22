@@ -37,7 +37,6 @@ use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
@@ -82,7 +81,6 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->connection = $this->createMock(ClientConnectionInterface::class);
         $this->clientManager = new ClientManager(
-            $this->createStub(SubscriptionLookupInterface::class),
             new InMemoryMetricsCollector(),
             new NullLogger(),
         );
@@ -112,6 +110,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $this->createStub(RateLimiterInterface::class),
             $this->authManager,
             $this->clientManager,
+            $this->subscriptionManager,
         );
 
         $synchronousExecutor = new class implements DeferredExecutorInterface {

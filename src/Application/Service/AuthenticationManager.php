@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKeyCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 
 final class AuthenticationManager
@@ -54,9 +55,9 @@ final class AuthenticationManager
         return !empty($this->authenticatedPubkeys[(string) $clientId]);
     }
 
-    public function getAuthenticatedPubkeys(ClientId $clientId): array
+    public function getAuthenticatedPubkeys(ClientId $clientId): PublicKeyCollection
     {
-        return $this->authenticatedPubkeys[(string) $clientId] ?? [];
+        return new PublicKeyCollection($this->authenticatedPubkeys[(string) $clientId] ?? []);
     }
 
     public function isAuthenticatedAs(ClientId $clientId, PublicKey $pubkey): bool

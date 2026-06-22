@@ -76,7 +76,6 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->clientManager = new ClientManager(
-            $subscriptionManager,
             $metrics,
             $logger,
         );

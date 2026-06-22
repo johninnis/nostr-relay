@@ -10,6 +10,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class SubscriptionAdmission
@@ -19,6 +20,7 @@ final readonly class SubscriptionAdmission
         private RateLimiterInterface $rateLimiter,
         private AuthenticationManager $authManager,
         private ClientManager $clientManager,
+        private SubscriptionLookupInterface $subscriptionLookup,
     ) {
     }
 
@@ -28,7 +30,11 @@ final readonly class SubscriptionAdmission
             $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
         }
 
-        $this->policy->allowSubscription($client, $filters);
+        $this->policy->allowSubscription(
+            $client,
+            $filters,
+            $this->subscriptionLookup->getSubscriptionCountForClient($client->getId()),
+        );
 
         $scopedFilters = $this->policy->filterForClient($client, $filters);
 

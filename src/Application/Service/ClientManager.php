@@ -11,7 +11,6 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Entity\RelayClientCollection;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
@@ -24,7 +23,6 @@ final class ClientManager
     private array $counters = [];
 
     public function __construct(
-        private readonly SubscriptionLookupInterface $subscriptionLookup,
         private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
         private readonly int $maxConnections = 1000,
@@ -38,7 +36,7 @@ final class ClientManager
         }
 
         $clientId = ClientId::generate();
-        $client = new RelayClient($clientId, $connectionInfo, $this->subscriptionLookup);
+        $client = new RelayClient($clientId, $connectionInfo);
 
         $key = (string) $clientId;
         $this->clients[$key] = $client;

@@ -6,6 +6,7 @@ parameters:
     paths:
         - src
         - tests
+        - examples
     tmpDir: var/phpstan
     reportUnmatchedIgnoredErrors: true
     ignoreErrors:

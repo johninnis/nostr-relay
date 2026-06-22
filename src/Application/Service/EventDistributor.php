@@ -30,7 +30,7 @@ final class EventDistributor
             $event->getKind()->toInt()
         );
 
-        if (empty($subscriptionsWithClients)) {
+        if ($subscriptionsWithClients->isEmpty()) {
             return;
         }
 
