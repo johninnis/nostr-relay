@@ -171,9 +171,7 @@ If no config is passed, the relay is fully open with no restrictions.
 
 ### Authentication (NIP-42)
 
-The relay does **not** challenge on connect. It issues an `AUTH` challenge only when a subscription requests something outside the guest's scope — when the requested kinds aren't guest-readable, when the requested authors aren't tenants (under `from = 'tenants'`), or when the filter reads a **tenant's mailbox** (a `#p` tag referencing a tenant). The challenge is an offer: a client that authenticates gains full scope, while a client that ignores it still receives the guest-scoped results. The connection is never blocked for not authenticating.
-
-Challenging only on a scope-exceeding request (rather than on every connection) is deliberate: most NIP-46 client apps don't implement NIP-42, and several relay client libraries stall when a relay challenges a connection they didn't expect to be gated. A normal client — which publishes events and reads its own data — is never challenged; only a consumer reading a tenant's restricted data (e.g. a remote signer reading the requests addressed to it) is.
+The relay does **not** challenge on connect. It issues an `AUTH` challenge only when a subscription requests something outside the guest's scope — when the requested kinds aren't guest-readable, when the requested authors aren't tenants (under `from = 'tenants'`), or when the filter reads a **tenant's mailbox** (a `#p` tag referencing a tenant). The challenge is an offer: a client that authenticates gains full scope, while a client that ignores it still receives the guest-scoped results. The connection is never blocked for not authenticating. (Why a scope-exceeding request rather than every connection: see [ADR-0004](docs/adr/0004-auth-challenge-only-on-scope-exceeding-request.md).)
 
 When a client authenticates, its already-open subscriptions are re-evaluated against its new scope: each is re-admitted with its original filters and the now-visible stored events are streamed. So a subscription opened as a guest (and narrowed by guest rules) widens automatically once the client proves its identity, without the client having to re-subscribe.
 
@@ -249,31 +247,6 @@ websocat ws://localhost:8080
 - Subscription indexing by event kind
 - Filter matching via nostr-core
 - Non-blocking I/O throughout
-
----
-
-## Error handling
-
-The relay splits failures into two kinds. Anticipated domain outcomes — a well-formed request whose answer is "no" — are **returned** as typed values (`?T` or a `*Failure`), never thrown, so the caller is forced to handle the failure branch. Faults — violated invariants, programmer errors and infrastructure failures — are **thrown** as exceptions. Some validation commands return `void` and so throw a typed exception on rejection (policy, rate-limit and AUTH checks): the server boundary catches these and maps them to the appropriate `CLOSED`, `NOTICE` or `OK` response.
-
-Faults are rooted by whose code raises them, not by the dependency graph. Nostr library code — including nostr-relay — roots its faults at `NostrException` (defined in nostr-core):
-
-- `RelayException` (abstract) extends `NostrException`.
-- The final leaves extend `RelayException`: `AuthRequiredException`, `ConnectionException`, `PolicyViolationException` and `RateLimitException`.
-
-A consumer application embedding nostr-relay roots its **own** faults at its own independent base. For example, Hubstr code throws a `HubstrException` (extending `\Exception`), which does **not** extend `NostrException` even though Hubstr depends on the Nostr libraries. What decides the root is whose code raises the fault, not what it depends on.
-
----
-
-## Why value objects use `getX()` methods, not property hooks
-
-PHP 8.4 property hooks let a property carry a computed read, so the idiomatic move is often to expose a property and drop the accessor. This library deliberately keeps `getX()` methods on its value objects:
-
-1. **`readonly` forbids hooks.** A property hook requires a non-readonly property, and a `final readonly class` makes every property readonly — so a hook is not available inside these value objects at all. A value computed on read can only be a method.
-2. **A partial migration is worse than none.** Computed and interface-bound accessors must stay methods, so converting only the trivial pass-throughs would split the public API into two access styles (a bare property next to a `getX()` call). A uniform `getX()` surface is the only internally consistent option.
-3. **No behavioural or type-safety gain.** Getter-to-property is purely syntactic: it would rewrite call sites for no change in behaviour or analyser coverage.
-
-Setters do not arise: value objects are immutable and transform by returning a new instance.
 
 ---
 
