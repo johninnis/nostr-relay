@@ -8,15 +8,10 @@ parameters:
         - tests
         - examples
     tmpDir: var/phpstan
-    reportUnmatchedIgnoredErrors: true
     ignoreErrors:
         # PHP cannot express an array's value type natively (e.g. list<string>)
         -
             identifier: missingType.iterableValue
-        # PHP cannot express generic type parameters natively (e.g. IteratorAggregate<int, Event>)
-        -
-            identifier: missingType.generics
-            reportUnmatched: false
         # Test assertions that verify runtime behaviour are valid even when PHPStan can infer the result statically
         -
             identifier: method.alreadyNarrowedType
