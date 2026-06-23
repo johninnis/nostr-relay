@@ -9,6 +9,7 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Entity\RelayClientCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
@@ -18,7 +19,7 @@ final class RelayClientCollectionTest extends TestCase
     {
         return new RelayClient(
             ClientId::fromString($id),
-            new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
+            new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
     }
 

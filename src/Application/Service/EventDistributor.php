@@ -6,6 +6,8 @@ namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
+use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
+use Innis\Nostr\Relay\Application\Port\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -18,7 +20,8 @@ final class EventDistributor
     public function __construct(
         private readonly RelayPolicyInterface $policy,
         private readonly SubscriptionManager $subscriptionManager,
-        private readonly ClientManager $clientManager,
+        private readonly ClientRegistryInterface $registry,
+        private readonly ClientMessengerInterface $messenger,
         private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
     ) {
@@ -56,7 +59,7 @@ final class EventDistributor
             return false;
         }
 
-        $client = $this->clientManager->getClient($match->getClientId());
+        $client = $this->registry->getClient($match->getClientId());
 
         if (!$client instanceof RelayClient) {
             return false;
@@ -67,7 +70,7 @@ final class EventDistributor
         }
 
         try {
-            $this->clientManager->send($client, new EventMessage($match->getSubscription()->getId(), $event));
+            $this->messenger->send($client, new EventMessage($match->getSubscription()->getId(), $event));
         } catch (ConnectionException $e) {
             $this->logger->debug('Skipping send to disconnected subscriber', [
                 'client_id' => (string) $match->getClientId(),

@@ -25,7 +25,9 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
+use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -34,6 +36,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
@@ -48,6 +51,7 @@ use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
@@ -84,17 +88,19 @@ final class MessageRouterTest extends TestCase
         $logger = new NullLogger();
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $this->authManager = new AuthenticationManager();
+        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 
         $this->clientManager = new ClientManager(
             $metrics,
             $logger,
         );
+        $messenger = new ClientMessenger($this->clientManager);
 
         $distributor = new EventDistributor(
             $this->policy,
             $this->subscriptionManager,
             $this->clientManager,
+            $messenger,
             $metrics,
             $logger,
         );
@@ -102,7 +108,7 @@ final class MessageRouterTest extends TestCase
         $signatureService = $this->signatureService();
         $eventValidator = new EventValidator($signatureService, new NipComplianceValidator($signatureService));
 
-        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authManager, $this->clientManager, $this->subscriptionManager);
+        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authManager, $messenger, $this->subscriptionManager);
 
         $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
 
@@ -114,6 +120,7 @@ final class MessageRouterTest extends TestCase
             $metrics,
             $logger,
             $this->clientManager,
+            $messenger,
             new AmphpDeferredExecutor(),
             new EventDeletionProcessor($this->eventStore, $logger),
         );
@@ -123,7 +130,7 @@ final class MessageRouterTest extends TestCase
             $this->policy,
             $this->subscriptionManager,
             $admission,
-            $this->clientManager,
+            $messenger,
             new AmphpDeferredExecutor(),
             $logger,
         );
@@ -139,15 +146,16 @@ final class MessageRouterTest extends TestCase
             $this->policy,
             $logger,
             $eventValidator,
-            $this->clientManager,
+            $messenger,
             $this->subscriptionManager,
             $createSubscription,
+            new SystemClock(),
         );
 
         $countSubscription = new CountSubscriptionUseCase(
             $this->eventStore,
             $admission,
-            $this->clientManager,
+            $messenger,
             $logger,
         );
 
@@ -158,7 +166,7 @@ final class MessageRouterTest extends TestCase
             $processAuth,
             $countSubscription,
             $this->deserialiser,
-            $this->clientManager,
+            $messenger,
             $logger,
         );
 
@@ -169,7 +177,7 @@ final class MessageRouterTest extends TestCase
     {
         return $this->clientManager->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
-            new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
+            new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
     }
 

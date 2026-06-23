@@ -7,18 +7,18 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKeyCollection;
-use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 
 final class AuthenticationManager
 {
     private const int CHALLENGE_BYTES = 16;
 
+    // Deliberate: in-memory single-process auth-session registry, not a swappable store — see ADR-0008
     private array $authenticatedPubkeys = [];
     private array $challenges = [];
 
     public function __construct(
-        private readonly RandomBytesGeneratorInterface $randomBytes = new NativeRandomBytesGenerator(),
+        private readonly RandomBytesGeneratorInterface $randomBytes,
     ) {
     }
 

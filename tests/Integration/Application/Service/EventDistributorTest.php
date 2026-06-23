@@ -19,11 +19,13 @@ use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\MockObject\Stub;
@@ -54,6 +56,7 @@ final class EventDistributorTest extends TestCase
             $this->policy,
             $this->subscriptionManager,
             $this->clientManager,
+            new ClientMessenger($this->clientManager),
             $this->metrics,
             $logger,
         );
@@ -75,7 +78,7 @@ final class EventDistributorTest extends TestCase
     private function registerClientWithSubscription(string $subIdStr, ?array $kinds = null, ?ClientConnectionInterface $connection = null): RelayClient
     {
         $connection ??= $this->createStub(ClientConnectionInterface::class);
-        $connectionInfo = new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now());
+        $connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
         $client = $this->clientManager->registerClient($connection, $connectionInfo);
 
         $filter = new Filter(kinds: $kinds);

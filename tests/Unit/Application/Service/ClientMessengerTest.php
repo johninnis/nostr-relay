@@ -1,0 +1,118 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
+
+use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
+use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
+use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
+use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
+use PHPUnit\Framework\TestCase;
+use Psr\Log\NullLogger;
+use RuntimeException;
+
+final class ClientMessengerTest extends TestCase
+{
+    private ClientManager $registry;
+    private ClientMessenger $messenger;
+
+    protected function setUp(): void
+    {
+        $this->registry = new ClientManager(
+            $this->createStub(MetricsCollectorInterface::class),
+            new NullLogger(),
+        );
+        $this->messenger = new ClientMessenger($this->registry);
+    }
+
+    private function register(ClientConnectionInterface $connection): RelayClient
+    {
+        return $this->registry->registerClient(
+            $connection,
+            new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
+        );
+    }
+
+    public function testDeliversMessageToTheClientConnection(): void
+    {
+        $message = new NoticeMessage('hello');
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')->with($message->toJson());
+
+        $this->messenger->send($this->register($connection), $message);
+    }
+
+    public function testSendToUnknownClientIsNoOp(): void
+    {
+        $client = $this->register($this->createStub(ClientConnectionInterface::class));
+        $this->registry->removeClient($client->getId());
+
+        $this->expectNotToPerformAssertions();
+
+        $this->messenger->send($client, new NoticeMessage('hello'));
+    }
+
+    public function testSendingEventMessageIncrementsEventsSent(): void
+    {
+        $client = $this->register($this->createStub(ClientConnectionInterface::class));
+        $message = new EventMessage(SubscriptionIdMother::from('sub-1'), $this->createEvent());
+
+        $this->messenger->send($client, $message);
+        $this->messenger->send($client, $message);
+
+        $this->assertSame(2, $this->registry->getSessionCounters($client->getId())->getEventsSent());
+    }
+
+    public function testSendingNonEventMessageDoesNotIncrementEventsSent(): void
+    {
+        $client = $this->register($this->createStub(ClientConnectionInterface::class));
+
+        $this->messenger->send($client, new NoticeMessage('hi'));
+
+        $this->assertSame(0, $this->registry->getSessionCounters($client->getId())->getEventsSent());
+    }
+
+    public function testFailedSendDoesNotIncrementEventsSent(): void
+    {
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willThrowException(ConnectionException::peerDisconnected());
+        $client = $this->register($connection);
+        $message = new EventMessage(SubscriptionIdMother::from('sub-1'), $this->createEvent());
+
+        $this->expectException(ConnectionException::class);
+
+        try {
+            $this->messenger->send($client, $message);
+        } finally {
+            $this->assertSame(0, $this->registry->getSessionCounters($client->getId())->getEventsSent());
+        }
+    }
+
+    private function createEvent(): Event
+    {
+        $pubkey = PublicKey::fromHex(str_repeat('a', 64))
+            ?? throw new RuntimeException('invalid test pubkey');
+
+        return new Event(
+            $pubkey,
+            Timestamp::now(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
+            TagCollection::empty(),
+            EventContent::fromString('test'),
+        );
+    }
+}

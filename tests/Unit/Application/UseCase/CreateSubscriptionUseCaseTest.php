@@ -9,6 +9,7 @@ use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -16,6 +17,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
@@ -23,6 +25,7 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
@@ -51,15 +54,16 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->clientManager = new ClientManager($metrics, $logger);
-        $this->authManager = new AuthenticationManager();
-        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $this->clientManager, $this->subscriptionManager);
+        $messenger = new ClientMessenger($this->clientManager);
+        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $messenger, $this->subscriptionManager);
 
         $this->useCase = new CreateSubscriptionUseCase(
             $this->eventStore,
             $this->policy,
             $this->subscriptionManager,
             $admission,
-            $this->clientManager,
+            $messenger,
             new AmphpDeferredExecutor(),
             $logger,
         );
@@ -71,7 +75,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     {
         return $this->clientManager->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
-            new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
+            new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
     }
 

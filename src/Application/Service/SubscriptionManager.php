@@ -19,6 +19,7 @@ use Psr\Log\LoggerInterface;
 
 final class SubscriptionManager implements SubscriptionLookupInterface
 {
+    // Deliberate: in-memory single-process subscription registry, not a swappable store — see ADR-0008
     private array $subscriptions = [];
     private array $clientIdByKey = [];
     private array $subscriptionsByKind = [];

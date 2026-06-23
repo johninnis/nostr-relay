@@ -25,6 +25,7 @@ use Innis\Nostr\Relay\Application\DTO\HttpRequestContext;
 use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
@@ -94,9 +95,12 @@ final class AmphpRelayServer
                 $forwarded = $request->hasAttribute(Forwarded::class)
                     ? $request->getAttribute(Forwarded::class)
                     : null;
+                $remoteAddress = $request->getClient()->getRemoteAddress();
                 $ipAddress = $forwarded instanceof Forwarded
                     ? $forwarded->getFor()->getAddress()
-                    : $request->getClient()->getRemoteAddress()->toString();
+                    : ($remoteAddress instanceof Socket\InternetAddress
+                        ? $remoteAddress->getAddress()
+                        : $remoteAddress->toString());
                 $userAgent = $request->getHeader('user-agent') ?? 'unknown';
 
                 $this->handler->handle($client, $ipAddress, $userAgent);
@@ -208,13 +212,11 @@ final class AmphpRelayServer
             }
 
             $parts = explode('/', $proxy, 2);
-            $address = $parts[0];
             $bits = $parts[1] ?? null;
 
-            $isIpv4 = false !== filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4);
-            $isIpv6 = false !== filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6);
+            $address = IpAddress::tryFromString($parts[0]);
 
-            if (!$isIpv4 && !$isIpv6) {
+            if (!$address instanceof IpAddress) {
                 throw new InvalidArgumentException(sprintf('Invalid trusted proxy address: %s', $proxy));
             }
 
@@ -222,7 +224,7 @@ final class AmphpRelayServer
                 continue;
             }
 
-            $maxBits = $isIpv4 ? 32 : 128;
+            $maxBits = $address->isIpV6() ? 128 : 32;
             $bitsInt = filter_var($bits, FILTER_VALIDATE_INT, [
                 'options' => ['min_range' => 0, 'max_range' => $maxBits],
             ]);

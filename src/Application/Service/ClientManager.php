@@ -4,9 +4,8 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
+use Innis\Nostr\Relay\Application\Port\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Entity\RelayClientCollection;
@@ -14,10 +13,12 @@ use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
+use Override;
 use Psr\Log\LoggerInterface;
 
-final class ClientManager
+final class ClientManager implements ClientRegistryInterface
 {
+    // Deliberate: in-memory single-process registry of live connections, not a swappable store — see ADR-0008
     private array $clients = [];
     private array $connections = [];
     private array $counters = [];
@@ -32,7 +33,7 @@ final class ClientManager
     public function registerClient(ClientConnectionInterface $connection, ConnectionInfo $connectionInfo): RelayClient
     {
         if (count($this->clients) >= $this->maxConnections) {
-            throw ConnectionException::maxConnectionsReached($connectionInfo->getIpAddress());
+            throw ConnectionException::maxConnectionsReached((string) $connectionInfo->getIpAddress());
         }
 
         $clientId = ClientId::generate();
@@ -46,13 +47,14 @@ final class ClientManager
 
         $this->logger->info('Client connected', [
             'client_id' => $key,
-            'ip' => $connectionInfo->getIpAddress(),
+            'ip' => (string) $connectionInfo->getIpAddress(),
             'total_clients' => count($this->clients),
         ]);
 
         return $client;
     }
 
+    #[Override]
     public function removeClient(ClientId $clientId): void
     {
         $key = (string) $clientId;
@@ -65,22 +67,21 @@ final class ClientManager
         $this->metrics->decrementActiveConnections();
     }
 
-    public function send(RelayClient $client, RelayMessage $message): void
+    public function getConnection(ClientId $clientId): ?ClientConnectionInterface
     {
-        $key = (string) $client->getId();
-        $connection = $this->connections[$key] ?? null;
+        return $this->connections[(string) $clientId] ?? null;
+    }
 
-        if (!$connection instanceof ClientConnectionInterface) {
-            return;
-        }
+    public function recordEventSent(ClientId $clientId): void
+    {
+        $key = (string) $clientId;
 
-        $connection->sendText($message->toJson());
-
-        if ($message instanceof EventMessage) {
+        if (isset($this->counters[$key])) {
             $this->counters[$key] = $this->counters[$key]->withEventSent();
         }
     }
 
+    #[Override]
     public function recordEventReceived(ClientId $clientId): void
     {
         $key = (string) $clientId;
@@ -90,6 +91,7 @@ final class ClientManager
         }
     }
 
+    #[Override]
     public function recordEventAccepted(ClientId $clientId): void
     {
         $key = (string) $clientId;
@@ -104,11 +106,13 @@ final class ClientManager
         return $this->counters[(string) $clientId] ?? SessionCounters::empty();
     }
 
+    #[Override]
     public function getClient(ClientId $clientId): ?RelayClient
     {
         return $this->clients[(string) $clientId] ?? null;
     }
 
+    #[Override]
     public function getClientCount(): int
     {
         return count($this->clients);

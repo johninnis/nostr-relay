@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
@@ -13,6 +14,7 @@ use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -36,7 +38,7 @@ final class ClientDisconnectionHandlerTest extends TestCase
         $this->handler = new ClientDisconnectionHandler(
             $this->clientManager,
             $this->subscriptionManager,
-            new AuthenticationManager(),
+            new AuthenticationManager(new NativeRandomBytesGenerator()),
             $logger,
         );
     }
@@ -44,7 +46,7 @@ final class ClientDisconnectionHandlerTest extends TestCase
     public function testDisconnectRemovesClientAndSubscriptions(): void
     {
         $connection = $this->createStub(ClientConnectionInterface::class);
-        $connectionInfo = new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now());
+        $connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
         $client = $this->clientManager->registerClient($connection, $connectionInfo);
 
         $this->handler->disconnect($client->getId());

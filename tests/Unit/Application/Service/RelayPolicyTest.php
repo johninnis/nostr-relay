@@ -13,6 +13,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -20,6 +21,7 @@ use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -33,7 +35,7 @@ final class RelayPolicyTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->authManager = new AuthenticationManager();
+        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
     }
 
     public function testTenantIsExemptFromSubscriptionCap(): void
@@ -206,7 +208,7 @@ final class RelayPolicyTest extends TestCase
 
     private function connectionInfo(): ConnectionInfo
     {
-        return new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now());
+        return new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
     }
 
     private function event(int $kind, string $content, ?TagCollection $tags = null, string $author = self::STRANGER_HEX): Event

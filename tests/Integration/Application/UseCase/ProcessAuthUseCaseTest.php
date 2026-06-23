@@ -24,7 +24,9 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
+use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -33,12 +35,14 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
@@ -51,6 +55,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 {
     private AuthenticationManager $authManager;
     private ClientManager $clientManager;
+    private ClientMessenger $messenger;
     private ProcessAuthUseCase $useCase;
     private RelayPolicyInterface $policy;
     private RelayClient $client;
@@ -71,7 +76,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->authManager = new AuthenticationManager();
+        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
         $this->keyPair = KeyPair::generate($this->signatureService());
 
         $config = $this->createStub(RelayConfigInterface::class);
@@ -85,9 +90,10 @@ final class ProcessAuthUseCaseTest extends TestCase
             new InMemoryMetricsCollector(),
             new NullLogger(),
         );
+        $this->messenger = new ClientMessenger($this->clientManager);
         $this->client = $this->clientManager->registerClient(
             $this->connection,
-            new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
+            new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
 
         $this->subscriptionManager = new SubscriptionManager(new InMemoryMetricsCollector(), new NullLogger());
@@ -98,9 +104,10 @@ final class ProcessAuthUseCaseTest extends TestCase
             $this->policy,
             new NullLogger(),
             $this->eventValidator(),
-            $this->clientManager,
+            $this->messenger,
             $this->subscriptionManager,
             $this->buildCreateSubscription($this->policy, $this->createStub(RelayEventStoreInterface::class)),
+            new SystemClock(),
         );
     }
 
@@ -110,7 +117,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $policy,
             $this->createStub(RateLimiterInterface::class),
             $this->authManager,
-            $this->clientManager,
+            $this->messenger,
             $this->subscriptionManager,
         );
 
@@ -126,7 +133,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $policy,
             $this->subscriptionManager,
             $admission,
-            $this->clientManager,
+            $this->messenger,
             $synchronousExecutor,
             new NullLogger(),
         );
@@ -186,9 +193,10 @@ final class ProcessAuthUseCaseTest extends TestCase
             $policy,
             new NullLogger(),
             $this->eventValidator(),
-            $this->clientManager,
+            $this->messenger,
             $this->subscriptionManager,
             $this->buildCreateSubscription($policy, $eventStore),
+            new SystemClock(),
         );
 
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
@@ -217,9 +225,10 @@ final class ProcessAuthUseCaseTest extends TestCase
             $policy,
             new NullLogger(),
             $this->eventValidator(),
-            $this->clientManager,
+            $this->messenger,
             $this->subscriptionManager,
             $this->buildCreateSubscription($policy, $this->createStub(RelayEventStoreInterface::class)),
+            new SystemClock(),
         );
 
         $this->connection->expects($this->once())->method('sendText')
@@ -357,7 +366,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $policy,
             new NullLogger(),
             $this->eventValidator(),
-            $this->clientManager,
+            $this->messenger,
             $this->subscriptionManager,
             $this->buildCreateSubscription($policy, $this->createStub(RelayEventStoreInterface::class)),
             $clock,

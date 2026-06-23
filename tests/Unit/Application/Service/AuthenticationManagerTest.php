@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use PHPUnit\Framework\TestCase;
@@ -18,7 +19,7 @@ final class AuthenticationManagerTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->authManager = new AuthenticationManager();
+        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
         $this->clientId = ClientId::fromString('client-1');
     }
 

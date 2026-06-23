@@ -10,8 +10,10 @@ use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Core\Infrastructure\Encoding\JsonMessageDeserialiser;
+use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
 use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
+use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
@@ -20,6 +22,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
@@ -32,6 +35,7 @@ use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\Http\ConfigNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
@@ -55,13 +59,14 @@ final class RelayServerFactory
         ?SignatureServiceInterface $signatureService = null,
         private readonly ?ConnectionGateInterface $connectionGate = null,
         private readonly ?ErrorHandler $errorHandler = null,
+        private readonly ?MetricsCollectorInterface $metricsCollector = null,
     ) {
         $this->signatureService = $signatureService ?? Secp256k1Signer::create();
     }
 
     public function create(): RelayInstance
     {
-        $metrics = new InMemoryMetricsCollector();
+        $metrics = $this->metricsCollector ?? new InMemoryMetricsCollector();
 
         $subscriptionManager = new SubscriptionManager(
             $metrics,
@@ -73,6 +78,8 @@ final class RelayServerFactory
             $this->logger,
             $this->config->getMaxConnections()
         );
+
+        $clientMessenger = new ClientMessenger($clientManager);
 
         $authManager = $this->authManager;
 
@@ -87,6 +94,7 @@ final class RelayServerFactory
             $this->policy,
             $subscriptionManager,
             $clientManager,
+            $clientMessenger,
             $metrics,
             $this->logger
         );
@@ -105,7 +113,7 @@ final class RelayServerFactory
             $this->policy,
             $subscriptionRateLimiter,
             $authManager,
-            $clientManager,
+            $clientMessenger,
             $subscriptionManager
         );
 
@@ -125,6 +133,7 @@ final class RelayServerFactory
             $metrics,
             $this->logger,
             $clientManager,
+            $clientMessenger,
             $deferredExecutor,
             $eventDeletionProcessor
         );
@@ -134,7 +143,7 @@ final class RelayServerFactory
             $this->policy,
             $subscriptionManager,
             $subscriptionAdmission,
-            $clientManager,
+            $clientMessenger,
             $deferredExecutor,
             $this->logger
         );
@@ -150,15 +159,16 @@ final class RelayServerFactory
             $this->policy,
             $this->logger,
             $eventValidator,
-            $clientManager,
+            $clientMessenger,
             $subscriptionManager,
-            $createSubscriptionUseCase
+            $createSubscriptionUseCase,
+            new SystemClock()
         );
 
         $countSubscriptionUseCase = new CountSubscriptionUseCase(
             $this->eventStore,
             $subscriptionAdmission,
-            $clientManager,
+            $clientMessenger,
             $this->logger
         );
 
@@ -171,7 +181,7 @@ final class RelayServerFactory
             $processAuthUseCase,
             $countSubscriptionUseCase,
             $deserialiser,
-            $clientManager,
+            $clientMessenger,
             $this->logger
         );
 
@@ -181,7 +191,7 @@ final class RelayServerFactory
             $messageRouter,
             $this->logger,
             $this->connectionGate ?? new class implements ConnectionGateInterface {
-                public function isIpAllowed(string $ipAddress): bool
+                public function isIpAllowed(IpAddress $ipAddress): bool
                 {
                     return true;
                 }

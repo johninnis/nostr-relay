@@ -16,6 +16,7 @@ use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -35,16 +36,14 @@ final class ClientConnectionHandler
 
     public function handle(WebsocketClient $websocketClient, string $ipAddress, string $userAgent): void
     {
-        $connectionInfo = new ConnectionInfo(
-            $ipAddress,
-            $userAgent,
-            Timestamp::now()
-        );
-
         try {
-            if (!$this->connectionGate->isIpAllowed($ipAddress)) {
+            $clientIp = IpAddress::fromString($ipAddress);
+
+            if (!$this->connectionGate->isIpAllowed($clientIp)) {
                 throw ConnectionException::ipBlocked($ipAddress);
             }
+
+            $connectionInfo = new ConnectionInfo($clientIp, $userAgent, Timestamp::now());
 
             $adapter = new WebsocketClientConnection($websocketClient);
             $client = $this->clientManager->registerClient($adapter, $connectionInfo);

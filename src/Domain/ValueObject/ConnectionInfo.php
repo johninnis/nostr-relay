@@ -9,13 +9,13 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 final readonly class ConnectionInfo
 {
     public function __construct(
-        private string $ipAddress,
+        private IpAddress $ipAddress,
         private string $userAgent,
         private Timestamp $connectedAt,
     ) {
     }
 
-    public function getIpAddress(): string
+    public function getIpAddress(): IpAddress
     {
         return $this->ipAddress;
     }

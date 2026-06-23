@@ -68,17 +68,19 @@ Optional interfaces extend the relay's behaviour:
 - **`HttpRequestHandlerInterface`** - Handle additional HTTP requests (e.g. management API, landing page). Return a response or `null` to fall through to WebSocket.
 - **`Nip11InfoProviderInterface`** - Provide NIP-11 metadata dynamically. Defaults to reading from `RelayConfigInterface` if not provided.
 - **`ConnectionGateInterface`** - Decide whether an IP may connect, before the WebSocket session is established. Defaults to allowing every IP; implement it to enforce an allow-list or deny-list.
+- **`MetricsCollectorInterface`** - Collect relay metrics (connections, events, subscriptions). Defaults to the in-memory `InMemoryMetricsCollector` exposed via `RelayInstance::getMetrics()`; implement it to export to an external monitoring system.
 
 ### 2. Create and Start the Relay
 
 ```php
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 
-$authManager = new AuthenticationManager();
+$authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 $logger = new \Psr\Log\NullLogger();
 
 $policy = new RelayPolicy($authManager, $logger, [

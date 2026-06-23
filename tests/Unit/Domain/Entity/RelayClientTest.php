@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use PHPUnit\Framework\TestCase;
 
 final class RelayClientTest extends TestCase
@@ -18,7 +19,7 @@ final class RelayClientTest extends TestCase
     protected function setUp(): void
     {
         $this->clientId = ClientId::fromString('test-client');
-        $this->connectionInfo = new ConnectionInfo('127.0.0.1', 'TestAgent/1.0', Timestamp::now());
+        $this->connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'TestAgent/1.0', Timestamp::now());
     }
 
     private function makeClient(): RelayClient

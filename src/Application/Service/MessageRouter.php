@@ -11,6 +11,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
+use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
@@ -30,7 +31,7 @@ final class MessageRouter
         private readonly ProcessAuthUseCase $processAuthUseCase,
         private readonly CountSubscriptionUseCase $countSubscriptionUseCase,
         private readonly MessageDeserialiserInterface $deserialiser,
-        private readonly ClientManager $clientManager,
+        private readonly ClientMessengerInterface $messenger,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -41,7 +42,7 @@ final class MessageRouter
             $clientMessage = $this->deserialiser->deserialiseClientMessage($message);
 
             if (null === $clientMessage) {
-                $this->clientManager->send($client, new NoticeMessage('Invalid message'));
+                $this->messenger->send($client, new NoticeMessage('Invalid message'));
                 $this->logger->warning('Invalid message received', [
                     'client_id' => (string) $client->getId(),
                     'message' => mb_substr($message, 0, 200),
@@ -73,17 +74,17 @@ final class MessageRouter
                     $clientMessage->getSubscriptionId(),
                     $clientMessage->getFilters()
                 ),
-                default => $this->clientManager->send($client, new NoticeMessage('Unknown message type')),
+                default => $this->messenger->send($client, new NoticeMessage('Unknown message type')),
             };
         } catch (InvalidArgumentException $e) {
-            $this->clientManager->send($client, new NoticeMessage('Invalid message: '.$e->getMessage()));
+            $this->messenger->send($client, new NoticeMessage('Invalid message'));
             $this->logger->warning('Invalid message received', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
                 'message' => mb_substr($message, 0, 200),
             ]);
         } catch (Throwable $e) {
-            $this->clientManager->send($client, new NoticeMessage('Internal server error'));
+            $this->messenger->send($client, new NoticeMessage('Internal server error'));
             $this->logger->error('Message routing error', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),

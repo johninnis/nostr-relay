@@ -10,6 +10,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\EventIdCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
@@ -113,7 +114,7 @@ final class ExampleRelayConfig implements RelayConfigInterface
 }
 
 $ownerPubkeyHex = 'your-hex-pubkey-here';
-$authManager = new AuthenticationManager();
+$authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 $logger = new NullLogger();
 
 $policy = new RelayPolicy($authManager, $logger, [

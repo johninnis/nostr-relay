@@ -8,8 +8,8 @@ use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
+use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
@@ -22,7 +22,7 @@ final class CountSubscriptionUseCase
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
         private readonly SubscriptionAdmission $admission,
-        private readonly ClientManager $clientManager,
+        private readonly ClientMessengerInterface $messenger,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -35,13 +35,13 @@ final class CountSubscriptionUseCase
 
             $count = $this->eventStore->countByFilters($scopedFilters->getFilters());
 
-            $this->clientManager->send($client, new CountMessage($subscriptionId, $count));
+            $this->messenger->send($client, new CountMessage($subscriptionId, $count));
         } catch (PolicyViolationException $e) {
-            $this->clientManager->send($client, new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
+            $this->messenger->send($client, new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
         } catch (RateLimitException) {
-            $this->clientManager->send($client, new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
+            $this->messenger->send($client, new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
         } catch (Throwable $e) {
-            $this->clientManager->send($client, new ClosedMessage($subscriptionId, 'error: could not count events'));
+            $this->messenger->send($client, new ClosedMessage($subscriptionId, 'error: could not count events'));
             $this->logger->error('Count subscription error', [
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,

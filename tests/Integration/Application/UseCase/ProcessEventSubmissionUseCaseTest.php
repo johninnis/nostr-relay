@@ -20,6 +20,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -28,6 +29,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
@@ -39,6 +41,7 @@ use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
@@ -79,11 +82,13 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $metrics,
             $logger,
         );
+        $messenger = new ClientMessenger($this->clientManager);
 
         $distributor = new EventDistributor(
             $this->policy,
             $subscriptionManager,
             $this->clientManager,
+            $messenger,
             $metrics,
             $logger,
         );
@@ -96,10 +101,11 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
                 new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
             ),
             $distributor,
-            new AuthenticationManager(),
+            new AuthenticationManager(new NativeRandomBytesGenerator()),
             $metrics,
             $logger,
             $this->clientManager,
+            $messenger,
             new AmphpDeferredExecutor(),
             new EventDeletionProcessor($eventStore, $logger),
         );
@@ -109,7 +115,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         return $this->clientManager->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
-            new ConnectionInfo('127.0.0.1', 'Test/1.0', Timestamp::now()),
+            new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
     }
 

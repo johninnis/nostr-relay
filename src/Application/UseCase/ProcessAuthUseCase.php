@@ -11,11 +11,10 @@ use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
-use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
+use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Psr\Log\LoggerInterface;
@@ -31,10 +30,10 @@ final class ProcessAuthUseCase
         private readonly RelayPolicyInterface $policy,
         private readonly LoggerInterface $logger,
         private readonly EventValidatorInterface $eventValidator,
-        private readonly ClientManager $clientManager,
+        private readonly ClientMessengerInterface $messenger,
         private readonly SubscriptionManager $subscriptionManager,
         private readonly CreateSubscriptionUseCase $createSubscription,
-        private readonly ClockInterface $clock = new SystemClock(),
+        private readonly ClockInterface $clock,
     ) {
     }
 
@@ -45,15 +44,15 @@ final class ProcessAuthUseCase
 
             $challenge = $this->authManager->getChallenge($client->getId());
             if (null === $challenge) {
-                $this->clientManager->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
-                $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: challenge issued, please retry'));
+                $this->messenger->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
+                $this->messenger->send($client, new OkMessage($event->getId(), false, 'auth-required: challenge issued, please retry'));
 
                 return;
             }
 
             $challengeTags = $event->getTags()->getValuesByType(TagType::fromString('challenge'));
             if (empty($challengeTags) || reset($challengeTags) !== $challenge) {
-                $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: invalid challenge'));
+                $this->messenger->send($client, new OkMessage($event->getId(), false, 'auth-required: invalid challenge'));
 
                 return;
             }
@@ -61,25 +60,25 @@ final class ProcessAuthUseCase
             $relayTags = $event->getTags()->getValuesByType(TagType::fromString('relay'));
             $expectedRelayUrl = (string) $this->config->getRelayUrl();
             if (empty($relayTags) || reset($relayTags) !== $expectedRelayUrl) {
-                $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: invalid relay URL'));
+                $this->messenger->send($client, new OkMessage($event->getId(), false, 'auth-required: invalid relay URL'));
 
                 return;
             }
 
             if ($this->clock->now()->differenceInSeconds($event->getCreatedAt()) > self::TIMESTAMP_TOLERANCE_SECONDS) {
-                $this->clientManager->send($client, new OkMessage($event->getId(), false, 'auth-required: timestamp out of range'));
+                $this->messenger->send($client, new OkMessage($event->getId(), false, 'auth-required: timestamp out of range'));
 
                 return;
             }
 
             if (!$this->policy->allowsAuthentication($event->getPubkey())) {
-                $this->clientManager->send($client, new OkMessage($event->getId(), false, 'restricted: authentication is limited to relay tenants'));
+                $this->messenger->send($client, new OkMessage($event->getId(), false, 'restricted: authentication is limited to relay tenants'));
 
                 return;
             }
 
             $this->authManager->authenticate($client->getId(), $event->getPubkey());
-            $this->clientManager->send($client, new OkMessage($event->getId(), true, ''));
+            $this->messenger->send($client, new OkMessage($event->getId(), true, ''));
 
             $this->reevaluateSubscriptions($client);
 
@@ -88,13 +87,13 @@ final class ProcessAuthUseCase
                 'pubkey' => $event->getPubkey()->toHex(),
             ]);
         } catch (InvalidEventException $e) {
-            $this->clientManager->send($client, new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
+            $this->messenger->send($client, new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('AUTH event validation failed', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
         } catch (Throwable $e) {
-            $this->clientManager->send($client, new OkMessage($event->getId(), false, 'error: could not process authentication'));
+            $this->messenger->send($client, new OkMessage($event->getId(), false, 'error: could not process authentication'));
             $this->logger->error('AUTH processing error', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
