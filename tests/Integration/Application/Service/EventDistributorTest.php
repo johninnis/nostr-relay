@@ -83,7 +83,7 @@ final class EventDistributorTest extends TestCase
 
         $filter = new Filter(kinds: $kinds);
         $subscription = Subscription::create(SubscriptionIdMother::from($subIdStr), new FilterCollection([$filter]))
-            ->withState(SubscriptionState::ACTIVE);
+            ->withState(SubscriptionState::Active);
 
         $this->subscriptionManager->addSubscription($client->getId(), $subscription);
 

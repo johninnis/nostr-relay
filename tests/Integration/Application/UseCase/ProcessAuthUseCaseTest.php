@@ -184,7 +184,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             'kinds' => [EventKind::fromInt(EventKind::NOSTR_CONNECT)->toInt()],
             '#p' => [$this->keyPair->getPublicKey()->toHex()],
         ])]);
-        $subscription = Subscription::create(SubscriptionIdMother::from('bunker'), $originalFilters, SubscriptionState::LIVE);
+        $subscription = Subscription::create(SubscriptionIdMother::from('bunker'), $originalFilters, SubscriptionState::Live);
         $this->subscriptionManager->addSubscription($this->client->getId(), $subscription, $originalFilters);
 
         $useCase = new ProcessAuthUseCase(

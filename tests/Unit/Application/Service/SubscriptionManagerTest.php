@@ -119,12 +119,12 @@ final class SubscriptionManagerTest extends TestCase
         $subscription = $this->createSubscription('sub-1');
 
         $this->manager->addSubscription($clientId, $subscription);
-        $this->manager->updateSubscriptionState($clientId, $subId, SubscriptionState::LIVE);
+        $this->manager->updateSubscriptionState($clientId, $subId, SubscriptionState::Live);
 
         $result = $this->manager->getSubscriptionsForClient($clientId);
         $updated = $result->get($subId);
         $this->assertNotNull($updated);
-        $this->assertSame(SubscriptionState::LIVE, $updated->getState());
+        $this->assertSame(SubscriptionState::Live, $updated->getState());
     }
 
     public function testGetSubscriptionsForEventReturnsMatchingByKind(): void

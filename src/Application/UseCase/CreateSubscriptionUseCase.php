@@ -45,7 +45,7 @@ final class CreateSubscriptionUseCase
         try {
             $modifiedFilters = $this->admission->admit($client, $filters)->getFilters();
 
-            $subscription = Subscription::create($subscriptionId, $modifiedFilters, SubscriptionState::ACTIVE);
+            $subscription = Subscription::create($subscriptionId, $modifiedFilters, SubscriptionState::Active);
 
             $this->subscriptionManager->addSubscription($client->getId(), $subscription, $filters);
 
@@ -84,7 +84,7 @@ final class CreateSubscriptionUseCase
 
             $this->messenger->send($client, new EoseMessage($subscription->getId()));
 
-            $this->subscriptionManager->updateSubscriptionState($client->getId(), $subscription->getId(), SubscriptionState::LIVE);
+            $this->subscriptionManager->updateSubscriptionState($client->getId(), $subscription->getId(), SubscriptionState::Live);
 
             $this->logger->debug('Stored events sent, subscription now live', [
                 'subscription_id' => (string) $subscription->getId(),
