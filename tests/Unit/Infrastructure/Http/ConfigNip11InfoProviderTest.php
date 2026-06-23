@@ -16,7 +16,7 @@ final class ConfigNip11InfoProviderTest extends TestCase
     public function testDelegatesToConfig(): void
     {
         $relayUrl = RelayUrl::fromString('wss://relay.example.com') ?? throw new RuntimeException('Invalid URL');
-        $nip11Info = new Nip11Info($relayUrl, ['name' => 'Test Relay']);
+        $nip11Info = Nip11Info::fromArray($relayUrl, ['name' => 'Test Relay']);
 
         $config = $this->createMock(RelayConfigInterface::class);
         $config->expects($this->once())
@@ -33,8 +33,8 @@ final class ConfigNip11InfoProviderTest extends TestCase
     public function testReturnsCurrentValueOnEachCall(): void
     {
         $relayUrl = RelayUrl::fromString('wss://relay.example.com') ?? throw new RuntimeException('Invalid URL');
-        $first = new Nip11Info($relayUrl, ['name' => 'First']);
-        $second = new Nip11Info($relayUrl, ['name' => 'Second']);
+        $first = Nip11Info::fromArray($relayUrl, ['name' => 'First']);
+        $second = Nip11Info::fromArray($relayUrl, ['name' => 'Second']);
 
         $config = $this->createMock(RelayConfigInterface::class);
         $config->expects($this->exactly(2))
