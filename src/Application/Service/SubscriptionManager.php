@@ -182,8 +182,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
         foreach ($subscription->getFilters() as $filter) {
             if ($filter->hasKinds()) {
-                foreach ($filter->getKinds() ?? [] as $kind) {
-                    $kindInt = $kind->toInt();
+                foreach ($filter->getKinds()?->toInts() ?? [] as $kindInt) {
                     if (!isset($indexedKinds[$kindInt])) {
                         $this->subscriptionsByKind[$kindInt][$key] = true;
                         $indexedKinds[$kindInt] = true;
@@ -202,8 +201,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
         foreach ($subscription->getFilters() as $filter) {
             if ($filter->hasKinds()) {
-                foreach ($filter->getKinds() ?? [] as $kind) {
-                    $kindInt = $kind->toInt();
+                foreach ($filter->getKinds()?->toInts() ?? [] as $kindInt) {
                     if (!isset($removedKinds[$kindInt])) {
                         $this->removeKindEntry($kindInt, $key);
                         $removedKinds[$kindInt] = true;

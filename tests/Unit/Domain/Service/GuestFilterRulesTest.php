@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 final class GuestFilterRulesTest extends TestCase
 {
@@ -17,7 +21,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeIntersectsRequestedAuthorsWithTenants(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1]);
+        $rules = self::rules([self::TENANT], [1]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(authors: [self::TENANT, self::OTHER], kinds: [1])]), true);
 
@@ -26,7 +30,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeDefaultsAuthorsToTenantsWhenNoneRequested(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1]);
+        $rules = self::rules([self::TENANT], [1]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [1])]), true);
 
@@ -35,36 +39,36 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeFillsReadableKindsWhenFilterHasNone(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+        $rules = self::rules([self::TENANT], [1, 7]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter()]), false);
 
         $filter = $scoped->getFilters()->toArray()[0];
         self::assertTrue($filter->hasKinds());
-        self::assertSame([1, 7], array_map(static fn ($kind) => $kind->toInt(), $filter->getKinds() ?? []));
+        self::assertSame([1, 7], $filter->getKinds()?->toInts());
     }
 
     public function testScopeIntersectsRequestedKindsWithReadable(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+        $rules = self::rules([self::TENANT], [1, 7]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [1, 4])]), false);
 
-        self::assertSame([1], array_map(static fn ($kind) => $kind->toInt(), $scoped->getFilters()->toArray()[0]->getKinds() ?? []));
+        self::assertSame([1], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
     }
 
     public function testScopeEmptiesKindsWhenAllRequestedAreUnreadable(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+        $rules = self::rules([self::TENANT], [1, 7]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [4])]), false);
 
-        self::assertSame([], $scoped->getFilters()->toArray()[0]->getKinds());
+        self::assertSame([], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
     }
 
     public function testScopeNotBeyondScopeWhenAuthorsWithinTenants(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], []);
+        $rules = self::rules([self::TENANT], []);
 
         self::assertFalse($rules->scope(new FilterCollection([new Filter(authors: [self::TENANT])]), true)->isBeyondScope());
         self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: [1])]), true)->isBeyondScope());
@@ -72,14 +76,14 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeBeyondScopeWhenAuthorsExceedTenants(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], []);
+        $rules = self::rules([self::TENANT], []);
 
         self::assertTrue($rules->scope(new FilterCollection([new Filter(authors: [self::TENANT, self::OTHER])]), true)->isBeyondScope());
     }
 
     public function testScopeNotBeyondScopeWhenKindsWithinReadable(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+        $rules = self::rules([self::TENANT], [1, 7]);
 
         self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: [1, 7])]), false)->isBeyondScope());
         self::assertFalse($rules->scope(new FilterCollection([new Filter(authors: [self::TENANT])]), false)->isBeyondScope());
@@ -87,42 +91,42 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeBeyondScopeWhenKindsExceedReadable(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+        $rules = self::rules([self::TENANT], [1, 7]);
 
         self::assertTrue($rules->scope(new FilterCollection([new Filter(kinds: [1, 4])]), false)->isBeyondScope());
     }
 
     public function testScopeNotBeyondScopeWhenNoReadableKindsConfigured(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], []);
+        $rules = self::rules([self::TENANT], []);
 
         self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: [9999])]), false)->isBeyondScope());
     }
 
     public function testScopeConstrainsFiltersWithinScope(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+        $rules = self::rules([self::TENANT], [1, 7]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [1])]), false);
 
         self::assertFalse($scoped->isBeyondScope());
         self::assertCount(1, $scoped->getFilters());
-        self::assertSame([1], array_map(static fn ($kind) => $kind->toInt(), $scoped->getFilters()->toArray()[0]->getKinds() ?? []));
+        self::assertSame([1], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
     }
 
     public function testScopeFlagsBeyondScopeWhenKindsExceedReadable(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1, 7]);
+        $rules = self::rules([self::TENANT], [1, 7]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [1, 4])]), false);
 
         self::assertTrue($scoped->isBeyondScope());
-        self::assertSame([1], array_map(static fn ($kind) => $kind->toInt(), $scoped->getFilters()->toArray()[0]->getKinds() ?? []));
+        self::assertSame([1], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
     }
 
     public function testScopeConstrainsAuthorsWhenFromTenantsOnly(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1]);
+        $rules = self::rules([self::TENANT], [1]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(authors: [self::TENANT, self::OTHER])]), true);
 
@@ -132,7 +136,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeLeavesAuthorsWhenNotFromTenantsOnly(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [1]);
+        $rules = self::rules([self::TENANT], [1]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(authors: [self::OTHER], kinds: [1])]), false);
 
@@ -142,7 +146,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testBeyondScopeWhenPTagReferencesTenant(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [24133]);
+        $rules = self::rules([self::TENANT], [24133]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [24133], tags: ['p' => [self::TENANT]])]), true);
 
@@ -151,7 +155,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testNotBeyondScopeWhenPTagReferencesNonTenant(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [24133]);
+        $rules = self::rules([self::TENANT], [24133]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [24133], tags: ['p' => [self::OTHER]])]), true);
 
@@ -160,7 +164,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testPTagToTenantDoesNotTriggerChallengeWhenNotFromTenantsOnly(): void
     {
-        $rules = new GuestFilterRules([self::TENANT], [24133]);
+        $rules = self::rules([self::TENANT], [24133]);
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [24133], tags: ['p' => [self::TENANT]])]), false);
 
@@ -168,14 +172,25 @@ final class GuestFilterRulesTest extends TestCase
     }
 
     /**
+     * @param list<string> $tenantHexes
+     * @param list<int>    $kindInts
+     */
+    private static function rules(array $tenantHexes, array $kindInts): GuestFilterRules
+    {
+        return new GuestFilterRules(
+            new PublicKeyCollection(array_map(
+                static fn (string $hex): PublicKey => PublicKey::fromHex($hex) ?? throw new RuntimeException('Invalid test pubkey'),
+                $tenantHexes,
+            )),
+            new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $kindInts)),
+        );
+    }
+
+    /**
      * @return list<string>
      */
     private static function authorHexes(Filter $filter): array
     {
-        $authors = $filter->getAuthors();
-
-        return null === $authors
-            ? []
-            : array_map(static fn (PublicKey $pubkey): string => $pubkey->toHex(), $authors->toArray());
+        return $filter->getAuthors()?->toHexes() ?? [];
     }
 }

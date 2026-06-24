@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
-use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
@@ -56,7 +55,7 @@ final class CreateSubscriptionUseCase
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'reason' => $e->getMessage(),
-                'filters' => array_map(static fn (Filter $filter) => $filter->toArray(), $filters->toArray()),
+                'filters' => $filters->toJsonArray(),
             ]);
         } catch (RateLimitException) {
             $this->messenger->send($client, new ClosedMessage($subscriptionId, 'rate-limited: slow down'));

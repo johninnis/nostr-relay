@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -22,6 +25,7 @@ final class RelayPolicy implements RelayPolicyInterface
 {
     private readonly array $tenantPubkeys;
     private readonly array $tenantHexSet;
+    /** @var list<int> */
     private readonly array $guestReadKinds;
     private readonly bool $guestReadFromTenants;
     private readonly array $guestWriteRules;
@@ -46,7 +50,7 @@ final class RelayPolicy implements RelayPolicyInterface
         $fromTenants = false;
         foreach ($guest['read'] ?? [] as $rule) {
             foreach ($rule['kinds'] ?? [] as $kind) {
-                $allKinds[] = $kind;
+                $allKinds[] = (int) $kind;
             }
             if (($rule['from'] ?? null) === 'tenants') {
                 $fromTenants = true;
@@ -60,7 +64,10 @@ final class RelayPolicy implements RelayPolicyInterface
             $config['max_filters'] ?? 5,
             $config['max_query_limit'] ?? 1000,
         );
-        $this->guestFilterRules = new GuestFilterRules($tenantHexKeys, $this->guestReadKinds);
+        $this->guestFilterRules = new GuestFilterRules(
+            new PublicKeyCollection($this->tenantPubkeys),
+            new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $this->guestReadKinds)),
+        );
     }
 
     #[Override]

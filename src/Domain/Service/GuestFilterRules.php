@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
 {
     public function __construct(
-        private array $tenantHexKeys,
-        private array $readableKinds,
+        private PublicKeyCollection $tenants,
+        private EventKindCollection $readableKinds,
     ) {
     }
 
@@ -34,12 +35,12 @@ final readonly class GuestFilterRules
 
     public function allowsEvent(Event $event, bool $fromTenantsOnly): bool
     {
-        if ([] !== $this->readableKinds && !in_array($event->getKind()->toInt(), $this->readableKinds, true)) {
+        if (!$this->readableKinds->isEmpty() && !$this->readableKinds->contains($event->getKind())) {
             return false;
         }
 
         if ($fromTenantsOnly) {
-            return in_array($event->getPubkey()->toHex(), $this->tenantHexKeys, true);
+            return $this->tenants->contains($event->getPubkey());
         }
 
         return true;
@@ -67,7 +68,8 @@ final readonly class GuestFilterRules
         }
 
         foreach ($pubkeys as $pubkey) {
-            if (is_string($pubkey) && in_array(strtolower($pubkey), $this->tenantHexKeys, true)) {
+            $candidate = PublicKey::fromHex(strtolower($pubkey));
+            if (null !== $candidate && $this->tenants->contains($candidate)) {
                 return true;
             }
         }
@@ -84,53 +86,45 @@ final readonly class GuestFilterRules
 
     private function constrainAuthorsToTenants(Filter $filter): Filter
     {
-        if ($filter->hasAuthors()) {
-            $requested = array_map(static fn (PublicKey $pubkey): string => $pubkey->toHex(), $filter->getAuthors()?->toArray() ?? []);
+        $authors = $filter->getAuthors();
 
-            return $filter->withAuthors(array_values(array_intersect($requested, $this->tenantHexKeys)));
+        if (null === $authors) {
+            return $filter->withAuthors($this->tenants->toHexes());
         }
 
-        return $filter->withAuthors($this->tenantHexKeys);
+        return $filter->withAuthors($authors->intersect($this->tenants)->toHexes());
     }
 
     private function constrainKindsToReadable(Filter $filter): Filter
     {
-        if ([] === $this->readableKinds) {
+        if ($this->readableKinds->isEmpty()) {
             return $filter;
         }
 
-        if (!$filter->hasKinds()) {
-            return $filter->withKinds($this->readableKinds);
+        $kinds = $filter->getKinds();
+
+        if (null === $kinds) {
+            return $filter->withKinds($this->readableKinds->toInts());
         }
 
-        $requested = array_map(static fn (EventKind $kind): int => $kind->toInt(), $filter->getKinds() ?? []);
-
-        return $filter->withKinds(array_values(array_intersect($requested, $this->readableKinds)));
+        return $filter->withKinds($kinds->intersect($this->readableKinds)->toInts());
     }
 
     private function authorsWithinTenants(Filter $filter): bool
     {
-        if (!$filter->hasAuthors()) {
-            return true;
-        }
+        $authors = $filter->getAuthors();
 
-        $requested = array_map(static fn (PublicKey $pubkey): string => $pubkey->toHex(), $filter->getAuthors()?->toArray() ?? []);
-
-        return [] === array_diff($requested, $this->tenantHexKeys);
+        return null === $authors || $authors->diff($this->tenants)->isEmpty();
     }
 
     private function kindsWithinReadable(Filter $filter): bool
     {
-        if ([] === $this->readableKinds || !$filter->hasKinds()) {
+        if ($this->readableKinds->isEmpty()) {
             return true;
         }
 
-        foreach ($filter->getKinds() ?? [] as $kind) {
-            if (!in_array($kind->toInt(), $this->readableKinds, true)) {
-                return false;
-            }
-        }
+        $kinds = $filter->getKinds();
 
-        return true;
+        return null === $kinds || $kinds->diff($this->readableKinds)->isEmpty();
     }
 }
