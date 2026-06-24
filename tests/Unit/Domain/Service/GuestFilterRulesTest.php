@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\Service;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
 use PHPUnit\Framework\TestCase;
 
@@ -20,7 +21,7 @@ final class GuestFilterRulesTest extends TestCase
 
         $scoped = $rules->scope(new FilterCollection([new Filter(authors: [self::TENANT, self::OTHER], kinds: [1])]), true);
 
-        self::assertSame([self::TENANT], $scoped->getFilters()->toArray()[0]->getAuthors());
+        self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
     }
 
     public function testScopeDefaultsAuthorsToTenantsWhenNoneRequested(): void
@@ -29,7 +30,7 @@ final class GuestFilterRulesTest extends TestCase
 
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [1])]), true);
 
-        self::assertSame([self::TENANT], $scoped->getFilters()->toArray()[0]->getAuthors());
+        self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
     }
 
     public function testScopeFillsReadableKindsWhenFilterHasNone(): void
@@ -126,7 +127,7 @@ final class GuestFilterRulesTest extends TestCase
         $scoped = $rules->scope(new FilterCollection([new Filter(authors: [self::TENANT, self::OTHER])]), true);
 
         self::assertTrue($scoped->isBeyondScope());
-        self::assertSame([self::TENANT], $scoped->getFilters()->toArray()[0]->getAuthors());
+        self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
     }
 
     public function testScopeLeavesAuthorsWhenNotFromTenantsOnly(): void
@@ -136,7 +137,7 @@ final class GuestFilterRulesTest extends TestCase
         $scoped = $rules->scope(new FilterCollection([new Filter(authors: [self::OTHER], kinds: [1])]), false);
 
         self::assertFalse($scoped->isBeyondScope());
-        self::assertSame([self::OTHER], $scoped->getFilters()->toArray()[0]->getAuthors());
+        self::assertSame([self::OTHER], self::authorHexes($scoped->getFilters()->toArray()[0]));
     }
 
     public function testBeyondScopeWhenPTagReferencesTenant(): void
@@ -164,5 +165,17 @@ final class GuestFilterRulesTest extends TestCase
         $scoped = $rules->scope(new FilterCollection([new Filter(kinds: [24133], tags: ['p' => [self::TENANT]])]), false);
 
         self::assertFalse($scoped->isBeyondScope());
+    }
+
+    /**
+     * @return list<string>
+     */
+    private static function authorHexes(Filter $filter): array
+    {
+        $authors = $filter->getAuthors();
+
+        return null === $authors
+            ? []
+            : array_map(static fn (PublicKey $pubkey): string => $pubkey->toHex(), $authors->toArray());
     }
 }

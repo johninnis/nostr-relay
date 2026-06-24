@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
@@ -84,7 +85,7 @@ final readonly class GuestFilterRules
     private function constrainAuthorsToTenants(Filter $filter): Filter
     {
         if ($filter->hasAuthors()) {
-            $requested = array_map(strtolower(...), $filter->getAuthors() ?? []);
+            $requested = array_map(static fn (PublicKey $pubkey): string => $pubkey->toHex(), $filter->getAuthors()?->toArray() ?? []);
 
             return $filter->withAuthors(array_values(array_intersect($requested, $this->tenantHexKeys)));
         }
@@ -113,7 +114,7 @@ final readonly class GuestFilterRules
             return true;
         }
 
-        $requested = array_map(strtolower(...), $filter->getAuthors() ?? []);
+        $requested = array_map(static fn (PublicKey $pubkey): string => $pubkey->toHex(), $filter->getAuthors()?->toArray() ?? []);
 
         return [] === array_diff($requested, $this->tenantHexKeys);
     }

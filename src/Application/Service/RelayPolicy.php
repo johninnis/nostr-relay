@@ -162,7 +162,7 @@ final class RelayPolicy implements RelayPolicyInterface
     private function isTaggedToTenant(Event $event): bool
     {
         foreach ($event->getTags()->getPubkeys() as $taggedPubkey) {
-            if (isset($this->tenantHexSet[$taggedPubkey])) {
+            if ($this->isTenantPubkey($taggedPubkey)) {
                 return true;
             }
         }
