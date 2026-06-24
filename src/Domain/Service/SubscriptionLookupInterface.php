@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Service;
 
-use Innis\Nostr\Core\Domain\Entity\SubscriptionCollection;
+use Innis\Nostr\Core\Domain\Collection\SubscriptionCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 
 interface SubscriptionLookupInterface

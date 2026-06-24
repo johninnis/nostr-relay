@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Integration\Application\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventCollection;
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Entity\EventCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
@@ -23,7 +24,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage as R
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
-use Innis\Nostr\Core\Domain\ValueObject\Tag\TagCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;

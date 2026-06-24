@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Service;
 
-use Innis\Nostr\Core\Domain\Entity\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 
 final readonly class SubscriptionLimits

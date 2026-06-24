@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
+use Innis\Nostr\Core\Domain\Collection\EventCollection;
+use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
+use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Entity\EventCollection;
-use Innis\Nostr\Core\Domain\Entity\FilterCollection;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinateCollection;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\EventIdCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;

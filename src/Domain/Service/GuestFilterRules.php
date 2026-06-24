@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Service;
 
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 

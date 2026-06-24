@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
+use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKeyCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 
 final class AuthenticationManager

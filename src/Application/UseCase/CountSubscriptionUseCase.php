@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\UseCase;
 
-use Innis\Nostr\Core\Domain\Entity\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;

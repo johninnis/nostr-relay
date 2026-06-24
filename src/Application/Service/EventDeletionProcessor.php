@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
+use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
-use Innis\Nostr\Core\Domain\Entity\FilterCollection;
 use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinateCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\EventIdCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Reference\EventReference;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;

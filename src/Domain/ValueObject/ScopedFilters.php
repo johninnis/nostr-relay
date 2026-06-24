@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\ValueObject;
 
-use Innis\Nostr\Core\Domain\Entity\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 
 final readonly class ScopedFilters
 {
