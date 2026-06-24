@@ -23,8 +23,7 @@ use Psr\Log\LoggerInterface;
 
 final class RelayPolicy implements RelayPolicyInterface
 {
-    private readonly array $tenantPubkeys;
-    private readonly array $tenantHexSet;
+    private readonly PublicKeyCollection $tenants;
     /** @var list<int> */
     private readonly array $guestReadKinds;
     private readonly bool $guestReadFromTenants;
@@ -38,9 +37,7 @@ final class RelayPolicy implements RelayPolicyInterface
         private readonly LoggerInterface $logger,
         array $config = [],
     ) {
-        $this->tenantPubkeys = $this->resolveTenants($config['tenants'] ?? []);
-        $tenantHexKeys = array_map(static fn (PublicKey $pk) => $pk->toHex(), $this->tenantPubkeys);
-        $this->tenantHexSet = array_flip($tenantHexKeys);
+        $this->tenants = new PublicKeyCollection($this->resolveTenants($config['tenants'] ?? []));
         $this->maxEventSize = $config['max_event_size'] ?? 65536;
 
         $guest = $config['guest'] ?? [];
@@ -65,7 +62,7 @@ final class RelayPolicy implements RelayPolicyInterface
             $config['max_query_limit'] ?? 1000,
         );
         $this->guestFilterRules = new GuestFilterRules(
-            new PublicKeyCollection($this->tenantPubkeys),
+            $this->tenants,
             new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $this->guestReadKinds)),
         );
     }
@@ -147,13 +144,13 @@ final class RelayPolicy implements RelayPolicyInterface
 
     private function isOpenRelay(): bool
     {
-        return empty($this->tenantPubkeys);
+        return $this->tenants->isEmpty();
     }
 
     private function isTenant(RelayClient $client): bool
     {
         foreach ($this->authManager->getAuthenticatedPubkeys($client->getId()) as $pubkey) {
-            if (isset($this->tenantHexSet[$pubkey->toHex()])) {
+            if ($this->tenants->contains($pubkey)) {
                 return true;
             }
         }
@@ -163,7 +160,7 @@ final class RelayPolicy implements RelayPolicyInterface
 
     private function isTenantPubkey(PublicKey $pubkey): bool
     {
-        return isset($this->tenantHexSet[$pubkey->toHex()]);
+        return $this->tenants->contains($pubkey);
     }
 
     private function isTaggedToTenant(Event $event): bool
