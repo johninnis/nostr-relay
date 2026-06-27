@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Integration\Application\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
@@ -70,7 +71,7 @@ final class EventDistributorTest extends TestCase
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            TagCollection::empty(),
+            new TagCollection(),
             EventContent::fromString('test content'),
         );
     }
@@ -81,7 +82,7 @@ final class EventDistributorTest extends TestCase
         $connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
         $client = $this->clientManager->registerClient($connection, $connectionInfo);
 
-        $filter = new Filter(kinds: $kinds);
+        $filter = new Filter(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null);
         $subscription = Subscription::create(SubscriptionIdMother::from($subIdStr), new FilterCollection([$filter]))
             ->withState(SubscriptionState::Active);
 

@@ -111,7 +111,7 @@ final class ClientMessengerTest extends TestCase
             $pubkey,
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            TagCollection::empty(),
+            new TagCollection(),
             EventContent::fromString('test'),
         );
     }

@@ -127,7 +127,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $keyPair->getPublicKey(),
             Timestamp::now(),
             $kind ?? EventKind::fromInt(EventKind::TEXT_NOTE),
-            TagCollection::empty(),
+            new TagCollection(),
             EventContent::fromString('hello world'),
         ))->sign($keyPair, $this->signatureService());
     }
@@ -315,7 +315,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            TagCollection::empty(),
+            new TagCollection(),
             EventContent::fromString('target'),
         ))->sign($keyPair, $this->signatureService());
 
@@ -364,7 +364,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $victimKeyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            TagCollection::empty(),
+            new TagCollection(),
             EventContent::fromString('victim'),
         ))->sign($victimKeyPair, $this->signatureService());
 

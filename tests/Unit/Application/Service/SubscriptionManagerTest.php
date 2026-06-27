@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
@@ -36,7 +37,7 @@ final class SubscriptionManagerTest extends TestCase
 
     private function createSubscription(string $subId, ?array $kinds = null): Subscription
     {
-        $filters = new FilterCollection([new Filter(kinds: $kinds)]);
+        $filters = new FilterCollection([new Filter(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null)]);
 
         return Subscription::create(SubscriptionIdMother::from($subId), $filters);
     }
@@ -203,7 +204,7 @@ final class SubscriptionManagerTest extends TestCase
     public function testRecordsAndReturnsOriginalFilters(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $originalFilters = new FilterCollection([new Filter(kinds: [EventKind::TEXT_NOTE])]);
+        $originalFilters = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
 
         $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
 
@@ -238,7 +239,7 @@ final class SubscriptionManagerTest extends TestCase
     public function testRemoveSubscriptionClearsOriginalFilters(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $originalFilters = new FilterCollection([new Filter(kinds: [EventKind::TEXT_NOTE])]);
+        $originalFilters = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
         $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
 
         $this->manager->removeSubscription($clientId, SubscriptionIdMother::from('sub-1'));

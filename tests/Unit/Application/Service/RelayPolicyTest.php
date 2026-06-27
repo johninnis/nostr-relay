@@ -42,7 +42,7 @@ final class RelayPolicyTest extends TestCase
     {
         $policy = $this->policyWithGuestRules(['max_subscriptions' => 2]);
 
-        $policy->allowSubscription($this->tenantClient(), FilterCollection::empty(), 99);
+        $policy->allowSubscription($this->tenantClient(), new FilterCollection(), 99);
 
         $this->expectNotToPerformAssertions();
     }
@@ -51,7 +51,7 @@ final class RelayPolicyTest extends TestCase
     {
         $policy = new RelayPolicy($this->authManager, new NullLogger(), ['max_subscriptions' => 2]);
 
-        $policy->allowSubscription($this->guestClient(), FilterCollection::empty(), 99);
+        $policy->allowSubscription($this->guestClient(), new FilterCollection(), 99);
 
         $this->expectNotToPerformAssertions();
     }
@@ -63,7 +63,7 @@ final class RelayPolicyTest extends TestCase
         $this->expectException(PolicyViolationException::class);
         $this->expectExceptionMessage('too many subscriptions (max 2)');
 
-        $policy->allowSubscription($this->guestClient(), FilterCollection::empty(), 2);
+        $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
     }
 
     public function testRejectsOversizedEvent(): void
@@ -217,7 +217,7 @@ final class RelayPolicyTest extends TestCase
             $this->publicKey($author),
             Timestamp::now(),
             EventKind::fromInt($kind),
-            $tags ?? TagCollection::empty(),
+            $tags ?? new TagCollection(),
             EventContent::fromString($content),
         );
     }

@@ -188,7 +188,7 @@ final class MessageRouterTest extends TestCase
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            TagCollection::empty(),
+            new TagCollection(),
             EventContent::fromString('test'),
         ))->sign($keyPair, $this->signatureService());
 

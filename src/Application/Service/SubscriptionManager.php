@@ -43,7 +43,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
         $this->subscriptions[$key] = $subscription;
         $this->clientIdByKey[$key] = $clientId;
-        $this->originalFiltersByKey[$key] = $originalFilters ?? FilterCollection::empty();
+        $this->originalFiltersByKey[$key] = $originalFilters ?? new FilterCollection();
         $this->addToKindIndex($subscription, $key);
         $this->subscriptionsByClient[$clientIdStr][$key] = true;
 
@@ -144,7 +144,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
 
     public function getOriginalFilters(ClientId $clientId, SubscriptionId $subscriptionId): FilterCollection
     {
-        return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? FilterCollection::empty();
+        return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? new FilterCollection();
     }
 
     public function getSubscriptionIdsForClient(ClientId $clientId): array

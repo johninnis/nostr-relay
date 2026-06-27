@@ -28,7 +28,7 @@ final class SubscriptionLimitsTest extends TestCase
         $this->expectException(PolicyViolationException::class);
         $this->expectExceptionMessage('too many subscriptions (max 2)');
 
-        $limits->enforce(2, FilterCollection::empty());
+        $limits->enforce(2, new FilterCollection());
     }
 
     public function testRejectsWhenTooManyFilters(): void

@@ -61,7 +61,7 @@ final class EventDeletionProcessorTest extends TestCase
             $author,
             Timestamp::now(),
             $kind,
-            $tags ?? TagCollection::empty(),
+            $tags ?? new TagCollection(),
             EventContent::fromString('x'),
         );
     }

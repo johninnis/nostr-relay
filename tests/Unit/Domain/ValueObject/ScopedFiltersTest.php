@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
@@ -23,7 +24,7 @@ final class ScopedFiltersTest extends TestCase
 
     public function testScopedCarriesFiltersAndBeyondScopeFlag(): void
     {
-        $filters = new FilterCollection([new Filter(kinds: [1])]);
+        $filters = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]);
 
         $scoped = ScopedFilters::scoped($filters, true);
 
@@ -33,7 +34,7 @@ final class ScopedFiltersTest extends TestCase
 
     public function testScopedCanDropAllFiltersWhileFlaggingBeyondScope(): void
     {
-        $filters = FilterCollection::empty();
+        $filters = new FilterCollection();
 
         $scoped = ScopedFilters::scoped($filters, true);
 

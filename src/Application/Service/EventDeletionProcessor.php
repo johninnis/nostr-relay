@@ -11,7 +11,6 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Reference\EventReference;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -85,10 +84,7 @@ final class EventDeletionProcessor
         }
 
         $filters = array_map(
-            static fn (array $chunk) => new Filter(ids: array_map(
-                static fn (EventId $id) => $id->toHex(),
-                $chunk
-            )),
+            static fn (array $chunk) => new Filter(ids: new EventIdCollection($chunk)),
             array_chunk($eventIds, Filter::MAX_VALUES_PER_FIELD)
         );
 

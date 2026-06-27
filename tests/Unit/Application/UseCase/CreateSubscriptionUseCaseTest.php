@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
@@ -147,10 +148,10 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     {
         $subId = SubscriptionIdMother::from('sub-1');
 
-        $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(FilterCollection::empty(), true));
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), true));
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
-        $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: ['ff'])]));
+        $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))]));
 
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
     }

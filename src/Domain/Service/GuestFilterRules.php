@@ -89,10 +89,10 @@ final readonly class GuestFilterRules
         $authors = $filter->getAuthors();
 
         if (null === $authors) {
-            return $filter->withAuthors($this->tenants->toHexes());
+            return $filter->withAuthors($this->tenants);
         }
 
-        return $filter->withAuthors($authors->intersect($this->tenants)->toHexes());
+        return $filter->withAuthors($authors->intersect($this->tenants));
     }
 
     private function constrainKindsToReadable(Filter $filter): Filter
@@ -104,10 +104,10 @@ final readonly class GuestFilterRules
         $kinds = $filter->getKinds();
 
         if (null === $kinds) {
-            return $filter->withKinds($this->readableKinds->toInts());
+            return $filter->withKinds($this->readableKinds);
         }
 
-        return $filter->withKinds($kinds->intersect($this->readableKinds)->toInts());
+        return $filter->withKinds($kinds->intersect($this->readableKinds));
     }
 
     private function authorsWithinTenants(Filter $filter): bool
