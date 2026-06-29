@@ -7,9 +7,10 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\Service;
 use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
-use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\TagFilter;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -148,7 +149,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: ['p' => [self::TENANT]])]), true);
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), true);
 
         self::assertTrue($scoped->isBeyondScope());
     }
@@ -157,7 +158,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: ['p' => [self::OTHER]])]), true);
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::OTHER]]))]), true);
 
         self::assertFalse($scoped->isBeyondScope());
     }
@@ -166,7 +167,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: ['p' => [self::TENANT]])]), false);
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), false);
 
         self::assertFalse($scoped->isBeyondScope());
     }

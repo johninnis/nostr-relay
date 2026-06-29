@@ -80,6 +80,8 @@ use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 
+use function Amp\trapSignal;
+
 $authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 $logger = new \Psr\Log\NullLogger();
 
@@ -115,6 +117,8 @@ $factory = new RelayServerFactory(
 
 $relay = $factory->create();
 $relay->start();
+trapSignal([SIGINT, SIGTERM]); // start() is non-blocking; keep the event loop alive until interrupted
+$relay->stop();
 ```
 
 See [`examples/relay.example.php`](examples/relay.example.php) for a complete working example with all interface implementations.

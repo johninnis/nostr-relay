@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\Service;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
-use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
 use PHPUnit\Framework\TestCase;

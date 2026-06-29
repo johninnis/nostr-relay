@@ -6,7 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
 use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
-use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use PHPUnit\Framework\TestCase;
 

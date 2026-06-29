@@ -8,8 +8,8 @@ use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Entity\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
@@ -61,9 +61,9 @@ final readonly class GuestFilterRules
 
     private function referencesTenantInPTag(Filter $filter): bool
     {
-        $pubkeys = $filter->getTags()['p'] ?? null;
+        $pubkeys = $filter->getTags()?->getValues()['p'] ?? null;
 
-        if (!is_array($pubkeys)) {
+        if (null === $pubkeys) {
             return false;
         }
 

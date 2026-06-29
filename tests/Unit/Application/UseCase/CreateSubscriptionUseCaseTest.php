@@ -7,7 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
-use Innis\Nostr\Core\Domain\Entity\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;

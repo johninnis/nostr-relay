@@ -22,6 +22,8 @@ use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 use Psr\Log\NullLogger;
 use RuntimeException;
 
+use function Amp\trapSignal;
+
 require __DIR__.'/../vendor/autoload.php';
 
 final class ExampleEventStore implements RelayEventStoreInterface
@@ -145,3 +147,5 @@ $factory = new RelayServerFactory(
 
 $relay = $factory->create();
 $relay->start();
+trapSignal([SIGINT, SIGTERM]);
+$relay->stop();
