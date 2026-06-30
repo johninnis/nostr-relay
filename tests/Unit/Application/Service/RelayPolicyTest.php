@@ -50,7 +50,7 @@ final class RelayPolicyTest extends TestCase
 
     public function testOpenRelayStillEnforcesSubscriptionCap(): void
     {
-        $policy = new RelayPolicy($this->authManager, new NullLogger(), RelayPolicyConfig::fromArray(['max_subscriptions' => 2]));
+        $policy = new RelayPolicy($this->authManager, new NullLogger(), $this->relayPolicyConfig(['max_subscriptions' => 2]));
 
         $this->expectException(PolicyViolationException::class);
         $this->expectExceptionMessage('too many subscriptions (max 2)');
@@ -60,7 +60,7 @@ final class RelayPolicyTest extends TestCase
 
     public function testOpenRelayRateLimitsAnonymousClients(): void
     {
-        $policy = new RelayPolicy($this->authManager, new NullLogger(), RelayPolicyConfig::fromArray([]));
+        $policy = new RelayPolicy($this->authManager, new NullLogger(), $this->relayPolicyConfig([]));
 
         $this->assertFalse($policy->isRateLimitExempt($this->guestClient()));
     }
@@ -189,7 +189,7 @@ final class RelayPolicyTest extends TestCase
      */
     private function policyWithGuestRules(array $overrides = []): RelayPolicy
     {
-        return new RelayPolicy($this->authManager, new NullLogger(), RelayPolicyConfig::fromArray([
+        return new RelayPolicy($this->authManager, new NullLogger(), $this->relayPolicyConfig([
             'tenants' => [self::TENANT_HEX],
             'guest' => [
                 'read' => [['kinds' => [EventKind::TEXT_NOTE], 'from' => 'tenants']],
@@ -200,6 +200,14 @@ final class RelayPolicyTest extends TestCase
             ],
             ...$overrides,
         ]));
+    }
+
+    /**
+     * @param array<string, mixed> $config
+     */
+    private function relayPolicyConfig(array $config): RelayPolicyConfig
+    {
+        return RelayPolicyConfig::fromArray($config) ?? self::fail('config did not parse');
     }
 
     private function guestClient(): RelayClient

@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\SubscriptionCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Collection\SubscriptionMatchCollection;
@@ -110,9 +111,9 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         }
     }
 
-    public function getSubscriptionsForEvent(int $eventKind): SubscriptionMatchCollection
+    public function getSubscriptionsForEvent(EventKind $kind): SubscriptionMatchCollection
     {
-        $keys = ($this->subscriptionsByKind[$eventKind] ?? [])
+        $keys = ($this->subscriptionsByKind[$kind->toInt()] ?? [])
             + ($this->subscriptionsByKind['*'] ?? []);
 
         $results = [];

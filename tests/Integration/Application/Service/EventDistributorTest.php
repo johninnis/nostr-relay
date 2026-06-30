@@ -60,7 +60,6 @@ final class EventDistributorTest extends TestCase
             $this->subscriptionManager,
             $this->clientManager,
             new ClientMessenger($this->clientManager),
-            $this->metrics,
             $logger,
         );
     }

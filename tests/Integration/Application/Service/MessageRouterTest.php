@@ -105,7 +105,6 @@ final class MessageRouterTest extends TestCase
             $this->subscriptionManager,
             $this->clientManager,
             $messenger,
-            $metrics,
             $logger,
         );
 
@@ -117,7 +116,6 @@ final class MessageRouterTest extends TestCase
         $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
-            $metrics,
             $this->clientManager,
             $distributor,
             new AmphpDeferredExecutor(),

@@ -20,7 +20,7 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **NIP-45 COUNT** - COUNT message support
 - **Ephemeral events** - Kinds 20000-29999 skip storage
 - **Custom HTTP handlers** - Inject handlers for additional HTTP endpoints (e.g. management APIs, landing pages)
-- **Mutable NIP-11 metadata** - Swap in a custom `Nip11InfoProviderInterface` to update relay info at runtime
+- **NIP-11 metadata** - Served from a single `Nip11InfoProviderInterface`: the built-in `StaticNip11InfoProvider` for a fixed document, or a custom implementation to compute it at runtime
 - **Built-in RelayPolicy** - Configurable tenant/guest permissions
 - **Real-time distribution** - Events broadcast to matching subscriptions
 - **Metrics** - `RelayInstance::getMetrics()` returns a `RelayMetrics` snapshot (active connections, events received/sent, subscriptions, start time) via the `MetricsCollectorInterface` port
@@ -55,29 +55,31 @@ composer require innis/nostr-relay
 
 ### 1. Implement Required Interfaces
 
-The relay requires three interfaces to be implemented by your host application:
+The relay requires these interfaces from your host application:
 
 - **`RelayEventStoreInterface`** - Event persistence and queries
-- **`RelayConfigInterface`** - Server and relay configuration
+- **`RelayConfigInterface`** - Server configuration (host, port, max connections, relay URL, trusted proxies)
 - **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Use the built-in `StaticRateLimitPolicy` for fixed limits, or implement the interface to vary limits at runtime.
+- **`Nip11InfoProviderInterface`** - The single source of the relay's NIP-11 document. Wrap a fixed document in the built-in `StaticNip11InfoProvider`, or implement the interface to project metadata at runtime (e.g. reflecting live policy).
 
 Access control can use the built-in `RelayPolicy` or a custom implementation of `RelayPolicyInterface`.
 
 Optional interfaces extend the relay's behaviour:
 
 - **`HttpRequestHandlerInterface`** - Handle additional HTTP requests (e.g. management API, landing page). Return a response or `null` to fall through to WebSocket.
-- **`Nip11InfoProviderInterface`** - Provide NIP-11 metadata dynamically. Defaults to reading from `RelayConfigInterface` if not provided.
 - **`ConnectionGateInterface`** - Decide whether an IP may connect, before the WebSocket session is established. Defaults to allowing every IP; implement it to enforce an allow-list or deny-list.
 - **`MetricsCollectorInterface`** - Collect relay metrics (connections, events, subscriptions). Defaults to the in-memory `InMemoryMetricsCollector` exposed via `RelayInstance::getMetrics()`; implement it to export to an external monitoring system.
 
 ### 2. Create and Start the Relay
 
 ```php
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use Innis\Nostr\Relay\Infrastructure\Http\StaticNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 
@@ -86,7 +88,7 @@ use function Amp\trapSignal;
 $authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 $logger = new \Psr\Log\NullLogger();
 
-$policy = new RelayPolicy($authManager, $logger, RelayPolicyConfig::fromArray([
+$policyConfig = RelayPolicyConfig::fromArray([
     'tenants' => ['your-hex-pubkey'],
     'guest' => [
         'read' => [
@@ -96,24 +98,34 @@ $policy = new RelayPolicy($authManager, $logger, RelayPolicyConfig::fromArray([
             ['kinds' => [7, 9735]],
         ],
     ],
-]));
+]) ?? throw new RuntimeException('Invalid relay policy configuration');
+
+$policy = new RelayPolicy($authManager, $logger, $policyConfig);
 
 $rateLimitPolicy = new StaticRateLimitPolicy(new RateLimitConfig(
     eventsPerMinute: 60,
     subscriptionsPerMinute: 20,
 ));
 
+$config = new MyRelayConfig();
+
+$nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->getRelayUrl(), [
+    'name' => 'My Nostr Relay',
+    'pubkey' => 'your-hex-pubkey',
+    'supported_nips' => [1, 9, 11, 42, 45],
+]));
+
 $factory = new RelayServerFactory(
     eventStore: new MyEventStore(),
     policy: $policy,
-    config: new MyRelayConfig(),
+    config: $config,
     rateLimitPolicy: $rateLimitPolicy,
     authManager: $authManager,
     logger: $logger,
+    nip11InfoProvider: $nip11InfoProvider,
     // Optional: custom HTTP handler for additional endpoints
     // httpHandler: new MyHttpHandler(),
-    // Optional: dynamic NIP-11 metadata provider
-    // nip11InfoProvider: new MyNip11InfoProvider(),
+    // Optional: implement Nip11InfoProviderInterface instead for runtime-computed metadata
 );
 
 $relay = $factory->create();
@@ -228,9 +240,9 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 **Host Application Handles:**
 - Event storage and queries
 - Access control policies (use built-in `RelayPolicy` or implement `RelayPolicyInterface` directly)
-- Server and NIP-11 configuration
+- Server configuration (`RelayConfigInterface`)
+- NIP-11 metadata (`Nip11InfoProviderInterface` — built-in `StaticNip11InfoProvider`, or implement for runtime-computed metadata)
 - Custom HTTP endpoints (optional `HttpRequestHandlerInterface`)
-- Runtime NIP-11 metadata (optional `Nip11InfoProviderInterface`, defaults to static config)
 
 ---
 

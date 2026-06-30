@@ -52,16 +52,6 @@ final readonly class RateLimitConfig
         ];
     }
 
-    public function getEventsPerMinute(): int
-    {
-        return $this->eventsPerMinute;
-    }
-
-    public function getSubscriptionsPerMinute(): int
-    {
-        return $this->subscriptionsPerMinute;
-    }
-
     public function perMinute(RateLimitMetric $metric): int
     {
         return match ($metric) {

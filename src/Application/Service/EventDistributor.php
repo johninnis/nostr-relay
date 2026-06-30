@@ -8,7 +8,6 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\ClientRegistryInterface;
-use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
@@ -22,7 +21,6 @@ final class EventDistributor
         private readonly SubscriptionManager $subscriptionManager,
         private readonly ClientRegistryInterface $registry,
         private readonly ClientMessengerInterface $messenger,
-        private readonly MetricsCollectorInterface $metrics,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -30,7 +28,7 @@ final class EventDistributor
     public function distributeToSubscribers(Event $event): void
     {
         $subscriptionsWithClients = $this->subscriptionManager->getSubscriptionsForEvent(
-            $event->getKind()->toInt()
+            $event->getKind()
         );
 
         if ($subscriptionsWithClients->isEmpty()) {
@@ -80,8 +78,6 @@ final class EventDistributor
 
             return false;
         }
-
-        $this->metrics->incrementEventsSent();
 
         return true;
     }

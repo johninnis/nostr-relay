@@ -30,6 +30,7 @@ use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use Innis\Nostr\Relay\Infrastructure\Http\StaticNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayInstance;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
@@ -105,21 +106,21 @@ final class RelayServerAcceptanceTest extends TestCase
         $config->method('getPort')->willReturn(0);
         $config->method('getMaxConnections')->willReturn(64);
         $config->method('getRelayUrl')->willReturn($relayUrl);
-        $config->method('getRelayInfo')->willReturn(Nip11Info::fromArray($relayUrl, [
-            'name' => 'Acceptance Relay',
-            'supported_nips' => [1, 11],
-        ]));
         $config->method('getTrustedProxies')->willReturn([]);
 
         $authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 
         $relay = new RelayServerFactory(
             eventStore: new InMemoryEventStore(),
-            policy: new RelayPolicy($authManager, new NullLogger(), RelayPolicyConfig::fromArray([])),
+            policy: new RelayPolicy($authManager, new NullLogger(), RelayPolicyConfig::fromArray([]) ?? self::fail('config did not parse')),
             config: $config,
             rateLimitPolicy: new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 1000, subscriptionsPerMinute: 1000)),
             authManager: $authManager,
             logger: new NullLogger(),
+            nip11InfoProvider: new StaticNip11InfoProvider(Nip11Info::fromArray($relayUrl, [
+                'name' => 'Acceptance Relay',
+                'supported_nips' => [1, 11],
+            ])),
         )->create();
 
         $relay->start();

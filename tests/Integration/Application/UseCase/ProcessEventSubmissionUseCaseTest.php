@@ -91,12 +91,10 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $subscriptionManager,
             $this->clientManager,
             $messenger,
-            $metrics,
             $logger,
         );
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
-            $metrics,
             $this->clientManager,
             $distributor,
             new AmphpDeferredExecutor(),
@@ -186,7 +184,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $eventStore->method('store')->willReturn(EventStoreOutcome::Duplicate);
 
         $metrics = $this->createMock(MetricsCollectorInterface::class);
-        $metrics->expects($this->never())->method('incrementEventsReceived');
+        $metrics->expects($this->once())->method('incrementEventsReceived');
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
@@ -211,7 +209,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $eventStore->method('store')->willReturn(EventStoreOutcome::Superseded);
 
         $metrics = $this->createMock(MetricsCollectorInterface::class);
-        $metrics->expects($this->never())->method('incrementEventsReceived');
+        $metrics->expects($this->once())->method('incrementEventsReceived');
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 

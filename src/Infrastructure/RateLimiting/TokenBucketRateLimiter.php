@@ -8,6 +8,7 @@ use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitToken;
 use Override;
 
@@ -30,8 +31,9 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
     }
 
     #[Override]
-    public function checkLimit(string $key): void
+    public function checkLimit(IpAddress $ipAddress): void
     {
+        $key = (string) $ipAddress;
         $capacity = (float) $this->rateLimitPolicy->limitFor($this->metric);
         $now = microtime(true);
 
@@ -45,12 +47,6 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
         }
 
         $this->buckets[$key] = $bucket->withConsumedToken();
-    }
-
-    #[Override]
-    public function reset(string $key): void
-    {
-        unset($this->buckets[$key]);
     }
 
     private function getBucket(string $key, float $capacity, float $now): RateLimitToken

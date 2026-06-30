@@ -11,14 +11,6 @@ use PHPUnit\Framework\TestCase;
 
 final class RateLimitConfigTest extends TestCase
 {
-    public function testGettersReturnConstructorValues(): void
-    {
-        $config = new RateLimitConfig(60, 30);
-
-        $this->assertSame(60, $config->getEventsPerMinute());
-        $this->assertSame(30, $config->getSubscriptionsPerMinute());
-    }
-
     public function testPerMinuteSelectsByMetric(): void
     {
         $config = new RateLimitConfig(120, 30);
@@ -56,8 +48,8 @@ final class RateLimitConfigTest extends TestCase
         $restored = RateLimitConfig::fromArray($config->toArray());
 
         $this->assertNotNull($restored);
-        $this->assertSame(200, $restored->getEventsPerMinute());
-        $this->assertSame(50, $restored->getSubscriptionsPerMinute());
+        $this->assertSame(200, $restored->perMinute(RateLimitMetric::Events));
+        $this->assertSame(50, $restored->perMinute(RateLimitMetric::Subscriptions));
     }
 
     public function testFromArrayCoercesNumericStrings(): void
@@ -65,8 +57,8 @@ final class RateLimitConfigTest extends TestCase
         $config = RateLimitConfig::fromArray(['events_per_minute' => '90', 'subscriptions_per_minute' => '15']);
 
         $this->assertNotNull($config);
-        $this->assertSame(90, $config->getEventsPerMinute());
-        $this->assertSame(15, $config->getSubscriptionsPerMinute());
+        $this->assertSame(90, $config->perMinute(RateLimitMetric::Events));
+        $this->assertSame(15, $config->perMinute(RateLimitMetric::Subscriptions));
     }
 
     public function testFromArrayReturnsNullWhenKeyMissing(): void

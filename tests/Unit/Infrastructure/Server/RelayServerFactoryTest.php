@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
+use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -37,6 +38,7 @@ final class RelayServerFactoryTest extends TestCase
             rateLimitPolicy: $this->createStub(RateLimitPolicyInterface::class),
             authManager: new AuthenticationManager(new NativeRandomBytesGenerator()),
             logger: new NullLogger(),
+            nip11InfoProvider: $this->createStub(Nip11InfoProviderInterface::class),
             signatureService: $this->createStub(SignatureServiceInterface::class),
             metricsCollector: $collector,
         );

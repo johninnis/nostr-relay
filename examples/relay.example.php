@@ -20,6 +20,7 @@ use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use Innis\Nostr\Relay\Infrastructure\Http\StaticNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 use Psr\Log\AbstractLogger;
@@ -105,11 +106,6 @@ final class InMemoryEventStore implements RelayEventStoreInterface
 
 final class ExampleRelayConfig implements RelayConfigInterface
 {
-    public function __construct(
-        private readonly string $ownerPubkeyHex,
-    ) {
-    }
-
     #[Override]
     public function getHost(): string
     {
@@ -133,20 +129,6 @@ final class ExampleRelayConfig implements RelayConfigInterface
     {
         return RelayUrl::fromString('ws://127.0.0.1:8080')
             ?? throw new RuntimeException('invalid relay URL');
-    }
-
-    #[Override]
-    public function getRelayInfo(): Nip11Info
-    {
-        return Nip11Info::fromArray($this->getRelayUrl(), [
-            'name' => 'Example Nostr Relay',
-            'description' => 'A runnable innis/nostr-relay example',
-            'pubkey' => $this->ownerPubkeyHex,
-            'contact' => 'admin@example.com',
-            'supported_nips' => [1, 9, 11, 42, 45],
-            'software' => 'innis/nostr-relay',
-            'version' => '1.0.0',
-        ]);
     }
 
     /**
@@ -186,7 +168,7 @@ $authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 
 // A tenant relay: the owner key may publish and read freely; guests get the configured read/write scope.
 // Configure no tenants instead (`RelayPolicyConfig::fromArray([])`) to run a fully open public relay.
-$policy = new RelayPolicy($authManager, $logger, RelayPolicyConfig::fromArray([
+$policyConfig = RelayPolicyConfig::fromArray([
     'tenants' => [$ownerPubkeyHex],
     'guest' => [
         'read' => [
@@ -196,20 +178,35 @@ $policy = new RelayPolicy($authManager, $logger, RelayPolicyConfig::fromArray([
             ['kinds' => [7, 9735]],
         ],
     ],
-]));
+]) ?? throw new RuntimeException('Invalid relay policy configuration');
+
+$policy = new RelayPolicy($authManager, $logger, $policyConfig);
 
 $rateLimitPolicy = new StaticRateLimitPolicy(new RateLimitConfig(
     eventsPerMinute: 60,
     subscriptionsPerMinute: 20,
 ));
 
+$config = new ExampleRelayConfig();
+
+$nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->getRelayUrl(), [
+    'name' => 'Example Nostr Relay',
+    'description' => 'A runnable innis/nostr-relay example',
+    'pubkey' => $ownerPubkeyHex,
+    'contact' => 'admin@example.com',
+    'supported_nips' => [1, 9, 11, 42, 45],
+    'software' => 'innis/nostr-relay',
+    'version' => '1.0.0',
+]));
+
 $relay = new RelayServerFactory(
     eventStore: new InMemoryEventStore(),
     policy: $policy,
-    config: new ExampleRelayConfig($ownerPubkeyHex),
+    config: $config,
     rateLimitPolicy: $rateLimitPolicy,
     authManager: $authManager,
     logger: $logger,
+    nip11InfoProvider: $nip11InfoProvider,
 )->create();
 
 $relay->start();

@@ -137,7 +137,7 @@ final class SubscriptionManagerTest extends TestCase
 
         $this->manager->addSubscription($clientId, $subscription);
 
-        $results = $this->manager->getSubscriptionsForEvent(EventKind::TEXT_NOTE);
+        $results = $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE));
 
         $this->assertCount(1, $results);
         $this->assertTrue($clientId->equals($results->toArray()[0]->getClientId()));
@@ -150,7 +150,7 @@ final class SubscriptionManagerTest extends TestCase
 
         $this->manager->addSubscription($clientId, $subscription);
 
-        $results = $this->manager->getSubscriptionsForEvent(EventKind::TEXT_NOTE);
+        $results = $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE));
 
         $this->assertCount(1, $results);
     }
@@ -162,7 +162,7 @@ final class SubscriptionManagerTest extends TestCase
 
         $this->manager->addSubscription($clientId, $subscription);
 
-        $results = $this->manager->getSubscriptionsForEvent(EventKind::TEXT_NOTE);
+        $results = $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE));
 
         $this->assertCount(0, $results);
     }

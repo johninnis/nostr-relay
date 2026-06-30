@@ -85,6 +85,7 @@ final class ClientManager implements ClientRegistryInterface
 
         if (isset($this->counters[$key])) {
             $this->counters[$key] = $this->counters[$key]->withEventSent();
+            $this->metrics->incrementEventsSent();
         }
     }
 
@@ -95,6 +96,7 @@ final class ClientManager implements ClientRegistryInterface
 
         if (isset($this->counters[$key])) {
             $this->counters[$key] = $this->counters[$key]->withEventReceived();
+            $this->metrics->incrementEventsReceived();
         }
     }
 

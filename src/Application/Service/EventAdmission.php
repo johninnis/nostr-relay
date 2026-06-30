@@ -22,7 +22,7 @@ final readonly class EventAdmission
     public function admit(RelayClient $client, Event $event): void
     {
         if (!$this->policy->isRateLimitExempt($client)) {
-            $this->rateLimiter->checkLimit((string) $client->getConnectionInfo()->getIpAddress());
+            $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
         }
 
         $this->eventValidator->validateEvent($event);

@@ -9,7 +9,6 @@ use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\Collection\GuestWriteRuleCollection;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
-use InvalidArgumentException;
 
 final readonly class RelayPolicyConfig
 {
@@ -29,13 +28,19 @@ final readonly class RelayPolicyConfig
     /**
      * @param array<string, mixed> $config
      */
-    public static function fromArray(array $config): self
+    public static function fromArray(array $config): ?self
     {
+        $tenants = self::resolveTenants($config['tenants'] ?? null);
+
+        if (null === $tenants) {
+            return null;
+        }
+
         $guest = self::asArray($config['guest'] ?? null);
         $readRules = self::listOfArrays($guest['read'] ?? null);
 
         return new self(
-            new PublicKeyCollection(self::resolveTenants($config['tenants'] ?? null)),
+            $tenants,
             self::intOr($config['max_event_size'] ?? null, self::DEFAULT_MAX_EVENT_SIZE),
             new GuestPolicy(
                 EventKindCollection::fromInts(array_merge(...array_map(
@@ -73,30 +78,25 @@ final readonly class RelayPolicyConfig
         return $this->subscriptionLimits;
     }
 
-    /**
-     * @return list<PublicKey>
-     */
-    private static function resolveTenants(mixed $tenants): array
+    private static function resolveTenants(mixed $tenants): ?PublicKeyCollection
     {
         $pubkeys = [];
 
         foreach (self::asArray($tenants) as $tenant) {
             if (!is_string($tenant)) {
-                throw new InvalidArgumentException('Tenant pubkey must be a string');
+                return null;
             }
 
-            $pubkey = str_starts_with($tenant, 'npub')
-                ? PublicKey::fromBech32($tenant)
-                : PublicKey::fromHex($tenant);
+            $pubkey = PublicKey::fromNpubOrHex($tenant);
 
             if (null === $pubkey) {
-                throw new InvalidArgumentException(sprintf('Invalid tenant pubkey: %s', $tenant));
+                return null;
             }
 
             $pubkeys[] = $pubkey;
         }
 
-        return $pubkeys;
+        return new PublicKeyCollection($pubkeys);
     }
 
     private static function resolveWriteRules(mixed $rules): GuestWriteRuleCollection

@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\RateLimiting;
 use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
@@ -22,12 +23,13 @@ final class TokenBucketRateLimiterTest extends TestCase
             RateLimitMetric::Events,
         );
 
-        $limiter->checkLimit('key');
-        $limiter->checkLimit('key');
-        $limiter->checkLimit('key');
+        $ip = IpAddress::fromString('192.0.2.1');
+        $limiter->checkLimit($ip);
+        $limiter->checkLimit($ip);
+        $limiter->checkLimit($ip);
 
         $this->expectException(RateLimitException::class);
-        $limiter->checkLimit('key');
+        $limiter->checkLimit($ip);
     }
 
     public function testCapacityIsReadOnEachCheck(): void
@@ -44,16 +46,16 @@ final class TokenBucketRateLimiterTest extends TestCase
         };
 
         $limiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events);
-        $limiter->checkLimit('key');
+        $limiter->checkLimit(IpAddress::fromString('192.0.2.1'));
 
         $policy->limit = 10;
-        $limiter->reset('key');
+        $widened = IpAddress::fromString('192.0.2.2');
         for ($i = 0; $i < 10; ++$i) {
-            $limiter->checkLimit('key');
+            $limiter->checkLimit($widened);
         }
 
         $this->expectException(RateLimitException::class);
-        $limiter->checkLimit('key');
+        $limiter->checkLimit($widened);
     }
 
     public function testMetricSelectsCorrectField(): void
@@ -62,13 +64,14 @@ final class TokenBucketRateLimiterTest extends TestCase
         $eventLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events);
         $subLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Subscriptions);
 
-        $eventLimiter->checkLimit('key');
+        $ip = IpAddress::fromString('192.0.2.1');
+        $eventLimiter->checkLimit($ip);
         for ($i = 0; $i < 10; ++$i) {
-            $subLimiter->checkLimit('key');
+            $subLimiter->checkLimit($ip);
         }
 
         $this->expectException(RateLimitException::class);
-        $eventLimiter->checkLimit('key');
+        $eventLimiter->checkLimit($ip);
     }
 
     public function testBucketTableIsBoundedWhenAllBucketsAreFresh(): void
@@ -79,7 +82,7 @@ final class TokenBucketRateLimiterTest extends TestCase
         );
 
         for ($i = 0; $i < 6000; ++$i) {
-            $limiter->checkLimit('key-'.$i);
+            $limiter->checkLimit(self::ipForIndex($i));
         }
 
         $reflection = new ReflectionClass($limiter);
@@ -103,13 +106,18 @@ final class TokenBucketRateLimiterTest extends TestCase
         assert(is_int($hardMax));
 
         for ($i = 0; $i < $hardMax + 500; ++$i) {
-            $limiter->checkLimit('key-'.$i);
+            $limiter->checkLimit(self::ipForIndex($i));
         }
 
         $buckets = $reflection->getProperty('buckets')->getValue($limiter);
         assert(is_array($buckets));
 
-        $this->assertArrayNotHasKey('key-0', $buckets);
-        $this->assertArrayHasKey('key-'.($hardMax + 499), $buckets);
+        $this->assertArrayNotHasKey((string) self::ipForIndex(0), $buckets);
+        $this->assertArrayHasKey((string) self::ipForIndex($hardMax + 499), $buckets);
+    }
+
+    private static function ipForIndex(int $index): IpAddress
+    {
+        return IpAddress::fromString(long2ip($index));
     }
 }

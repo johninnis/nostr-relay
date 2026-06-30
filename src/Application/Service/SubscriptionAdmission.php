@@ -28,7 +28,7 @@ final readonly class SubscriptionAdmission
     public function admit(RelayClient $client, FilterCollection $filters): ScopedFilters
     {
         if (!$this->policy->isRateLimitExempt($client)) {
-            $this->rateLimiter->checkLimit((string) $client->getConnectionInfo()->getIpAddress());
+            $this->rateLimiter->checkLimit($client->getConnectionInfo()->getIpAddress());
         }
 
         $this->policy->allowSubscription(

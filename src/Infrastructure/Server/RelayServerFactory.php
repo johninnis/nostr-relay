@@ -42,7 +42,6 @@ use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
-use Innis\Nostr\Relay\Infrastructure\Http\ConfigNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
@@ -60,8 +59,8 @@ final class RelayServerFactory
         private readonly RateLimitPolicyInterface $rateLimitPolicy,
         private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
+        private readonly Nip11InfoProviderInterface $nip11InfoProvider,
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
-        private readonly ?Nip11InfoProviderInterface $nip11InfoProvider = null,
         ?SignatureServiceInterface $signatureService = null,
         private readonly ?ConnectionGateInterface $connectionGate = null,
         private readonly ?ErrorHandler $errorHandler = null,
@@ -104,7 +103,6 @@ final class RelayServerFactory
             $subscriptionManager,
             $clientManager,
             $clientMessenger,
-            $metrics,
             $this->logger
         );
 
@@ -135,7 +133,6 @@ final class RelayServerFactory
         );
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
-            $metrics,
             $clientManager,
             $eventDistributor,
             $deferredExecutor,
@@ -224,8 +221,7 @@ final class RelayServerFactory
             },
         );
 
-        $nip11InfoProvider = $this->nip11InfoProvider ?? new ConfigNip11InfoProvider($this->config);
-        $nip11Handler = new Nip11HttpHandler($nip11InfoProvider);
+        $nip11Handler = new Nip11HttpHandler($this->nip11InfoProvider);
 
         $server = new AmphpRelayServer(
             $this->config,
