@@ -8,11 +8,3 @@ parameters:
         - tests
         - examples
     tmpDir: var/phpstan
-    ignoreErrors:
-        # PHP cannot express an array's value type natively (e.g. list<string>)
-        -
-            identifier: missingType.iterableValue
-        # Test assertions that verify runtime behaviour are valid even when PHPStan can infer the result statically
-        -
-            identifier: method.alreadyNarrowedType
-            path: tests/

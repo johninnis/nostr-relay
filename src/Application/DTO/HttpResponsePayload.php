@@ -6,6 +6,9 @@ namespace Innis\Nostr\Relay\Application\DTO;
 
 final readonly class HttpResponsePayload
 {
+    /**
+     * @param array<non-empty-string, string> $headers
+     */
     public function __construct(
         private int $statusCode,
         private array $headers,
@@ -18,6 +21,9 @@ final readonly class HttpResponsePayload
         return $this->statusCode;
     }
 
+    /**
+     * @return array<non-empty-string, string>
+     */
     public function getHeaders(): array
     {
         return $this->headers;

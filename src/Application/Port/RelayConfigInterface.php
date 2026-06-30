@@ -19,5 +19,8 @@ interface RelayConfigInterface
 
     public function getRelayUrl(): RelayUrl;
 
+    /**
+     * @return list<non-empty-string>
+     */
     public function getTrustedProxies(): array;
 }

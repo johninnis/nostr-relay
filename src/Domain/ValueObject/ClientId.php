@@ -11,9 +11,9 @@ final readonly class ClientId
     ) {
     }
 
-    public static function generate(): self
+    public static function fromBytes(string $bytes): self
     {
-        return new self(bin2hex(random_bytes(16)));
+        return new self(bin2hex($bytes));
     }
 
     public static function fromString(string $value): self

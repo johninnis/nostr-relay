@@ -77,6 +77,7 @@ use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
+use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 
@@ -85,7 +86,7 @@ use function Amp\trapSignal;
 $authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
 $logger = new \Psr\Log\NullLogger();
 
-$policy = new RelayPolicy($authManager, $logger, [
+$policy = new RelayPolicy($authManager, $logger, RelayPolicyConfig::fromArray([
     'tenants' => ['your-hex-pubkey'],
     'guest' => [
         'read' => [
@@ -95,7 +96,7 @@ $policy = new RelayPolicy($authManager, $logger, [
             ['kinds' => [7, 9735]],
         ],
     ],
-]);
+]));
 
 $rateLimitPolicy = new StaticRateLimitPolicy(new RateLimitConfig(
     eventsPerMinute: 60,

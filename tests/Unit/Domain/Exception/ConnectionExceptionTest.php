@@ -11,11 +11,11 @@ use RuntimeException;
 
 final class ConnectionExceptionTest extends TestCase
 {
-    public function testExtendsRelayException(): void
+    public function testIsCaughtAsRelayException(): void
     {
-        $exception = new ConnectionException('test');
+        $this->expectException(RelayException::class);
 
-        $this->assertInstanceOf(RelayException::class, $exception);
+        throw new ConnectionException('test');
     }
 
     public function testGetIpAddressReturnsNullByDefault(): void

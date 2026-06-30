@@ -32,6 +32,7 @@ final class ClientDisconnectionHandlerTest extends TestCase
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->clientManager = new ClientManager(
             $metrics,
+            new NativeRandomBytesGenerator(),
             $logger,
         );
 

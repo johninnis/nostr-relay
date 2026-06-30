@@ -15,7 +15,7 @@ The tempting-but-wrong move is at a different boundary: the **consumer applicati
 Faults are rooted by **whose code raises them, not by the dependency graph** — and the line is drawn between *Nostr library code* and a *consumer application*, not "anything that depends on nostr-core".
 
 - nostr-relay throws **package-specific faults**, so it defines its own abstract base, `RelayException`, extending `NostrException`. The final leaves extend `RelayException`: `AuthRequiredException`, `ConnectionException`, `PolicyViolationException` and `RateLimitException`.
-- A **consumer application** embedding the relay roots its OWN faults at its OWN independent base, never under `NostrException`. Hubstr, for instance, throws a `HubstrException` that extends `\Exception` directly and does NOT extend `NostrException`, even though it depends on the Nostr libraries.
+- A **consumer application** embedding the relay roots its OWN faults at its OWN independent base, never under `NostrException`. Such an application throws an exception that extends `\Exception` directly and does NOT extend `NostrException`, even though it depends on the Nostr libraries.
 - What decides the root is the authoring code — Nostr library vs consumer application — not what it imports.
 
 ## Consequences

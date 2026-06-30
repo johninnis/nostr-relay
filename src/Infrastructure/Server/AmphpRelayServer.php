@@ -164,6 +164,13 @@ final class AmphpRelayServer
         $this->server?->stop();
     }
 
+    public function getListeningAddress(): ?Socket\SocketAddress
+    {
+        $servers = $this->server?->getServers();
+
+        return null === $servers ? null : ($servers[0] ?? null)?->getAddress();
+    }
+
     private function delegateToHttpHandler(Request $request, HttpRequestHandlerInterface $handler): ?Response
     {
         $headers = [];
@@ -204,13 +211,12 @@ final class AmphpRelayServer
         return $response;
     }
 
+    /**
+     * @param list<non-empty-string> $proxies
+     */
     private static function validateTrustedProxies(array $proxies): void
     {
-        foreach ($proxies as $index => $proxy) {
-            if (!is_string($proxy) || '' === $proxy) {
-                throw new InvalidArgumentException(sprintf('Trusted proxy at index %s must be a non-empty string', (string) $index));
-            }
-
+        foreach ($proxies as $proxy) {
             $parts = explode('/', $proxy, 2);
             $bits = $parts[1] ?? null;
 

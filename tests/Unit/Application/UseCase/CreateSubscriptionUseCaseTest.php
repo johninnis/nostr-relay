@@ -19,6 +19,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
@@ -54,16 +55,16 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $logger = new NullLogger();
 
         $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $this->clientManager = new ClientManager($metrics, $logger);
+        $this->clientManager = new ClientManager($metrics, new NativeRandomBytesGenerator(), $logger);
         $messenger = new ClientMessenger($this->clientManager);
         $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
         $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $messenger, $this->subscriptionManager);
+        $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionManager, $logger);
 
         $this->useCase = new CreateSubscriptionUseCase(
-            $this->eventStore,
-            $this->policy,
-            $this->subscriptionManager,
             $admission,
+            $this->subscriptionManager,
+            $storedEventStreamer,
             $messenger,
             new AmphpDeferredExecutor(),
             $logger,

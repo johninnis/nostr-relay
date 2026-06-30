@@ -12,6 +12,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
@@ -34,6 +35,7 @@ final class ClientMessengerTest extends TestCase
     {
         $this->registry = new ClientManager(
             $this->createStub(MetricsCollectorInterface::class),
+            new NativeRandomBytesGenerator(),
             new NullLogger(),
         );
         $this->messenger = new ClientMessenger($this->registry);

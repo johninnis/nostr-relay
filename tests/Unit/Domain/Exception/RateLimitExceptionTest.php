@@ -10,11 +10,11 @@ use PHPUnit\Framework\TestCase;
 
 final class RateLimitExceptionTest extends TestCase
 {
-    public function testExtendsRelayException(): void
+    public function testIsCaughtAsRelayException(): void
     {
-        $exception = new RateLimitException('test');
+        $this->expectException(RelayException::class);
 
-        $this->assertInstanceOf(RelayException::class, $exception);
+        throw new RateLimitException('test');
     }
 
     public function testForKeyIncludesKeyInMessage(): void

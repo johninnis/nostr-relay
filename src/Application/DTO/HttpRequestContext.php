@@ -6,6 +6,9 @@ namespace Innis\Nostr\Relay\Application\DTO;
 
 final readonly class HttpRequestContext
 {
+    /**
+     * @param array<string, string> $headers
+     */
     public function __construct(
         private string $method,
         private string $path,
@@ -37,6 +40,9 @@ final readonly class HttpRequestContext
         return null;
     }
 
+    /**
+     * @return array<string, string>
+     */
     public function getHeaders(): array
     {
         return $this->headers;

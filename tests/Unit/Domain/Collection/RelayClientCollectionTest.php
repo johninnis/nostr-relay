@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Tests\Unit\Domain\Entity;
+namespace Innis\Nostr\Relay\Tests\Unit\Domain\Collection;
 
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Domain\Collection\RelayClientCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Entity\RelayClientCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;

@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
+use Amp\Socket\SocketAddress;
 use Innis\Nostr\Core\Domain\Collection\SubscriptionCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
-use Innis\Nostr\Relay\Domain\Entity\RelayClientCollection;
+use Innis\Nostr\Relay\Domain\Collection\RelayClientCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayMetrics;
 use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
@@ -34,6 +35,11 @@ final class RelayInstance
     public function stop(): void
     {
         $this->server->stop();
+    }
+
+    public function getListeningAddress(): ?SocketAddress
+    {
+        return $this->server->getListeningAddress();
     }
 
     public function distributeEvent(Event $event): void

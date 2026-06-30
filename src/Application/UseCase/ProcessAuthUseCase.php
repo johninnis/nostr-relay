@@ -15,7 +15,7 @@ use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -31,8 +31,7 @@ final class ProcessAuthUseCase
         private readonly LoggerInterface $logger,
         private readonly EventValidatorInterface $eventValidator,
         private readonly ClientMessengerInterface $messenger,
-        private readonly SubscriptionManager $subscriptionManager,
-        private readonly CreateSubscriptionUseCase $createSubscription,
+        private readonly SubscriptionReevaluator $subscriptionReevaluator,
         private readonly ClockInterface $clock,
     ) {
     }
@@ -80,7 +79,7 @@ final class ProcessAuthUseCase
             $this->authManager->authenticate($client->getId(), $event->getPubkey());
             $this->messenger->send($client, new OkMessage($event->getId(), true, ''));
 
-            $this->reevaluateSubscriptions($client);
+            $this->subscriptionReevaluator->reevaluate($client);
 
             $this->logger->info('Client authenticated', [
                 'client_id' => (string) $client->getId(),
@@ -98,19 +97,6 @@ final class ProcessAuthUseCase
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
-        }
-    }
-
-    private function reevaluateSubscriptions(RelayClient $client): void
-    {
-        foreach ($this->subscriptionManager->getSubscriptionIdsForClient($client->getId()) as $subscriptionId) {
-            $originalFilters = $this->subscriptionManager->getOriginalFilters($client->getId(), $subscriptionId);
-
-            if ($originalFilters->isEmpty()) {
-                continue;
-            }
-
-            $this->createSubscription->execute($client, $subscriptionId, $originalFilters);
         }
     }
 }

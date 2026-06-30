@@ -16,7 +16,7 @@ For the relay to redeliver correctly it must keep the filters the *client* asked
 
 ## Decision
 
-On successful authentication the relay re-evaluates the client's already-open subscriptions against the new scope, without the client re-subscribing (`ProcessAuthUseCase`). For each open subscription it takes the **original client-supplied filters** — retained by the subscription manager alongside the scoped filters precisely for this purpose — and runs the normal subscription-creation path again under the now-authenticated identity. Re-admission re-scopes the original filters against the wider scope, replaces the stored subscription, and re-streams the stored events that are now visible, ending with EOSE.
+On successful authentication the relay re-evaluates the client's already-open subscriptions against the new scope, without the client re-subscribing: the use case that processes the AUTH delegates to a dedicated re-evaluation collaborator. For each open subscription it takes the **original client-supplied filters** — retained by the subscription manager alongside the scoped filters precisely for this purpose — and runs the normal subscription-creation path again under the now-authenticated identity. Re-admission re-scopes the original filters against the wider scope, replaces the stored subscription, and re-streams the stored events that are now visible, ending with EOSE.
 
 Retaining the original filters is the load-bearing part. The scoped filters are a lossy projection; only the originals carry enough information to be re-scoped when the scope widens. A subscription opened with empty original filters (nothing was retained to replay) is skipped rather than guessed at.
 

@@ -10,20 +10,25 @@ use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
+use Innis\Nostr\Relay\Domain\Collection\SubscriptionMatchCollection;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
-use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatchCollection;
 use Override;
 use Psr\Log\LoggerInterface;
 
 final class SubscriptionManager implements SubscriptionLookupInterface
 {
     // Deliberate: in-memory single-process subscription registry, not a swappable store — see ADR-0008
+    /** @var array<string, Subscription> */
     private array $subscriptions = [];
+    /** @var array<string, ClientId> */
     private array $clientIdByKey = [];
+    /** @var array<int|string, array<string, true>> */
     private array $subscriptionsByKind = [];
+    /** @var array<string, array<string, true>> */
     private array $subscriptionsByClient = [];
+    /** @var array<string, FilterCollection> */
     private array $originalFiltersByKey = [];
 
     public function __construct(
@@ -145,20 +150,6 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     public function getOriginalFilters(ClientId $clientId, SubscriptionId $subscriptionId): FilterCollection
     {
         return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? new FilterCollection();
-    }
-
-    public function getSubscriptionIdsForClient(ClientId $clientId): array
-    {
-        $ids = [];
-
-        foreach (array_keys($this->subscriptionsByClient[(string) $clientId] ?? []) as $key) {
-            $key = (string) $key;
-            if (isset($this->subscriptions[$key])) {
-                $ids[] = $this->subscriptions[$key]->getId();
-            }
-        }
-
-        return $ids;
     }
 
     public function getAllSubscriptions(): SubscriptionCollection

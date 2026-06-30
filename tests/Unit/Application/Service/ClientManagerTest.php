@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
@@ -28,6 +29,7 @@ final class ClientManagerTest extends TestCase
     {
         return new ClientManager(
             $metrics ?? $this->createStub(MetricsCollectorInterface::class),
+            new NativeRandomBytesGenerator(),
             new NullLogger(),
             2,
         );

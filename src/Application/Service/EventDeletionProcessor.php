@@ -10,6 +10,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Reference\EventReference;
@@ -77,6 +78,11 @@ final class EventDeletionProcessor
         }
     }
 
+    /**
+     * @param list<EventId> $eventIds
+     *
+     * @return list<EventId>
+     */
     private function verifyOwnedEventIds(array $eventIds, PublicKey $author): array
     {
         if (empty($eventIds)) {

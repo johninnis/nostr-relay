@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
 use Amp\Http\Server\ErrorHandler;
+use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Core\Infrastructure\Encoding\JsonMessageDeserialiser;
 use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
@@ -19,6 +21,7 @@ use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
@@ -27,8 +30,10 @@ use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
@@ -46,6 +51,7 @@ use Psr\Log\LoggerInterface;
 final class RelayServerFactory
 {
     private readonly SignatureServiceInterface $signatureService;
+    private readonly RandomBytesGeneratorInterface $randomBytes;
 
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
@@ -60,8 +66,10 @@ final class RelayServerFactory
         private readonly ?ConnectionGateInterface $connectionGate = null,
         private readonly ?ErrorHandler $errorHandler = null,
         private readonly ?MetricsCollectorInterface $metricsCollector = null,
+        ?RandomBytesGeneratorInterface $randomBytes = null,
     ) {
         $this->signatureService = $signatureService ?? Secp256k1Signer::create();
+        $this->randomBytes = $randomBytes ?? new NativeRandomBytesGenerator();
     }
 
     public function create(): RelayInstance
@@ -75,6 +83,7 @@ final class RelayServerFactory
 
         $clientManager = new ClientManager(
             $metrics,
+            $this->randomBytes,
             $this->logger,
             $this->config->getMaxConnections()
         );
@@ -125,24 +134,37 @@ final class RelayServerFactory
             $eventValidator
         );
 
+        $acceptedEventPublisher = new AcceptedEventPublisher(
+            $metrics,
+            $clientManager,
+            $eventDistributor,
+            $deferredExecutor,
+            $clientMessenger
+        );
+
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $this->eventStore,
             $eventAdmission,
-            $eventDistributor,
+            $acceptedEventPublisher,
+            $eventDeletionProcessor,
             $authManager,
-            $metrics,
-            $this->logger,
             $clientManager,
             $clientMessenger,
-            $deferredExecutor,
-            $eventDeletionProcessor
+            $this->logger
+        );
+
+        $storedEventStreamer = new StoredEventStreamer(
+            $this->eventStore,
+            $this->policy,
+            $clientMessenger,
+            $subscriptionManager,
+            $this->logger
         );
 
         $createSubscriptionUseCase = new CreateSubscriptionUseCase(
-            $this->eventStore,
-            $this->policy,
-            $subscriptionManager,
             $subscriptionAdmission,
+            $subscriptionManager,
+            $storedEventStreamer,
             $clientMessenger,
             $deferredExecutor,
             $this->logger
@@ -153,6 +175,11 @@ final class RelayServerFactory
             $this->logger
         );
 
+        $subscriptionReevaluator = new SubscriptionReevaluator(
+            $subscriptionManager,
+            $createSubscriptionUseCase
+        );
+
         $processAuthUseCase = new ProcessAuthUseCase(
             $authManager,
             $this->config,
@@ -160,8 +187,7 @@ final class RelayServerFactory
             $this->logger,
             $eventValidator,
             $clientMessenger,
-            $subscriptionManager,
-            $createSubscriptionUseCase,
+            $subscriptionReevaluator,
             new SystemClock()
         );
 

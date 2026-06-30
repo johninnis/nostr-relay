@@ -9,20 +9,21 @@ use PHPUnit\Framework\TestCase;
 
 final class ClientIdTest extends TestCase
 {
-    public function testGenerateCreatesUniqueIds(): void
+    public function testFromBytesCreatesDistinctIdsForDistinctBytes(): void
     {
-        $id1 = ClientId::generate();
-        $id2 = ClientId::generate();
+        $id1 = ClientId::fromBytes(str_repeat("\x01", 16));
+        $id2 = ClientId::fromBytes(str_repeat("\x02", 16));
 
         $this->assertFalse($id1->equals($id2));
     }
 
-    public function testGenerateCreatesHexString(): void
+    public function testFromBytesHexEncodesTheBytes(): void
     {
-        $id = ClientId::generate();
+        $id = ClientId::fromBytes(str_repeat("\xab", 16));
 
         $this->assertSame(32, strlen((string) $id));
         $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', (string) $id);
+        $this->assertSame(str_repeat('ab', 16), (string) $id);
     }
 
     public function testFromStringPreservesValue(): void

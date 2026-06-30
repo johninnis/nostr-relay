@@ -36,8 +36,10 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -88,6 +90,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->connection = $this->createMock(ClientConnectionInterface::class);
         $this->clientManager = new ClientManager(
             new InMemoryMetricsCollector(),
+            new NativeRandomBytesGenerator(),
             new NullLogger(),
         );
         $this->messenger = new ClientMessenger($this->clientManager);
@@ -105,13 +108,12 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
             $this->eventValidator(),
             $this->messenger,
-            $this->subscriptionManager,
-            $this->buildCreateSubscription($this->policy, $this->createStub(RelayEventStoreInterface::class)),
+            $this->buildReevaluator($this->policy, $this->createStub(RelayEventStoreInterface::class)),
             new SystemClock(),
         );
     }
 
-    private function buildCreateSubscription(RelayPolicyInterface $policy, RelayEventStoreInterface $eventStore): CreateSubscriptionUseCase
+    private function buildReevaluator(RelayPolicyInterface $policy, RelayEventStoreInterface $eventStore): SubscriptionReevaluator
     {
         $admission = new SubscriptionAdmission(
             $policy,
@@ -128,15 +130,24 @@ final class ProcessAuthUseCaseTest extends TestCase
             }
         };
 
-        return new CreateSubscriptionUseCase(
+        $storedEventStreamer = new StoredEventStreamer(
             $eventStore,
             $policy,
+            $this->messenger,
             $this->subscriptionManager,
+            new NullLogger(),
+        );
+
+        $createSubscription = new CreateSubscriptionUseCase(
             $admission,
+            $this->subscriptionManager,
+            $storedEventStreamer,
             $this->messenger,
             $synchronousExecutor,
             new NullLogger(),
         );
+
+        return new SubscriptionReevaluator($this->subscriptionManager, $createSubscription);
     }
 
     public function testSuccessfulAuthentication(): void
@@ -194,8 +205,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
             $this->eventValidator(),
             $this->messenger,
-            $this->subscriptionManager,
-            $this->buildCreateSubscription($policy, $eventStore),
+            $this->buildReevaluator($policy, $eventStore),
             new SystemClock(),
         );
 
@@ -226,8 +236,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
             $this->eventValidator(),
             $this->messenger,
-            $this->subscriptionManager,
-            $this->buildCreateSubscription($policy, $this->createStub(RelayEventStoreInterface::class)),
+            $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
             new SystemClock(),
         );
 
@@ -367,8 +376,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
             $this->eventValidator(),
             $this->messenger,
-            $this->subscriptionManager,
-            $this->buildCreateSubscription($policy, $this->createStub(RelayEventStoreInterface::class)),
+            $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
             $clock,
         );
 

@@ -10,7 +10,6 @@ use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
@@ -35,6 +34,9 @@ final class SubscriptionManagerTest extends TestCase
         );
     }
 
+    /**
+     * @param list<int>|null $kinds
+     */
     private function createSubscription(string $subId, ?array $kinds = null): Subscription
     {
         $filters = new FilterCollection([new Filter(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null)]);
@@ -193,14 +195,6 @@ final class SubscriptionManagerTest extends TestCase
         $this->assertSame(2, $result->count());
     }
 
-    public function testImplementsSubscriptionLookupInterface(): void
-    {
-        $this->assertInstanceOf(
-            \Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface::class,
-            $this->manager,
-        );
-    }
-
     public function testRecordsAndReturnsOriginalFilters(): void
     {
         $clientId = ClientId::fromString('client-1');
@@ -219,21 +213,6 @@ final class SubscriptionManagerTest extends TestCase
         $this->assertTrue(
             $this->manager->getOriginalFilters(ClientId::fromString('client-1'), SubscriptionIdMother::from('missing'))->isEmpty(),
         );
-    }
-
-    public function testGetSubscriptionIdsForClientReturnsSubscriptionIds(): void
-    {
-        $clientId = ClientId::fromString('client-1');
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'));
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-2'));
-
-        $ids = array_map(
-            static fn (SubscriptionId $id): string => (string) $id,
-            $this->manager->getSubscriptionIdsForClient($clientId),
-        );
-        sort($ids);
-
-        $this->assertSame(['sub-1', 'sub-2'], $ids);
     }
 
     public function testRemoveSubscriptionClearsOriginalFilters(): void

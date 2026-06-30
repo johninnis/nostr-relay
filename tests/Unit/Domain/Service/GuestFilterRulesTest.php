@@ -172,6 +172,15 @@ final class GuestFilterRulesTest extends TestCase
         self::assertFalse($scoped->isBeyondScope());
     }
 
+    public function testUppercasePTagIsNotTreatedAsTenantReference(): void
+    {
+        $rules = self::rules([self::TENANT], [24133]);
+
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [strtoupper(self::TENANT)]]))]), true);
+
+        self::assertFalse($scoped->isBeyondScope());
+    }
+
     /**
      * @param list<string> $tenantHexes
      * @param list<int>    $kindInts

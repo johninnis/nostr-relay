@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Domain\ValueObject;
+namespace Innis\Nostr\Relay\Domain\Collection;
 
 use Innis\Nostr\Core\Domain\Collection\TypedCollection;
+use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
 use Override;
 
 /**

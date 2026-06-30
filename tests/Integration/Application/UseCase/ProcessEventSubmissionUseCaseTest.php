@@ -27,6 +27,7 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
@@ -80,6 +81,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $subscriptionManager = new SubscriptionManager($metrics, $logger);
         $this->clientManager = new ClientManager(
             $metrics,
+            new NativeRandomBytesGenerator(),
             $logger,
         );
         $messenger = new ClientMessenger($this->clientManager);
@@ -93,6 +95,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $logger,
         );
 
+        $acceptedEventPublisher = new AcceptedEventPublisher(
+            $metrics,
+            $this->clientManager,
+            $distributor,
+            new AmphpDeferredExecutor(),
+            $messenger,
+        );
+
         return new ProcessEventSubmissionUseCase(
             $eventStore,
             new EventAdmission(
@@ -100,14 +110,12 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
                 $this->rateLimiter,
                 new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
             ),
-            $distributor,
+            $acceptedEventPublisher,
+            new EventDeletionProcessor($eventStore, $logger),
             new AuthenticationManager(new NativeRandomBytesGenerator()),
-            $metrics,
-            $logger,
             $this->clientManager,
             $messenger,
-            new AmphpDeferredExecutor(),
-            new EventDeletionProcessor($eventStore, $logger),
+            $logger,
         );
     }
 

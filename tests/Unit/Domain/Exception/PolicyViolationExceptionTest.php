@@ -10,11 +10,11 @@ use PHPUnit\Framework\TestCase;
 
 final class PolicyViolationExceptionTest extends TestCase
 {
-    public function testExtendsRelayException(): void
+    public function testIsCaughtAsRelayExceptionCarryingItsMessage(): void
     {
-        $exception = new PolicyViolationException('event not allowed');
+        $this->expectException(RelayException::class);
+        $this->expectExceptionMessage('event not allowed');
 
-        $this->assertInstanceOf(RelayException::class, $exception);
-        $this->assertSame('event not allowed', $exception->getMessage());
+        throw new PolicyViolationException('event not allowed');
     }
 }

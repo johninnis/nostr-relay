@@ -47,6 +47,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
         $this->clientManager = new ClientManager(
             $this->createStub(MetricsCollectorInterface::class),
+            new NativeRandomBytesGenerator(),
             new NullLogger(),
         );
         $messenger = new ClientMessenger($this->clientManager);

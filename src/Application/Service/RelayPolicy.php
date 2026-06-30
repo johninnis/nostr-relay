@@ -4,30 +4,27 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Domain\Collection\GuestWriteRuleCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
+use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
-use InvalidArgumentException;
 use Override;
 use Psr\Log\LoggerInterface;
 
 final class RelayPolicy implements RelayPolicyInterface
 {
     private readonly PublicKeyCollection $tenants;
-    /** @var list<int> */
-    private readonly array $guestReadKinds;
     private readonly bool $guestReadFromTenants;
-    private readonly array $guestWriteRules;
+    private readonly GuestWriteRuleCollection $guestWriteRules;
     private readonly int $maxEventSize;
     private readonly SubscriptionLimits $subscriptionLimits;
     private readonly GuestFilterRules $guestFilterRules;
@@ -35,36 +32,15 @@ final class RelayPolicy implements RelayPolicyInterface
     public function __construct(
         private readonly AuthenticationManager $authManager,
         private readonly LoggerInterface $logger,
-        array $config = [],
+        RelayPolicyConfig $config,
     ) {
-        $this->tenants = new PublicKeyCollection($this->resolveTenants($config['tenants'] ?? []));
-        $this->maxEventSize = $config['max_event_size'] ?? 65536;
-
-        $guest = $config['guest'] ?? [];
-        $this->guestWriteRules = $this->resolveWriteRules($guest['write'] ?? []);
-
-        $allKinds = [];
-        $fromTenants = false;
-        foreach ($guest['read'] ?? [] as $rule) {
-            foreach ($rule['kinds'] ?? [] as $kind) {
-                $allKinds[] = (int) $kind;
-            }
-            if (($rule['from'] ?? null) === 'tenants') {
-                $fromTenants = true;
-            }
-        }
-        $this->guestReadKinds = array_values(array_unique($allKinds));
-        $this->guestReadFromTenants = $fromTenants;
-
-        $this->subscriptionLimits = new SubscriptionLimits(
-            $config['max_subscriptions'] ?? 20,
-            $config['max_filters'] ?? 5,
-            $config['max_query_limit'] ?? 1000,
-        );
-        $this->guestFilterRules = new GuestFilterRules(
-            $this->tenants,
-            new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $this->guestReadKinds)),
-        );
+        $guest = $config->getGuest();
+        $this->tenants = $config->getTenants();
+        $this->maxEventSize = $config->getMaxEventSize();
+        $this->subscriptionLimits = $config->getSubscriptionLimits();
+        $this->guestReadFromTenants = $guest->readsFromTenantsOnly();
+        $this->guestWriteRules = $guest->getWriteRules();
+        $this->guestFilterRules = new GuestFilterRules($config->getTenants(), $guest->getReadableKinds());
     }
 
     #[Override]
@@ -78,14 +54,14 @@ final class RelayPolicy implements RelayPolicyInterface
             return;
         }
 
-        $kind = $event->getKind()->toInt();
+        $kind = $event->getKind();
 
         foreach ($this->guestWriteRules as $rule) {
-            if (!in_array($kind, $rule['kinds'], true)) {
+            if (!$rule->appliesToKind($kind)) {
                 continue;
             }
 
-            if ($rule['tagged_to_tenant'] && !$this->isTaggedToTenant($event)) {
+            if ($rule->requiresTenantTag() && !$this->isTaggedToTenant($event)) {
                 throw new PolicyViolationException('event must be tagged to a relay tenant');
             }
 
@@ -94,7 +70,7 @@ final class RelayPolicy implements RelayPolicyInterface
 
         $this->logger->info('Auth required for event submission', [
             'client_id' => (string) $client->getId(),
-            'kind' => $kind,
+            'kind' => $kind->toInt(),
         ]);
 
         throw new AuthRequiredException('authentication required to publish this event kind');
@@ -103,7 +79,8 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): void
     {
-        if ($this->isOpenRelay() || $this->isTenant($client)) {
+        // Deliberate: resource caps protect the store and apply to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0009
+        if ($this->isTenant($client)) {
             return;
         }
 
@@ -133,7 +110,8 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function isRateLimitExempt(RelayClient $client): bool
     {
-        return $this->isOpenRelay() || $this->isTenant($client);
+        // Deliberate: rate limiting protects the host and applies to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0009
+        return $this->isTenant($client);
     }
 
     #[Override]
@@ -172,32 +150,5 @@ final class RelayPolicy implements RelayPolicyInterface
         }
 
         return false;
-    }
-
-    private function resolveTenants(array $tenants): array
-    {
-        $pubkeys = [];
-
-        foreach ($tenants as $tenant) {
-            $pubkey = str_starts_with($tenant, 'npub')
-                ? PublicKey::fromBech32($tenant)
-                : PublicKey::fromHex($tenant);
-
-            if (null === $pubkey) {
-                throw new InvalidArgumentException(sprintf('Invalid tenant pubkey: %s', $tenant));
-            }
-
-            $pubkeys[] = $pubkey;
-        }
-
-        return $pubkeys;
-    }
-
-    private function resolveWriteRules(array $rules): array
-    {
-        return array_map(static fn (array $rule) => [
-            'kinds' => $rule['kinds'] ?? [],
-            'tagged_to_tenant' => $rule['tagged_to_tenant'] ?? false,
-        ], $rules);
     }
 }

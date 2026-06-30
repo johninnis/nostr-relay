@@ -1,4 +1,5 @@
 /vendor/
+/composer.lock
 /var/
 
 /phpunit.xml
@@ -12,5 +13,3 @@
 /.vscode/
 
 .claude/
-
-composer.lock

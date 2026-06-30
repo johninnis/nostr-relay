@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Domain\Entity;
+namespace Innis\Nostr\Relay\Domain\Collection;
 
 use Innis\Nostr\Core\Domain\Collection\TypedCollection;
+use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Override;
 

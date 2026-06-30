@@ -19,6 +19,7 @@ final class TokenBucketRateLimiter implements RateLimiterInterface
     private const float OVERFLOW_RETAIN_RATIO = 0.9;
     private const float EVICTION_INTERVAL_SECONDS = 5.0;
 
+    /** @var array<string, RateLimitToken> */
     private array $buckets = [];
     private float $lastEvictionAt = 0.0;
 

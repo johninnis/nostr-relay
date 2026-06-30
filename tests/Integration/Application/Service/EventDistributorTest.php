@@ -15,6 +15,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -50,6 +51,7 @@ final class EventDistributorTest extends TestCase
         $this->subscriptionManager = new SubscriptionManager($this->metrics, $logger);
         $this->clientManager = new ClientManager(
             $this->metrics,
+            new NativeRandomBytesGenerator(),
             $logger,
         );
 
@@ -76,6 +78,9 @@ final class EventDistributorTest extends TestCase
         );
     }
 
+    /**
+     * @param list<int>|null $kinds
+     */
     private function registerClientWithSubscription(string $subIdStr, ?array $kinds = null, ?ClientConnectionInterface $connection = null): RelayClient
     {
         $connection ??= $this->createStub(ClientConnectionInterface::class);

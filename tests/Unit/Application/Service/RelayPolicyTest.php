@@ -22,6 +22,7 @@ use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -47,13 +48,21 @@ final class RelayPolicyTest extends TestCase
         $this->expectNotToPerformAssertions();
     }
 
-    public function testOpenRelayIsExemptFromSubscriptionCap(): void
+    public function testOpenRelayStillEnforcesSubscriptionCap(): void
     {
-        $policy = new RelayPolicy($this->authManager, new NullLogger(), ['max_subscriptions' => 2]);
+        $policy = new RelayPolicy($this->authManager, new NullLogger(), RelayPolicyConfig::fromArray(['max_subscriptions' => 2]));
 
-        $policy->allowSubscription($this->guestClient(), new FilterCollection(), 99);
+        $this->expectException(PolicyViolationException::class);
+        $this->expectExceptionMessage('too many subscriptions (max 2)');
 
-        $this->expectNotToPerformAssertions();
+        $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
+    }
+
+    public function testOpenRelayRateLimitsAnonymousClients(): void
+    {
+        $policy = new RelayPolicy($this->authManager, new NullLogger(), RelayPolicyConfig::fromArray([]));
+
+        $this->assertFalse($policy->isRateLimitExempt($this->guestClient()));
     }
 
     public function testGuestIsSubjectToSubscriptionCap(): void
@@ -180,7 +189,7 @@ final class RelayPolicyTest extends TestCase
      */
     private function policyWithGuestRules(array $overrides = []): RelayPolicy
     {
-        return new RelayPolicy($this->authManager, new NullLogger(), [
+        return new RelayPolicy($this->authManager, new NullLogger(), RelayPolicyConfig::fromArray([
             'tenants' => [self::TENANT_HEX],
             'guest' => [
                 'read' => [['kinds' => [EventKind::TEXT_NOTE], 'from' => 'tenants']],
@@ -190,7 +199,7 @@ final class RelayPolicyTest extends TestCase
                 ],
             ],
             ...$overrides,
-        ]);
+        ]));
     }
 
     private function guestClient(): RelayClient
