@@ -15,8 +15,8 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
@@ -28,12 +28,12 @@ use RuntimeException;
 
 final class ClientMessengerTest extends TestCase
 {
-    private ClientManager $registry;
+    private InMemoryClientRegistry $registry;
     private ClientMessenger $messenger;
 
     protected function setUp(): void
     {
-        $this->registry = new ClientManager(
+        $this->registry = new InMemoryClientRegistry(
             $this->createStub(MetricsCollectorInterface::class),
             new NativeRandomBytesGenerator(),
             new NullLogger(),

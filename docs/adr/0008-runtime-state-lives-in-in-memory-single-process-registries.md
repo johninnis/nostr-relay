@@ -21,15 +21,16 @@ A separate question is what these holders should *expose*. One of them had grown
 
 ## Decision
 
-Relay runtime state lives in in-memory registries (`ClientManager`, `SubscriptionManager`, `AuthenticationManager`), held for the lifetime of the process and injected as collaborators. They are **not** placed behind swappable persistence ports: in-memory and in-process is the one correct implementation for a single-process relay holding live connections.
+Relay runtime state lives in in-memory registries (`InMemoryClientRegistry`, `InMemorySubscriptionRegistry`, `InMemoryAuthenticationRegistry`), held for the lifetime of the process and injected as collaborators. They are **not** placed behind swappable persistence ports: in-memory and in-process is the one correct implementation for a single-process relay holding live connections. Each is named for the role it fills with the `InMemory` distinguisher, not a bare `*Manager`.
 
-Callers depend on **narrow role interfaces that name what they need**, not on the concrete registries:
+Every application caller depends on a **narrow role interface that names what it needs**, never on a concrete registry; the concrete types appear only where infrastructure wires and drives them:
 
 - `ClientMessengerInterface` — sending a message to a client. The act of sending is a distinct collaborator (`ClientMessenger`) from the registry that stores connections; the call sites that only send depend on this alone.
-- `ClientRegistryInterface` — the client lookup, removal, and per-session accounting the application needs.
-- `SubscriptionLookupInterface` — the subscription reads the application needs.
+- `ClientRegistryInterface` — client lookup, connection resolution, removal, and per-session accounting.
+- `SubscriptionLookupInterface` — the subscription reads (per-client, matching, original filters). `SubscriptionRegistryInterface` extends it with the writes (add, remove, state change) the managing call sites need, so a read-only caller cannot mutate.
+- `AuthChallengeInterface` — issuing and reading a client's auth challenge. `AuthenticatedSessionsInterface` — recording and querying authenticated identities. A caller that only issues a challenge does not depend on session mutation, and the reverse.
 
-The concrete registries implement these interfaces. Lifecycle entry points in infrastructure (the connection handler, the relay instance) use the concrete classes directly, because wiring and lifecycle are infrastructure concerns.
+The concrete registries implement these interfaces. Lifecycle entry points in infrastructure (the connection handler, the relay instance, the server factory) hold the concrete classes directly, because wiring and lifecycle are infrastructure concerns.
 
 ## Consequences
 

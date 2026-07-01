@@ -9,7 +9,7 @@ use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
@@ -21,7 +21,7 @@ use Psr\Log\NullLogger;
 
 final class CloseSubscriptionUseCaseTest extends TestCase
 {
-    private SubscriptionManager $subscriptionManager;
+    private InMemorySubscriptionRegistry $subscriptionManager;
     private CloseSubscriptionUseCase $useCase;
     private RelayClient $client;
 
@@ -29,7 +29,7 @@ final class CloseSubscriptionUseCaseTest extends TestCase
     {
         $logger = new NullLogger();
         $metrics = $this->createStub(MetricsCollectorInterface::class);
-        $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
+        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
         $this->useCase = new CloseSubscriptionUseCase($this->subscriptionManager, $logger);
 
         $this->client = new RelayClient(

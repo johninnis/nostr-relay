@@ -11,7 +11,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;

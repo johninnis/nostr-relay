@@ -15,15 +15,15 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
+use Innis\Nostr\Relay\Application\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
@@ -37,7 +37,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
-    private ClientManager $clientManager;
+    private InMemoryClientRegistry $clientManager;
     private CountSubscriptionUseCase $useCase;
 
     protected function setUp(): void
@@ -45,7 +45,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
-        $this->clientManager = new ClientManager(
+        $this->clientManager = new InMemoryClientRegistry(
             $this->createStub(MetricsCollectorInterface::class),
             new NativeRandomBytesGenerator(),
             new NullLogger(),
@@ -55,7 +55,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $admission = new SubscriptionAdmission(
             $this->policy,
             $this->rateLimiter,
-            new AuthenticationManager(new NativeRandomBytesGenerator()),
+            new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
             $messenger,
             $this->createStub(SubscriptionLookupInterface::class),
         );

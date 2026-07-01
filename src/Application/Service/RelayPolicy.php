@@ -30,7 +30,7 @@ final class RelayPolicy implements RelayPolicyInterface
     private readonly GuestFilterRules $guestFilterRules;
 
     public function __construct(
-        private readonly AuthenticationManager $authManager,
+        private readonly AuthenticatedSessionsInterface $authenticatedSessions,
         private readonly LoggerInterface $logger,
         RelayPolicyConfig $config,
     ) {
@@ -127,7 +127,7 @@ final class RelayPolicy implements RelayPolicyInterface
 
     private function isTenant(RelayClient $client): bool
     {
-        foreach ($this->authManager->getAuthenticatedPubkeys($client->getId()) as $pubkey) {
+        foreach ($this->authenticatedSessions->getAuthenticatedPubkeys($client->getId()) as $pubkey) {
             if ($this->tenants->contains($pubkey)) {
                 return true;
             }

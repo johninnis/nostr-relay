@@ -16,12 +16,12 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
@@ -39,10 +39,10 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 {
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
-    private SubscriptionManager $subscriptionManager;
+    private InMemorySubscriptionRegistry $subscriptionManager;
     private RateLimiterInterface&Stub $rateLimiter;
-    private ClientManager $clientManager;
-    private AuthenticationManager $authManager;
+    private InMemoryClientRegistry $clientManager;
+    private InMemoryAuthenticationRegistry $authManager;
     private CreateSubscriptionUseCase $useCase;
     private RelayClient $client;
 
@@ -54,10 +54,10 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $this->clientManager = new ClientManager($metrics, new NativeRandomBytesGenerator(), $logger);
+        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->clientManager = new InMemoryClientRegistry($metrics, new NativeRandomBytesGenerator(), $logger);
         $messenger = new ClientMessenger($this->clientManager);
-        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $messenger, $this->subscriptionManager);
         $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionManager, $logger);
 

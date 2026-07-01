@@ -13,7 +13,7 @@ use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayMetrics;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 use PHPUnit\Framework\TestCase;
@@ -36,7 +36,7 @@ final class RelayServerFactoryTest extends TestCase
             policy: $this->createStub(RelayPolicyInterface::class),
             config: $config,
             rateLimitPolicy: $this->createStub(RateLimitPolicyInterface::class),
-            authManager: new AuthenticationManager(new NativeRandomBytesGenerator()),
+            authManager: new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
             logger: new NullLogger(),
             nip11InfoProvider: $this->createStub(Nip11InfoProviderInterface::class),
             signatureService: $this->createStub(SignatureServiceInterface::class),

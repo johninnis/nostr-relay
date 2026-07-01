@@ -9,11 +9,11 @@ use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
+use Innis\Nostr\Relay\Application\Service\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionRegistryInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
@@ -24,7 +24,7 @@ final class CreateSubscriptionUseCase
 {
     public function __construct(
         private readonly SubscriptionAdmission $admission,
-        private readonly SubscriptionManager $subscriptionManager,
+        private readonly SubscriptionRegistryInterface $subscriptionManager,
         private readonly StoredEventStreamer $storedEventStreamer,
         private readonly ClientMessengerInterface $messenger,
         private readonly DeferredExecutorInterface $deferredExecutor,

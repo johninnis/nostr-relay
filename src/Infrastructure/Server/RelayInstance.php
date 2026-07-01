@@ -8,9 +8,9 @@ use Amp\Socket\SocketAddress;
 use Innis\Nostr\Core\Domain\Collection\SubscriptionCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\Collection\RelayClientCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayMetrics;
@@ -21,8 +21,8 @@ final class RelayInstance
     public function __construct(
         private readonly AmphpRelayServer $server,
         private readonly EventDistributor $distributor,
-        private readonly SubscriptionManager $subscriptionManager,
-        private readonly ClientManager $clientManager,
+        private readonly InMemorySubscriptionRegistry $subscriptionManager,
+        private readonly InMemoryClientRegistry $clientManager,
         private readonly MetricsCollectorInterface $metrics,
     ) {
     }

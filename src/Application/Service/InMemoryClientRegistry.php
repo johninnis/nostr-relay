@@ -6,7 +6,6 @@ namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
-use Innis\Nostr\Relay\Application\Port\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Collection\RelayClientCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -17,7 +16,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
 use Override;
 use Psr\Log\LoggerInterface;
 
-final class ClientManager implements ClientRegistryInterface
+final class InMemoryClientRegistry implements ClientRegistryInterface
 {
     private const int CLIENT_ID_BYTES = 16;
 
@@ -74,11 +73,13 @@ final class ClientManager implements ClientRegistryInterface
         $this->metrics->decrementActiveConnections();
     }
 
+    #[Override]
     public function getConnection(ClientId $clientId): ?ClientConnectionInterface
     {
         return $this->connections[(string) $clientId] ?? null;
     }
 
+    #[Override]
     public function recordEventSent(ClientId $clientId): void
     {
         $key = (string) $clientId;

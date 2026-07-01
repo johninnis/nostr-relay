@@ -11,10 +11,11 @@ use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeInterface;
+use Innis\Nostr\Relay\Application\Service\AuthenticatedSessionsInterface;
+use Innis\Nostr\Relay\Application\Service\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Psr\Log\LoggerInterface;
@@ -25,7 +26,8 @@ final class ProcessAuthUseCase
     private const int TIMESTAMP_TOLERANCE_SECONDS = 600;
 
     public function __construct(
-        private readonly AuthenticationManager $authManager,
+        private readonly AuthChallengeInterface $authChallenge,
+        private readonly AuthenticatedSessionsInterface $authenticatedSessions,
         private readonly RelayConfigInterface $config,
         private readonly RelayPolicyInterface $policy,
         private readonly LoggerInterface $logger,
@@ -41,9 +43,9 @@ final class ProcessAuthUseCase
         try {
             $this->eventValidator->validateEvent($event);
 
-            $challenge = $this->authManager->getChallenge($client->getId());
+            $challenge = $this->authChallenge->getChallenge($client->getId());
             if (null === $challenge) {
-                $this->messenger->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
+                $this->messenger->send($client, new AuthMessage($this->authChallenge->getOrCreateChallenge($client->getId())));
                 $this->messenger->send($client, new OkMessage($event->getId(), false, 'auth-required: challenge issued, please retry'));
 
                 return;
@@ -76,7 +78,7 @@ final class ProcessAuthUseCase
                 return;
             }
 
-            $this->authManager->authenticate($client->getId(), $event->getPubkey());
+            $this->authenticatedSessions->authenticate($client->getId(), $event->getPubkey());
             $this->messenger->send($client, new OkMessage($event->getId(), true, ''));
 
             $this->subscriptionReevaluator->reevaluate($client);

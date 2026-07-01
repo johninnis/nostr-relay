@@ -22,17 +22,17 @@ use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
@@ -57,7 +57,7 @@ final class RelayServerFactory
         private readonly RelayPolicyInterface $policy,
         private readonly RelayConfigInterface $config,
         private readonly RateLimitPolicyInterface $rateLimitPolicy,
-        private readonly AuthenticationManager $authManager,
+        private readonly InMemoryAuthenticationRegistry $authManager,
         private readonly LoggerInterface $logger,
         private readonly Nip11InfoProviderInterface $nip11InfoProvider,
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
@@ -75,12 +75,12 @@ final class RelayServerFactory
     {
         $metrics = $this->metricsCollector ?? new InMemoryMetricsCollector();
 
-        $subscriptionManager = new SubscriptionManager(
+        $subscriptionManager = new InMemorySubscriptionRegistry(
             $metrics,
             $this->logger
         );
 
-        $clientManager = new ClientManager(
+        $clientManager = new InMemoryClientRegistry(
             $metrics,
             $this->randomBytes,
             $this->logger,
@@ -178,6 +178,7 @@ final class RelayServerFactory
         );
 
         $processAuthUseCase = new ProcessAuthUseCase(
+            $authManager,
             $authManager,
             $this->config,
             $this->policy,

@@ -7,19 +7,19 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
-final class AuthenticationManagerTest extends TestCase
+final class InMemoryAuthenticationRegistryTest extends TestCase
 {
-    private AuthenticationManager $authManager;
+    private InMemoryAuthenticationRegistry $authManager;
     private ClientId $clientId;
 
     protected function setUp(): void
     {
-        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $this->clientId = ClientId::fromString('client-1');
     }
 
@@ -35,7 +35,7 @@ final class AuthenticationManagerTest extends TestCase
     {
         $generator = $this->createStub(RandomBytesGeneratorInterface::class);
         $generator->method('bytes')->willReturn(str_repeat("\x01", 16));
-        $authManager = new AuthenticationManager($generator);
+        $authManager = new InMemoryAuthenticationRegistry($generator);
 
         $challenge = $authManager->getOrCreateChallenge($this->clientId);
 

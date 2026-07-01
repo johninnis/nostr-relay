@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Innis\Nostr\Relay\Application\Port;
+namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;

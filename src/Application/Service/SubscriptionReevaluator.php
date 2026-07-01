@@ -10,7 +10,7 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 final readonly class SubscriptionReevaluator
 {
     public function __construct(
-        private SubscriptionManager $subscriptionManager,
+        private SubscriptionLookupInterface $subscriptionManager,
         private CreateSubscriptionUseCase $createSubscription,
     ) {
     }

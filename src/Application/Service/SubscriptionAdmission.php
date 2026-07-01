@@ -7,11 +7,9 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class SubscriptionAdmission
@@ -19,7 +17,7 @@ final readonly class SubscriptionAdmission
     public function __construct(
         private RelayPolicyInterface $policy,
         private RateLimiterInterface $rateLimiter,
-        private AuthenticationManager $authManager,
+        private AuthChallengeInterface $authChallenge,
         private ClientMessengerInterface $messenger,
         private SubscriptionLookupInterface $subscriptionLookup,
     ) {
@@ -42,7 +40,7 @@ final readonly class SubscriptionAdmission
         // Deliberate: the AUTH challenge is offered lazily on a scope-exceeding request, never on connect — see ADR-0004
         if ($scopedFilters->isBeyondScope()) {
             $this->messenger->send($client, new NoticeMessage('limited to readable scope: authenticate for full access'));
-            $this->messenger->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
+            $this->messenger->send($client, new AuthMessage($this->authChallenge->getOrCreateChallenge($client->getId())));
         }
 
         return $scopedFilters;

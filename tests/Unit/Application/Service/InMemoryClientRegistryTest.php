@@ -8,7 +8,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
@@ -16,18 +16,18 @@ use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
-final class ClientManagerTest extends TestCase
+final class InMemoryClientRegistryTest extends TestCase
 {
-    private ClientManager $manager;
+    private InMemoryClientRegistry $manager;
 
     protected function setUp(): void
     {
         $this->manager = $this->makeManager();
     }
 
-    private function makeManager(?MetricsCollectorInterface $metrics = null): ClientManager
+    private function makeManager(?MetricsCollectorInterface $metrics = null): InMemoryClientRegistry
     {
-        return new ClientManager(
+        return new InMemoryClientRegistry(
             $metrics ?? $this->createStub(MetricsCollectorInterface::class),
             new NativeRandomBytesGenerator(),
             new NullLogger(),

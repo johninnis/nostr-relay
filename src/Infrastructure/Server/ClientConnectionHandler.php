@@ -12,7 +12,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
@@ -25,7 +25,7 @@ final class ClientConnectionHandler
     private const int DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
 
     public function __construct(
-        private readonly ClientManager $clientManager,
+        private readonly InMemoryClientRegistry $clientManager,
         private readonly ClientDisconnectionHandler $disconnectionHandler,
         private readonly MessageRouter $messageRouter,
         private readonly LoggerInterface $logger,

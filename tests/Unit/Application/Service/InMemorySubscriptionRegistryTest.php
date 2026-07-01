@@ -11,24 +11,24 @@ use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
-final class SubscriptionManagerTest extends TestCase
+final class InMemorySubscriptionRegistryTest extends TestCase
 {
-    private SubscriptionManager $manager;
+    private InMemorySubscriptionRegistry $manager;
 
     protected function setUp(): void
     {
         $this->manager = $this->makeManager();
     }
 
-    private function makeManager(?MetricsCollectorInterface $metrics = null): SubscriptionManager
+    private function makeManager(?MetricsCollectorInterface $metrics = null): InMemorySubscriptionRegistry
     {
-        return new SubscriptionManager(
+        return new InMemorySubscriptionRegistry(
             $metrics ?? $this->createStub(MetricsCollectorInterface::class),
             new NullLogger(),
         );

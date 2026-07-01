@@ -15,7 +15,7 @@ use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
@@ -164,7 +164,7 @@ $owner = KeyPair::generate($signer);
 $ownerPubkeyHex = $owner->getPublicKey()->toHex();
 
 $logger = new StderrLogger();
-$authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+$authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
 // A tenant relay: the owner key may publish and read freely; guests get the configured read/write scope.
 // Configure no tenants instead (`RelayPolicyConfig::fromArray([])`) to run a fully open public relay.

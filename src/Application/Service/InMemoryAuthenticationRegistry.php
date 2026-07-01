@@ -8,8 +8,9 @@ use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
+use Override;
 
-final class AuthenticationManager
+final class InMemoryAuthenticationRegistry implements AuthChallengeInterface, AuthenticatedSessionsInterface
 {
     private const int CHALLENGE_BYTES = 16;
 
@@ -24,6 +25,7 @@ final class AuthenticationManager
     ) {
     }
 
+    #[Override]
     public function getOrCreateChallenge(ClientId $clientId): string
     {
         $key = (string) $clientId;
@@ -38,11 +40,13 @@ final class AuthenticationManager
         return $challenge;
     }
 
+    #[Override]
     public function getChallenge(ClientId $clientId): ?string
     {
         return $this->challenges[(string) $clientId] ?? null;
     }
 
+    #[Override]
     public function authenticate(ClientId $clientId, PublicKey $pubkey): void
     {
         $key = (string) $clientId;
@@ -66,6 +70,7 @@ final class AuthenticationManager
         return !empty($this->authenticatedPubkeys[(string) $clientId]);
     }
 
+    #[Override]
     public function getAuthenticatedPubkeys(ClientId $clientId): PublicKeyCollection
     {
         return new PublicKeyCollection($this->authenticatedPubkeys[(string) $clientId] ?? []);
@@ -82,6 +87,7 @@ final class AuthenticationManager
         return false;
     }
 
+    #[Override]
     public function removeClient(ClientId $clientId): void
     {
         $key = (string) $clientId;

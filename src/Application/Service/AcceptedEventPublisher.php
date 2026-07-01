@@ -6,8 +6,6 @@ namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
-use Innis\Nostr\Relay\Application\Port\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 

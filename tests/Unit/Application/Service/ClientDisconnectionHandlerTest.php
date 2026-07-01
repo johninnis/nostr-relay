@@ -8,10 +8,10 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
@@ -20,8 +20,8 @@ use Psr\Log\NullLogger;
 
 final class ClientDisconnectionHandlerTest extends TestCase
 {
-    private ClientManager $clientManager;
-    private SubscriptionManager $subscriptionManager;
+    private InMemoryClientRegistry $clientManager;
+    private InMemorySubscriptionRegistry $subscriptionManager;
     private ClientDisconnectionHandler $handler;
 
     protected function setUp(): void
@@ -29,8 +29,8 @@ final class ClientDisconnectionHandlerTest extends TestCase
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $this->clientManager = new ClientManager(
+        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->clientManager = new InMemoryClientRegistry(
             $metrics,
             new NativeRandomBytesGenerator(),
             $logger,
@@ -39,7 +39,7 @@ final class ClientDisconnectionHandlerTest extends TestCase
         $this->handler = new ClientDisconnectionHandler(
             $this->clientManager,
             $this->subscriptionManager,
-            new AuthenticationManager(new NativeRandomBytesGenerator()),
+            new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
             $logger,
         );
     }

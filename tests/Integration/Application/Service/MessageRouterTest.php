@@ -35,16 +35,16 @@ use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
@@ -74,9 +74,9 @@ final class MessageRouterTest extends TestCase
     private MessageDeserialiserInterface&Stub $deserialiser;
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
-    private SubscriptionManager $subscriptionManager;
-    private AuthenticationManager $authManager;
-    private ClientManager $clientManager;
+    private InMemorySubscriptionRegistry $subscriptionManager;
+    private InMemoryAuthenticationRegistry $authManager;
+    private InMemoryClientRegistry $clientManager;
     private MessageRouter $router;
     private RelayClient $client;
 
@@ -90,10 +90,10 @@ final class MessageRouterTest extends TestCase
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
-        $this->clientManager = new ClientManager(
+        $this->clientManager = new InMemoryClientRegistry(
             $metrics,
             new NativeRandomBytesGenerator(),
             $logger,
@@ -156,6 +156,7 @@ final class MessageRouterTest extends TestCase
         $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
 
         $processAuth = new ProcessAuthUseCase(
+            $this->authManager,
             $this->authManager,
             $config,
             $this->policy,

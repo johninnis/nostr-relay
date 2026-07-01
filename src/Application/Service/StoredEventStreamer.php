@@ -10,7 +10,6 @@ use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EoseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -26,7 +25,7 @@ final readonly class StoredEventStreamer
         private RelayEventStoreInterface $eventStore,
         private RelayPolicyInterface $policy,
         private ClientMessengerInterface $messenger,
-        private SubscriptionManager $subscriptionManager,
+        private SubscriptionRegistryInterface $subscriptionManager,
         private LoggerInterface $logger,
     ) {
     }

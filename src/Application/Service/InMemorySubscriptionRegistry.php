@@ -12,13 +12,12 @@ use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Collection\SubscriptionMatchCollection;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
 use Override;
 use Psr\Log\LoggerInterface;
 
-final class SubscriptionManager implements SubscriptionLookupInterface
+final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterface
 {
     // Deliberate: in-memory single-process subscription registry, not a swappable store — see ADR-0008
     /** @var array<string, Subscription> */
@@ -38,6 +37,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
     ) {
     }
 
+    #[Override]
     public function addSubscription(ClientId $clientId, Subscription $subscription, ?FilterCollection $originalFilters = null): void
     {
         $key = $this->compositeKey($clientId, $subscription->getId());
@@ -62,6 +62,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         ]);
     }
 
+    #[Override]
     public function removeSubscription(ClientId $clientId, SubscriptionId $subscriptionId): void
     {
         $key = $this->compositeKey($clientId, $subscriptionId);
@@ -85,6 +86,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         ]);
     }
 
+    #[Override]
     public function removeAllForClient(ClientId $clientId): void
     {
         $clientIdStr = (string) $clientId;
@@ -102,6 +104,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         unset($this->subscriptionsByClient[$clientIdStr]);
     }
 
+    #[Override]
     public function updateSubscriptionState(ClientId $clientId, SubscriptionId $subscriptionId, SubscriptionState $state): void
     {
         $key = $this->compositeKey($clientId, $subscriptionId);
@@ -111,6 +114,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         }
     }
 
+    #[Override]
     public function getSubscriptionsForEvent(EventKind $kind): SubscriptionMatchCollection
     {
         $keys = ($this->subscriptionsByKind[$kind->toInt()] ?? [])
@@ -148,6 +152,7 @@ final class SubscriptionManager implements SubscriptionLookupInterface
         return count($this->subscriptionsByClient[(string) $clientId] ?? []);
     }
 
+    #[Override]
     public function getOriginalFilters(ClientId $clientId, SubscriptionId $subscriptionId): FilterCollection
     {
         return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? new FilterCollection();

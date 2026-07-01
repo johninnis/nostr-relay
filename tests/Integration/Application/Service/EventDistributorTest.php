@@ -20,10 +20,10 @@ use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
@@ -37,8 +37,8 @@ use Psr\Log\NullLogger;
 final class EventDistributorTest extends TestCase
 {
     private RelayPolicyInterface&Stub $policy;
-    private SubscriptionManager $subscriptionManager;
-    private ClientManager $clientManager;
+    private InMemorySubscriptionRegistry $subscriptionManager;
+    private InMemoryClientRegistry $clientManager;
     private MetricsCollectorInterface&MockObject $metrics;
     private EventDistributor $distributor;
 
@@ -48,8 +48,8 @@ final class EventDistributorTest extends TestCase
         $this->metrics = $this->createMock(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new SubscriptionManager($this->metrics, $logger);
-        $this->clientManager = new ClientManager(
+        $this->subscriptionManager = new InMemorySubscriptionRegistry($this->metrics, $logger);
+        $this->clientManager = new InMemoryClientRegistry(
             $this->metrics,
             new NativeRandomBytesGenerator(),
             $logger,

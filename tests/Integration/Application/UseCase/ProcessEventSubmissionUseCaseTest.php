@@ -28,13 +28,13 @@ use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
@@ -52,7 +52,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 {
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
-    private ClientManager $clientManager;
+    private InMemoryClientRegistry $clientManager;
     private ProcessEventSubmissionUseCase $useCase;
     private RelayClient $client;
     private SignatureServiceInterface $sigService;
@@ -78,8 +78,8 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $metrics ??= $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $subscriptionManager = new SubscriptionManager($metrics, $logger);
-        $this->clientManager = new ClientManager(
+        $subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->clientManager = new InMemoryClientRegistry(
             $metrics,
             new NativeRandomBytesGenerator(),
             $logger,
@@ -110,7 +110,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             ),
             $acceptedEventPublisher,
             new EventDeletionProcessor($eventStore, $logger),
-            new AuthenticationManager(new NativeRandomBytesGenerator()),
+            new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
             $this->clientManager,
             $messenger,
             $logger,

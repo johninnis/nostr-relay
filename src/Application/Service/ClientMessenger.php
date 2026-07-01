@@ -6,14 +6,13 @@ namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Override;
 
 final readonly class ClientMessenger implements ClientMessengerInterface
 {
     public function __construct(
-        private ClientManager $registry,
+        private ClientRegistryInterface $registry,
     ) {
     }
 

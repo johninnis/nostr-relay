@@ -14,7 +14,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
@@ -32,11 +32,11 @@ final class RelayPolicyTest extends TestCase
     private const string TENANT_HEX = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     private const string STRANGER_HEX = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-    private AuthenticationManager $authManager;
+    private InMemoryAuthenticationRegistry $authManager;
 
     protected function setUp(): void
     {
-        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
     }
 
     public function testTenantIsExemptFromSubscriptionCap(): void

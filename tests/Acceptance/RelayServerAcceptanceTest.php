@@ -26,7 +26,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
@@ -108,7 +108,7 @@ final class RelayServerAcceptanceTest extends TestCase
         $config->method('getRelayUrl')->willReturn($relayUrl);
         $config->method('getTrustedProxies')->willReturn([]);
 
-        $authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+        $authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
         $relay = new RelayServerFactory(
             eventStore: new InMemoryEventStore(),

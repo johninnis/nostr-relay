@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
+use Innis\Nostr\Relay\Application\Service\SubscriptionRegistryInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -13,7 +13,7 @@ use Throwable;
 final class CloseSubscriptionUseCase
 {
     public function __construct(
-        private readonly SubscriptionManager $subscriptionManager,
+        private readonly SubscriptionRegistryInterface $subscriptionManager,
         private readonly LoggerInterface $logger,
     ) {
     }

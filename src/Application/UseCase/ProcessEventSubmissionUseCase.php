@@ -8,11 +8,11 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
-use Innis\Nostr\Relay\Application\Port\ClientMessengerInterface;
-use Innis\Nostr\Relay\Application\Port\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeInterface;
+use Innis\Nostr\Relay\Application\Service\ClientMessengerInterface;
+use Innis\Nostr\Relay\Application\Service\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -30,7 +30,7 @@ final class ProcessEventSubmissionUseCase
         private readonly EventAdmission $admission,
         private readonly AcceptedEventPublisher $acceptedPublisher,
         private readonly EventDeletionProcessor $deletionProcessor,
-        private readonly AuthenticationManager $authManager,
+        private readonly AuthChallengeInterface $authChallenge,
         private readonly ClientRegistryInterface $registry,
         private readonly ClientMessengerInterface $messenger,
         private readonly LoggerInterface $logger,
@@ -71,8 +71,8 @@ final class ProcessEventSubmissionUseCase
             $this->messenger->send($client, new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
         } catch (AuthRequiredException) {
-            if (null === $this->authManager->getChallenge($client->getId())) {
-                $this->messenger->send($client, new AuthMessage($this->authManager->getOrCreateChallenge($client->getId())));
+            if (null === $this->authChallenge->getChallenge($client->getId())) {
+                $this->messenger->send($client, new AuthMessage($this->authChallenge->getOrCreateChallenge($client->getId())));
             }
             $this->messenger->send($client, new OkMessage($event->getId(), false, 'auth-required: authentication required'));
             $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);

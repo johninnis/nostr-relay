@@ -33,12 +33,12 @@ use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
-use Innis\Nostr\Relay\Application\Service\ClientManager;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
-use Innis\Nostr\Relay\Application\Service\SubscriptionManager;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
@@ -55,8 +55,8 @@ use RuntimeException;
 
 final class ProcessAuthUseCaseTest extends TestCase
 {
-    private AuthenticationManager $authManager;
-    private ClientManager $clientManager;
+    private InMemoryAuthenticationRegistry $authManager;
+    private InMemoryClientRegistry $clientManager;
     private ClientMessenger $messenger;
     private ProcessAuthUseCase $useCase;
     private RelayPolicyInterface $policy;
@@ -64,7 +64,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     private ClientConnectionInterface&MockObject $connection;
     private KeyPair $keyPair;
     private SignatureServiceInterface $sigService;
-    private SubscriptionManager $subscriptionManager;
+    private InMemorySubscriptionRegistry $subscriptionManager;
 
     private function signatureService(): SignatureServiceInterface
     {
@@ -78,7 +78,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $this->keyPair = KeyPair::generate($this->signatureService());
 
         $config = $this->createStub(RelayConfigInterface::class);
@@ -88,7 +88,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->policy->method('allowsAuthentication')->willReturn(true);
 
         $this->connection = $this->createMock(ClientConnectionInterface::class);
-        $this->clientManager = new ClientManager(
+        $this->clientManager = new InMemoryClientRegistry(
             new InMemoryMetricsCollector(),
             new NativeRandomBytesGenerator(),
             new NullLogger(),
@@ -99,9 +99,10 @@ final class ProcessAuthUseCaseTest extends TestCase
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
 
-        $this->subscriptionManager = new SubscriptionManager(new InMemoryMetricsCollector(), new NullLogger());
+        $this->subscriptionManager = new InMemorySubscriptionRegistry(new InMemoryMetricsCollector(), new NullLogger());
 
         $this->useCase = new ProcessAuthUseCase(
+            $this->authManager,
             $this->authManager,
             $config,
             $this->policy,
@@ -200,6 +201,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $useCase = new ProcessAuthUseCase(
             $this->authManager,
+            $this->authManager,
             $config,
             $policy,
             new NullLogger(),
@@ -230,6 +232,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $policy->method('allowsAuthentication')->willReturn(false);
 
         $useCase = new ProcessAuthUseCase(
+            $this->authManager,
             $this->authManager,
             $config,
             $policy,
@@ -370,6 +373,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $clock->method('now')->willReturn(Timestamp::fromInt(time() + 601));
 
         $useCase = new ProcessAuthUseCase(
+            $this->authManager,
             $this->authManager,
             $config,
             $policy,
