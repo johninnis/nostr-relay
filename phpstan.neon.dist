@@ -1,5 +1,6 @@
 includes:
     - vendor/phpstan/phpstan-phpunit/extension.neon
+    - vendor/innis/coding-standards/extension.neon
 
 parameters:
     level: 9
