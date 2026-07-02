@@ -21,6 +21,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
@@ -49,7 +50,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
-use PHPUnit\Framework\MockObject\MockObject;
+use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -62,7 +63,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     private ProcessAuthUseCase $useCase;
     private RelayPolicyInterface $policy;
     private RelayClient $client;
-    private ClientConnectionInterface&MockObject $connection;
+    private ClientConnectionInterface&Stub $connection;
     private KeyPair $keyPair;
     private SignatureServiceInterface $sigService;
     private InMemorySubscriptionRegistry $subscriptionManager;
@@ -88,7 +89,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->policy->method('allowsAuthentication')->willReturn(true);
 
-        $this->connection = $this->createMock(ClientConnectionInterface::class);
+        $this->connection = $this->createStub(ClientConnectionInterface::class);
         $this->clientManager = new InMemoryClientRegistry(
             new InMemoryMetricsCollector(),
             new NativeRandomBytesGenerator(),
@@ -106,10 +107,24 @@ final class ProcessAuthUseCaseTest extends TestCase
             $this->authManager,
             new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $this->eventValidator(),
-            $this->messenger,
             $this->buildReevaluator($this->policy, $this->createStub(RelayEventStoreInterface::class)),
             new NullLogger(),
         );
+    }
+
+    /**
+     * @param iterable<RelayMessage> $replies
+     *
+     * @return list<RelayMessage>
+     */
+    private function replies(iterable $replies): array
+    {
+        $collected = [];
+        foreach ($replies as $reply) {
+            $collected[] = $reply;
+        }
+
+        return $collected;
     }
 
     private function buildReevaluator(RelayPolicyInterface $policy, RelayEventStoreInterface $eventStore): SubscriptionReevaluator
@@ -141,12 +156,11 @@ final class ProcessAuthUseCaseTest extends TestCase
             $admission,
             $this->subscriptionManager,
             $storedEventStreamer,
-            $this->messenger,
             $synchronousExecutor,
             new NullLogger(),
         );
 
-        return new SubscriptionReevaluator($this->subscriptionManager, $createSubscription);
+        return new SubscriptionReevaluator($this->subscriptionManager, $createSubscription, $this->messenger);
     }
 
     public function testSuccessfulAuthentication(): void
@@ -154,23 +168,18 @@ final class ProcessAuthUseCaseTest extends TestCase
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-                return 'OK' === $data[0] && true === $data[2];
-            }));
-
-        $this->useCase->execute($this->client, $event);
-
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
         $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
     }
 
     public function testReevaluatesClientSubscriptionsOnSuccessfulAuth(): void
     {
         $sent = [];
-        $this->connection->expects($this->atLeastOnce())->method('sendText')
+        $this->connection->method('sendText')
             ->willReturnCallback(static function (string $json) use (&$sent): void {
                 $sent[] = $json;
             });
@@ -201,14 +210,15 @@ final class ProcessAuthUseCaseTest extends TestCase
             $this->authManager,
             new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
-            $this->messenger,
             $this->buildReevaluator($policy, $eventStore),
             new NullLogger(),
         );
 
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
-        $useCase->execute($this->client, $this->createAuthEvent($challenge, 'wss://relay.example.com'));
+        $replies = $this->replies($useCase->execute($this->client, $this->createAuthEvent($challenge, 'wss://relay.example.com')));
 
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
         $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
 
         $eventMessages = array_filter($sent, static fn (string $json): bool => str_starts_with($json, '["EVENT"'));
@@ -230,20 +240,16 @@ final class ProcessAuthUseCaseTest extends TestCase
             $this->authManager,
             new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
-            $this->messenger,
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
             new NullLogger(),
         );
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($useCase->execute($this->client, $event));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'restricted');
-            }));
-
-        $useCase->execute($this->client, $event);
-
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('restricted', $replies[0]->getMessage());
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 
@@ -251,19 +257,13 @@ final class ProcessAuthUseCaseTest extends TestCase
     {
         $event = $this->createAuthEvent('some-challenge', 'wss://relay.example.com');
 
-        $sent = [];
-        $this->connection->expects($this->exactly(2))->method('sendText')
-            ->willReturnCallback(static function (string $json) use (&$sent): void {
-                $sent[] = $json;
-            });
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-        $this->useCase->execute($this->client, $event);
-
-        $this->assertNotNull(AuthMessage::fromJson($sent[0]));
-        $ok = OkMessage::fromJson($sent[1]);
-        $this->assertNotNull($ok);
-        $this->assertFalse($ok->isAccepted());
-        $this->assertStringContainsString('auth-required', $ok->getMessage());
+        $this->assertCount(2, $replies);
+        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
+        $this->assertInstanceOf(OkMessage::class, $replies[1]);
+        $this->assertFalse($replies[1]->isAccepted());
+        $this->assertStringContainsString('auth-required', $replies[1]->getMessage());
         $this->assertNotNull($this->authManager->getChallenge($this->client->getId()));
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
@@ -273,15 +273,12 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent('wrong-challenge', 'wss://relay.example.com');
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'invalid challenge');
-            }));
-
-        $this->useCase->execute($this->client, $event);
-
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('invalid challenge', $replies[0]->getMessage());
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 
@@ -290,15 +287,12 @@ final class ProcessAuthUseCaseTest extends TestCase
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://wrong-relay.example.com');
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'invalid relay URL');
-            }));
-
-        $this->useCase->execute($this->client, $event);
-
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('invalid relay URL', $replies[0]->getMessage());
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 
@@ -320,15 +314,12 @@ final class ProcessAuthUseCaseTest extends TestCase
             'sig' => '',
         ]) ?? throw new RuntimeException('Invalid forged event');
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $forged));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'signature is invalid');
-            }));
-
-        $this->useCase->execute($this->client, $forged);
-
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('signature is invalid', $replies[0]->getMessage());
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
         $this->assertFalse($this->authManager->isAuthenticatedAs($this->client->getId(), $victim));
     }
@@ -338,15 +329,12 @@ final class ProcessAuthUseCaseTest extends TestCase
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEventWithTimestamp($challenge, 'wss://relay.example.com', time() - 700);
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'timestamp');
-            }));
-
-        $this->useCase->execute($this->client, $event);
-
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('timestamp', $replies[0]->getMessage());
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 
@@ -368,20 +356,16 @@ final class ProcessAuthUseCaseTest extends TestCase
             $this->authManager,
             new AuthEventVerifier($config, $policy, $clock),
             $this->eventValidator(),
-            $this->messenger,
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
             new NullLogger(),
         );
 
-        $this->connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($useCase->execute($this->client, $event));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'timestamp');
-            }));
-
-        $useCase->execute($this->client, $event);
-
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('timestamp', $replies[0]->getMessage());
         $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
     }
 

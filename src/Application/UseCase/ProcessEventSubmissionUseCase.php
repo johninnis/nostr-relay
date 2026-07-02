@@ -8,15 +8,12 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
-use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
-use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
+use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AuthChallengeInterface;
-use Innis\Nostr\Relay\Application\Service\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Service\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
-use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
@@ -25,20 +22,20 @@ use Throwable;
 
 final class ProcessEventSubmissionUseCase
 {
-    // Deliberate: accepted-event pipeline; heavy lifting is already delegated to EventAdmission/AcceptedEventPublisher/EventDeletionProcessor and per-message OK framing lives here per ADR-0003 — residual deps are irreducible glue.
+    // Deliberate: submission handler — admit, hand the accepted event to the pipeline, and frame failures as this message's OK reply per ADR-0003; the residual collaborators (gate, pipeline, challenge, registry, logger) are distinct concerns.
     public function __construct(
-        private readonly RelayEventStoreInterface $eventStore,
         private readonly EventAdmission $admission,
-        private readonly AcceptedEventPublisher $acceptedPublisher,
-        private readonly EventDeletionProcessor $deletionProcessor,
+        private readonly AcceptedEventPipeline $pipeline,
         private readonly AuthChallengeInterface $authChallenge,
         private readonly ClientRegistryInterface $registry,
-        private readonly ClientMessengerInterface $messenger,
         private readonly LoggerInterface $logger,
     ) {
     }
 
-    public function execute(RelayClient $client, Event $event): void
+    /**
+     * @return list<RelayMessage>
+     */
+    public function execute(RelayClient $client, Event $event): array
     {
         $eventId = $event->getId()->toHex();
         $kind = $event->getKind()->toInt();
@@ -52,76 +49,42 @@ final class ProcessEventSubmissionUseCase
             'client_id' => (string) $client->getId(),
         ]);
 
-        // Deliberate: rejections are caught and framed as this message's wire reply here (OK), not centralised in the router — see ADR-0003
+        // Deliberate: rejections are framed as this message's wire reply here (OK), not centralised in the router — see ADR-0003
         try {
             $this->admission->admit($client, $event);
 
-            if ($event->getKind()->isEphemeral()) {
-                $this->acceptedPublisher->publish($client, $event);
-                $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
-
-                return;
-            }
-
-            match ($this->eventStore->store($event)) {
-                EventStoreOutcome::Stored => $this->onStored($client, $event),
-                EventStoreOutcome::Duplicate => $this->onDuplicate($client, $event),
-                EventStoreOutcome::Superseded => $this->onSuperseded($client, $event),
-            };
+            return $this->pipeline->accept($client, $event);
         } catch (InvalidEventException $e) {
-            $this->messenger->send($client, new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage()));
             $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
+
+            return [new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage())];
         } catch (AuthRequiredException) {
-            if (null === $this->authChallenge->getChallenge($client->getId())) {
-                $this->messenger->send($client, new AuthMessage($this->authChallenge->getOrCreateChallenge($client->getId())));
-            }
-            $this->messenger->send($client, new OkMessage($event->getId(), false, 'auth-required: authentication required'));
             $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
+
+            $replies = [];
+            if (null === $this->authChallenge->getChallenge($client->getId())) {
+                $replies[] = new AuthMessage($this->authChallenge->getOrCreateChallenge($client->getId()));
+            }
+            $replies[] = new OkMessage($event->getId(), false, 'auth-required: authentication required');
+
+            return $replies;
         } catch (PolicyViolationException $e) {
-            $this->messenger->send($client, new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Event blocked', [
                 'event_id' => $eventId,
                 'pubkey' => $event->getPubkey()->toHex(),
                 'kind' => $kind,
                 'reason' => $e->getMessage(),
             ]);
+
+            return [new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage())];
         } catch (RateLimitException) {
-            $this->messenger->send($client, new OkMessage($event->getId(), false, 'rate-limited: slow down'));
             $this->logger->warning('Event rate-limited', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
+
+            return [new OkMessage($event->getId(), false, 'rate-limited: slow down')];
         } catch (Throwable $e) {
-            $this->messenger->send($client, new OkMessage($event->getId(), false, 'error: could not process event'));
             $this->logger->error('Event processing error', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'error' => $e->getMessage()]);
+
+            return [new OkMessage($event->getId(), false, 'error: could not process event')];
         }
-    }
-
-    private function onStored(RelayClient $client, Event $event): void
-    {
-        if ($event->isDeletion()) {
-            $this->deletionProcessor->process($event);
-        }
-
-        $this->acceptedPublisher->publish($client, $event);
-
-        $this->logger->debug('Event stored', [
-            'event_id' => $event->getId()->toHex(),
-            'pubkey' => $event->getPubkey()->toHex(),
-            'kind' => $event->getKind()->toInt(),
-        ]);
-    }
-
-    private function onDuplicate(RelayClient $client, Event $event): void
-    {
-        $this->messenger->send($client, new OkMessage($event->getId(), false, 'duplicate: event already exists'));
-        $this->logger->debug('Event duplicate', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex()]);
-    }
-
-    private function onSuperseded(RelayClient $client, Event $event): void
-    {
-        $this->messenger->send($client, new OkMessage($event->getId(), false, 'duplicate: newer version already exists'));
-        $this->logger->debug('Event superseded', [
-            'event_id' => $event->getId()->toHex(),
-            'pubkey' => $event->getPubkey()->toHex(),
-            'kind' => $event->getKind()->toInt(),
-        ]);
     }
 }

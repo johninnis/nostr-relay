@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -63,7 +64,6 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->useCase = new CountSubscriptionUseCase(
             $this->eventStore,
             $admission,
-            $messenger,
             new NullLogger(),
         );
     }
@@ -76,6 +76,21 @@ final class CountSubscriptionUseCaseTest extends TestCase
         );
     }
 
+    /**
+     * @param iterable<RelayMessage> $replies
+     *
+     * @return list<RelayMessage>
+     */
+    private function replies(iterable $replies): array
+    {
+        $collected = [];
+        foreach ($replies as $reply) {
+            $collected[] = $reply;
+        }
+
+        return $collected;
+    }
+
     public function testSuccessfulCountReturnsCountMessage(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
@@ -84,19 +99,15 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(42);
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = CountMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->makeClient(), $subId, $filters));
 
-                return null !== $message && 'count-1' === (string) $message->getSubscriptionId() && 42 === $message->getCount();
-            }));
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $subId, $filters);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(CountMessage::class, $replies[0]);
+        $this->assertSame('count-1', (string) $replies[0]->getSubscriptionId());
+        $this->assertSame(42, $replies[0]->getCount());
     }
 
-    public function testBeyondScopeSendsNoticeAndChallengeThenCount(): void
+    public function testBeyondScopeSendsNoticeAndChallengeThenReturnsCount(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
 
@@ -114,14 +125,16 @@ final class CountSubscriptionUseCaseTest extends TestCase
         });
         $client = $this->makeClient($connection);
 
-        $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
+        $replies = $this->replies($this->useCase->execute($client, $subId, new FilterCollection([new Filter()])));
 
         $this->assertSame('NOTICE', $sent[0][0]);
         $this->assertSame('AUTH', $sent[1][0]);
-        $this->assertSame('COUNT', $sent[2][0]);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(CountMessage::class, $replies[0]);
+        $this->assertSame(7, $replies[0]->getCount());
     }
 
-    public function testPolicyViolationSendsClosedMessage(): void
+    public function testPolicyViolationReturnsClosedMessage(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
         $filters = new FilterCollection([new Filter()]);
@@ -129,19 +142,14 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->policy->method('allowSubscription')
             ->willThrowException(new PolicyViolationException('not allowed'));
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = ClosedMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->makeClient(), $subId, $filters));
 
-                return null !== $message && str_contains($message->getMessage(), 'blocked');
-            }));
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $subId, $filters);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
+        $this->assertStringContainsString('blocked', $replies[0]->getMessage());
     }
 
-    public function testRateLimitSendsClosedMessage(): void
+    public function testRateLimitReturnsClosedMessage(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
         $filters = new FilterCollection([new Filter()]);
@@ -149,15 +157,10 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = ClosedMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->makeClient(), $subId, $filters));
 
-                return null !== $message && str_contains($message->getMessage(), 'rate-limited');
-            }));
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $subId, $filters);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
+        $this->assertStringContainsString('rate-limited', $replies[0]->getMessage());
     }
 }

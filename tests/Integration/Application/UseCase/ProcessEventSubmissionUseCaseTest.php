@@ -18,6 +18,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
@@ -27,6 +28,7 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
@@ -98,21 +100,24 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $this->clientManager,
             $distributor,
             new AmphpDeferredExecutor(),
-            $messenger,
+        );
+
+        $pipeline = new AcceptedEventPipeline(
+            $eventStore,
+            $acceptedEventPublisher,
+            new EventDeletionProcessor($eventStore, $logger),
+            $logger,
         );
 
         return new ProcessEventSubmissionUseCase(
-            $eventStore,
             new EventAdmission(
                 $this->policy,
                 $this->rateLimiter,
                 new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
             ),
-            $acceptedEventPublisher,
-            new EventDeletionProcessor($eventStore, $logger),
+            $pipeline,
             new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
             $this->clientManager,
-            $messenger,
             $logger,
         );
     }
@@ -123,6 +128,21 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
+    }
+
+    /**
+     * @param iterable<RelayMessage> $replies
+     *
+     * @return list<RelayMessage>
+     */
+    private function replies(iterable $replies): array
+    {
+        $collected = [];
+        foreach ($replies as $reply) {
+            $collected[] = $reply;
+        }
+
+        return $collected;
     }
 
     private function createSignedEvent(?EventKind $kind = null): Event
@@ -163,20 +183,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
 
-                return 'OK' === $data[0] && true === $data[2];
-            }));
-        $client = $this->makeClient($connection);
-
-        $useCase->execute($client, $event);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
     }
 
-    public function testDuplicateEventSendsNotOk(): void
+    public function testDuplicateEventReturnsNotOk(): void
     {
         $event = $this->createSignedEvent();
 
@@ -188,20 +202,15 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
 
-                return 'OK' === $data[0] && false === $data[2] && 'duplicate: event already exists' === $data[3];
-            }));
-        $client = $this->makeClient($connection);
-
-        $useCase->execute($client, $event);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertSame('duplicate: event already exists', $replies[0]->getMessage());
     }
 
-    public function testSupersededEventSendsNotOkWithNewerVersionMessage(): void
+    public function testSupersededEventReturnsNotOkWithNewerVersionMessage(): void
     {
         $event = $this->createSignedEvent();
 
@@ -213,58 +222,45 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
 
-                return 'OK' === $data[0] && false === $data[2] && 'duplicate: newer version already exists' === $data[3];
-            }));
-        $client = $this->makeClient($connection);
-
-        $useCase->execute($client, $event);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertSame('duplicate: newer version already exists', $replies[0]->getMessage());
     }
 
-    public function testPolicyViolationSendsBlockedMessage(): void
+    public function testPolicyViolationReturnsBlockedMessage(): void
     {
         $event = $this->createSignedEvent();
 
         $this->policy->method('allowEventSubmission')
             ->willThrowException(new PolicyViolationException('not allowed'));
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'blocked');
-            }));
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $event);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('blocked', $replies[0]->getMessage());
     }
 
-    public function testRateLimitSendsRateLimitedMessage(): void
+    public function testRateLimitReturnsRateLimitedMessage(): void
     {
         $event = $this->createSignedEvent();
 
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = OkMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-                return null !== $message && !$message->isAccepted() && str_contains($message->getMessage(), 'rate-limited');
-            }));
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $event);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertStringContainsString('rate-limited', $replies[0]->getMessage());
     }
 
-    public function testEphemeralEventSkipsStorageAndSendsOk(): void
+    public function testEphemeralEventSkipsStorageAndReturnsOk(): void
     {
         $event = $this->createSignedEvent(EventKind::fromInt(20001));
 
@@ -276,42 +272,27 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
 
-                return 'OK' === $data[0] && true === $data[2];
-            }));
-        $client = $this->makeClient($connection);
-
-        $useCase->execute($client, $event);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
     }
 
-    public function testAuthRequiredSendsAuthChallengeAndOk(): void
+    public function testAuthRequiredReturnsAuthChallengeAndOk(): void
     {
         $event = $this->createSignedEvent();
 
         $this->policy->method('allowEventSubmission')
             ->willThrowException(new AuthRequiredException('auth needed'));
 
-        $sentMessages = [];
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connection->method('sendText')
-            ->willReturnCallback(static function (string $json) use (&$sentMessages): void {
-                $sentMessages[] = $json;
-            });
-        $client = $this->makeClient($connection);
+        $replies = $this->replies($this->useCase->execute($this->client, $event));
 
-        $this->useCase->execute($client, $event);
-
-        $this->assertCount(2, $sentMessages);
-        $this->assertNotNull(AuthMessage::fromJson($sentMessages[0]));
-        $ok = OkMessage::fromJson($sentMessages[1]);
-        $this->assertNotNull($ok);
-        $this->assertFalse($ok->isAccepted());
-        $this->assertStringContainsString('auth-required', $ok->getMessage());
+        $this->assertCount(2, $replies);
+        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
+        $this->assertInstanceOf(OkMessage::class, $replies[1]);
+        $this->assertFalse($replies[1]->isAccepted());
+        $this->assertStringContainsString('auth-required', $replies[1]->getMessage());
     }
 
     public function testDeletionEventTriggersDeleteByEventIds(): void
@@ -350,17 +331,11 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $data = json_decode($json, true);
-                assert(is_array($data));
+        $replies = $this->replies($useCase->execute($this->makeClient(), $deletionEvent));
 
-                return 'OK' === $data[0] && true === $data[2];
-            }));
-        $client = $this->makeClient($connection);
-
-        $useCase->execute($client, $deletionEvent);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
     }
 
     public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
@@ -391,7 +366,11 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $useCase->execute($this->client, $deletionEvent);
+        $replies = $this->replies($useCase->execute($this->client, $deletionEvent));
+
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
     }
 
     public function testDeletionEventTriggersDeleteByCoordinates(): void
@@ -421,7 +400,11 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $useCase->execute($this->client, $event);
+        $replies = $this->replies($useCase->execute($this->client, $event));
+
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
     }
 
     public function testDeletionEventSkipsCoordinatesOwnedBySomeoneElse(): void
@@ -443,7 +426,11 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $useCase->execute($this->client, $deletionEvent);
+        $replies = $this->replies($useCase->execute($this->client, $deletionEvent));
+
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
     }
 
     public function testNonDeletionEventDoesNotTriggerDeletion(): void
@@ -457,6 +444,10 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $useCase->execute($this->client, $event);
+        $replies = $this->replies($useCase->execute($this->client, $event));
+
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertTrue($replies[0]->isAccepted());
     }
 }

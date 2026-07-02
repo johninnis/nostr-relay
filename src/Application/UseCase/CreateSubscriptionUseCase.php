@@ -8,9 +8,9 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
-use Innis\Nostr\Relay\Application\Service\ClientMessengerInterface;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionRegistryInterface;
@@ -22,20 +22,22 @@ use Throwable;
 
 final class CreateSubscriptionUseCase
 {
-    // Deliberate: linear subscription-creation flow across admission, registry, stored-event streaming, client reply and deferred execution plus logging; each collaborator is a distinct concern, not a decomposable bundle.
+    // Deliberate: linear subscription-creation flow across admission, registry, stored-event streaming and deferred execution plus logging; each collaborator is a distinct concern, not a decomposable bundle.
     public function __construct(
         private readonly SubscriptionAdmission $admission,
         private readonly SubscriptionRegistryInterface $subscriptionManager,
         private readonly StoredEventStreamer $storedEventStreamer,
-        private readonly ClientMessengerInterface $messenger,
         private readonly DeferredExecutorInterface $deferredExecutor,
         private readonly LoggerInterface $logger,
     ) {
     }
 
-    public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): void
+    /**
+     * @return list<RelayMessage>
+     */
+    public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): array
     {
-        // Deliberate: rejections are caught and framed as this message's wire reply here (CLOSED), not centralised in the router — see ADR-0003
+        // Deliberate: rejections are framed as this message's wire reply here (CLOSED), not centralised in the router — see ADR-0003
         try {
             $modifiedFilters = $this->admission->admit($client, $filters)->getFilters();
 
@@ -44,24 +46,28 @@ final class CreateSubscriptionUseCase
             $this->subscriptionManager->addSubscription($client->getId(), $subscription, $filters);
 
             $this->deferredExecutor->defer(fn () => $this->storedEventStreamer->stream($client, $subscription, $modifiedFilters));
+
+            return [];
         } catch (PolicyViolationException $e) {
-            $this->messenger->send($client, new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage()));
             $this->logger->warning('Subscription rejected by policy', [
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'reason' => $e->getMessage(),
                 'filters' => $filters->toJsonArray(),
             ]);
+
+            return [new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage())];
         } catch (RateLimitException) {
-            $this->messenger->send($client, new ClosedMessage($subscriptionId, 'rate-limited: slow down'));
+            return [new ClosedMessage($subscriptionId, 'rate-limited: slow down')];
         } catch (Throwable $e) {
             $this->subscriptionManager->removeSubscription($client->getId(), $subscriptionId);
-            $this->messenger->send($client, new ClosedMessage($subscriptionId, 'error: invalid subscription'));
             $this->logger->error('Subscription creation error', [
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,
                 'error' => $e->getMessage(),
             ]);
+
+            return [new ClosedMessage($subscriptionId, 'error: invalid subscription')];
         }
     }
 }

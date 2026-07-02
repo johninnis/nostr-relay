@@ -9,6 +9,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -65,7 +66,6 @@ final class CreateSubscriptionUseCaseTest extends TestCase
             $admission,
             $this->subscriptionManager,
             $storedEventStreamer,
-            $messenger,
             new AmphpDeferredExecutor(),
             $logger,
         );
@@ -81,6 +81,21 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         );
     }
 
+    /**
+     * @param iterable<RelayMessage> $replies
+     *
+     * @return list<RelayMessage>
+     */
+    private function replies(iterable $replies): array
+    {
+        $collected = [];
+        foreach ($replies as $reply) {
+            $collected[] = $reply;
+        }
+
+        return $collected;
+    }
+
     public function testSuccessfulSubscriptionCreation(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
@@ -89,8 +104,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
-        $this->useCase->execute($this->client, $subId, $filters);
+        $replies = $this->replies($this->useCase->execute($this->client, $subId, $filters));
 
+        $this->assertSame([], $replies);
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
     }
 
@@ -112,8 +128,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         });
         $client = $this->makeClient($connection);
 
-        $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
+        $replies = $this->replies($this->useCase->execute($client, $subId, new FilterCollection([new Filter()])));
 
+        $this->assertSame([], $replies);
         $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
         $this->assertContains('NOTICE', $types);
         $this->assertContains('AUTH', $types);
@@ -139,8 +156,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
         $this->authManager->getOrCreateChallenge($client->getId());
 
-        $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
+        $replies = $this->replies($this->useCase->execute($client, $subId, new FilterCollection([new Filter()])));
 
+        $this->assertSame([], $replies);
         $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
         $this->assertContains('AUTH', $types, 'a beyond-scope request must re-issue an AUTH challenge even if one was already issued earlier');
     }
@@ -152,12 +170,13 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), true));
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
-        $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))]));
+        $replies = $this->replies($this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))])));
 
+        $this->assertSame([], $replies);
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
     }
 
-    public function testPolicyViolationSendsClosedMessage(): void
+    public function testPolicyViolationReturnsClosedMessage(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
         $filters = new FilterCollection([new Filter()]);
@@ -165,21 +184,15 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('allowSubscription')
             ->willThrowException(new PolicyViolationException('subscription not allowed'));
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = ClosedMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $subId, $filters));
 
-                return null !== $message && str_contains($message->getMessage(), 'blocked');
-            }));
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $subId, $filters);
-
-        $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($client->getId()));
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
+        $this->assertStringContainsString('blocked', $replies[0]->getMessage());
+        $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
     }
 
-    public function testRateLimitSendsClosedMessage(): void
+    public function testRateLimitReturnsClosedMessage(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
         $filters = new FilterCollection([new Filter()]);
@@ -187,19 +200,14 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = ClosedMessage::fromJson($json);
+        $replies = $this->replies($this->useCase->execute($this->client, $subId, $filters));
 
-                return null !== $message && str_contains($message->getMessage(), 'rate-limited');
-            }));
-        $client = $this->makeClient($connection);
-
-        $this->useCase->execute($client, $subId, $filters);
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
+        $this->assertStringContainsString('rate-limited', $replies[0]->getMessage());
     }
 
-    public function testSubscriptionLimitSendsClosedMessage(): void
+    public function testSubscriptionLimitReturnsClosedMessage(): void
     {
         $this->policy->method('allowSubscription')
             ->willReturnCallback(static function (RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): void {
@@ -211,18 +219,15 @@ final class CreateSubscriptionUseCaseTest extends TestCase
             ->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
-        $sent = [];
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
-            $sent[] = $json;
-        });
-        $client = $this->makeClient($connection);
+        $client = $this->makeClient();
 
-        $this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([new Filter()]));
-        $this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([new Filter()]));
+        $replies = [
+            ...$this->replies($this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([new Filter()]))),
+            ...$this->replies($this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([new Filter()]))),
+        ];
 
-        $closed = array_values(array_filter(array_map(ClosedMessage::fromJson(...), $sent)));
-        $this->assertNotEmpty($closed);
+        $closed = array_values(array_filter($replies, static fn (RelayMessage $message): bool => $message instanceof ClosedMessage));
+        $this->assertCount(1, $closed);
         $this->assertStringContainsString('blocked', $closed[0]->getMessage());
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($client->getId()));
     }

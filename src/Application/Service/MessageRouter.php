@@ -4,33 +4,15 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
-use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
 final class MessageRouter
 {
-    // Deliberate: protocol dispatcher — one use case per client-message verb (EVENT/REQ/CLOSE/AUTH/COUNT) plus deserialiser, messenger and logger; parse, dispatch, reply and log are irreducible concerns of routing.
     public function __construct(
-        private readonly ProcessEventSubmissionUseCase $processEventSubmissionUseCase,
-        private readonly CreateSubscriptionUseCase $createSubscriptionUseCase,
-        private readonly CloseSubscriptionUseCase $closeSubscriptionUseCase,
-        private readonly ProcessAuthUseCase $processAuthUseCase,
-        private readonly CountSubscriptionUseCase $countSubscriptionUseCase,
-        private readonly MessageDeserialiserInterface $deserialiser,
+        private readonly ClientMessageDispatcher $dispatcher,
         private readonly ClientMessengerInterface $messenger,
         private readonly LoggerInterface $logger,
     ) {
@@ -39,50 +21,9 @@ final class MessageRouter
     public function route(RelayClient $client, string $message): void
     {
         try {
-            $clientMessage = $this->deserialiser->deserialiseClientMessage($message);
-
-            if (null === $clientMessage) {
-                $this->messenger->send($client, new NoticeMessage('Invalid message'));
-                $this->logger->warning('Invalid message received', [
-                    'client_id' => (string) $client->getId(),
-                    'message' => mb_substr($message, 0, 200),
-                ]);
-
-                return;
+            foreach ($this->dispatcher->dispatch($client, $message) as $reply) {
+                $this->messenger->send($client, $reply);
             }
-
-            match (true) {
-                $clientMessage instanceof EventMessage => $this->processEventSubmissionUseCase->execute(
-                    $client,
-                    $clientMessage->getEvent()
-                ),
-                $clientMessage instanceof ReqMessage => $this->createSubscriptionUseCase->execute(
-                    $client,
-                    $clientMessage->getSubscriptionId(),
-                    $clientMessage->getFilters()
-                ),
-                $clientMessage instanceof CloseMessage => $this->closeSubscriptionUseCase->execute(
-                    $client,
-                    $clientMessage->getSubscriptionId()
-                ),
-                $clientMessage instanceof AuthMessage => $this->processAuthUseCase->execute(
-                    $client,
-                    $clientMessage->getEvent()
-                ),
-                $clientMessage instanceof CountMessage => $this->countSubscriptionUseCase->execute(
-                    $client,
-                    $clientMessage->getSubscriptionId(),
-                    $clientMessage->getFilters()
-                ),
-                default => $this->messenger->send($client, new NoticeMessage('Unknown message type')),
-            };
-        } catch (InvalidArgumentException $e) {
-            $this->messenger->send($client, new NoticeMessage('Invalid message'));
-            $this->logger->warning('Invalid message received', [
-                'client_id' => (string) $client->getId(),
-                'error' => $e->getMessage(),
-                'message' => mb_substr($message, 0, 200),
-            ]);
         } catch (Throwable $e) {
             $this->messenger->send($client, new NoticeMessage('Internal server error'));
             $this->logger->error('Message routing error', [

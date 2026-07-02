@@ -34,16 +34,23 @@ use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
+use Innis\Nostr\Relay\Application\Service\AuthMessageHandler;
+use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\CloseMessageHandler;
+use Innis\Nostr\Relay\Application\Service\CountMessageHandler;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
+use Innis\Nostr\Relay\Application\Service\EventMessageHandler;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\ReqMessageHandler;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
@@ -120,17 +127,20 @@ final class MessageRouterTest extends TestCase
             $this->clientManager,
             $distributor,
             new AmphpDeferredExecutor(),
-            $messenger,
+        );
+
+        $acceptedEventPipeline = new AcceptedEventPipeline(
+            $this->eventStore,
+            $acceptedEventPublisher,
+            new EventDeletionProcessor($this->eventStore, $logger),
+            $logger,
         );
 
         $processEvent = new ProcessEventSubmissionUseCase(
-            $this->eventStore,
             $eventAdmission,
-            $acceptedEventPublisher,
-            new EventDeletionProcessor($this->eventStore, $logger),
+            $acceptedEventPipeline,
             $this->authManager,
             $this->clientManager,
-            $messenger,
             $logger,
         );
 
@@ -146,7 +156,6 @@ final class MessageRouterTest extends TestCase
             $admission,
             $this->subscriptionManager,
             $storedEventStreamer,
-            $messenger,
             new AmphpDeferredExecutor(),
             $logger,
         );
@@ -160,28 +169,27 @@ final class MessageRouterTest extends TestCase
             $this->authManager,
             new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $eventValidator,
-            $messenger,
-            new SubscriptionReevaluator($this->subscriptionManager, $createSubscription),
+            new SubscriptionReevaluator($this->subscriptionManager, $createSubscription, $messenger),
             $logger,
         );
 
         $countSubscription = new CountSubscriptionUseCase(
             $this->eventStore,
             $admission,
-            $messenger,
             $logger,
         );
 
-        $this->router = new MessageRouter(
-            $processEvent,
-            $createSubscription,
-            $closeSubscription,
-            $processAuth,
-            $countSubscription,
+        $dispatcher = new ClientMessageDispatcher(
             $this->deserialiser,
-            $messenger,
             $logger,
+            new EventMessageHandler($processEvent),
+            new ReqMessageHandler($createSubscription),
+            new CloseMessageHandler($closeSubscription),
+            new AuthMessageHandler($processAuth),
+            new CountMessageHandler($countSubscription),
         );
+
+        $this->router = new MessageRouter($dispatcher, $messenger, $logger);
 
         $this->client = $this->makeClient();
     }

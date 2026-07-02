@@ -12,6 +12,7 @@ final readonly class SubscriptionReevaluator
     public function __construct(
         private SubscriptionLookupInterface $subscriptionManager,
         private CreateSubscriptionUseCase $createSubscription,
+        private ClientMessengerInterface $messenger,
     ) {
     }
 
@@ -24,7 +25,9 @@ final readonly class SubscriptionReevaluator
                 continue;
             }
 
-            $this->createSubscription->execute($client, $subscription->getId(), $originalFilters);
+            foreach ($this->createSubscription->execute($client, $subscription->getId(), $originalFilters) as $reply) {
+                $this->messenger->send($client, $reply);
+            }
         }
     }
 }

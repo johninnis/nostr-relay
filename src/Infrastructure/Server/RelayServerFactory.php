@@ -21,17 +21,24 @@ use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
+use Innis\Nostr\Relay\Application\Service\AuthMessageHandler;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
+use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\CloseMessageHandler;
+use Innis\Nostr\Relay\Application\Service\CountMessageHandler;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
+use Innis\Nostr\Relay\Application\Service\EventMessageHandler;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\ReqMessageHandler;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
@@ -138,18 +145,21 @@ final class RelayServerFactory
         $acceptedEventPublisher = new AcceptedEventPublisher(
             $clientManager,
             $eventDistributor,
-            $deferredExecutor,
-            $clientMessenger
+            $deferredExecutor
+        );
+
+        $acceptedEventPipeline = new AcceptedEventPipeline(
+            $this->eventStore,
+            $acceptedEventPublisher,
+            $eventDeletionProcessor,
+            $this->logger
         );
 
         $processEventUseCase = new ProcessEventSubmissionUseCase(
-            $this->eventStore,
             $eventAdmission,
-            $acceptedEventPublisher,
-            $eventDeletionProcessor,
+            $acceptedEventPipeline,
             $authManager,
             $clientManager,
-            $clientMessenger,
             $this->logger
         );
 
@@ -165,7 +175,6 @@ final class RelayServerFactory
             $subscriptionAdmission,
             $subscriptionManager,
             $storedEventStreamer,
-            $clientMessenger,
             $deferredExecutor,
             $this->logger
         );
@@ -177,7 +186,8 @@ final class RelayServerFactory
 
         $subscriptionReevaluator = new SubscriptionReevaluator(
             $subscriptionManager,
-            $createSubscriptionUseCase
+            $createSubscriptionUseCase,
+            $clientMessenger
         );
 
         $authEventVerifier = new AuthEventVerifier($this->config, $this->policy, new SystemClock());
@@ -186,7 +196,6 @@ final class RelayServerFactory
             $authManager,
             $authEventVerifier,
             $eventValidator,
-            $clientMessenger,
             $subscriptionReevaluator,
             $this->logger
         );
@@ -194,19 +203,23 @@ final class RelayServerFactory
         $countSubscriptionUseCase = new CountSubscriptionUseCase(
             $this->eventStore,
             $subscriptionAdmission,
-            $clientMessenger,
             $this->logger
         );
 
         $deserialiser = new JsonMessageDeserialiser();
 
-        $messageRouter = new MessageRouter(
-            $processEventUseCase,
-            $createSubscriptionUseCase,
-            $closeSubscriptionUseCase,
-            $processAuthUseCase,
-            $countSubscriptionUseCase,
+        $messageDispatcher = new ClientMessageDispatcher(
             $deserialiser,
+            $this->logger,
+            new EventMessageHandler($processEventUseCase),
+            new ReqMessageHandler($createSubscriptionUseCase),
+            new CloseMessageHandler($closeSubscriptionUseCase),
+            new AuthMessageHandler($processAuthUseCase),
+            new CountMessageHandler($countSubscriptionUseCase),
+        );
+
+        $messageRouter = new MessageRouter(
+            $messageDispatcher,
             $clientMessenger,
             $this->logger
         );
