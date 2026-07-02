@@ -22,7 +22,7 @@ use Throwable;
 
 final class ProcessEventSubmissionUseCase
 {
-    // Deliberate: submission handler — admit, hand the accepted event to the pipeline, and frame failures as this message's OK reply per ADR-0003; the residual collaborators (gate, pipeline, challenge, registry, logger) are distinct concerns.
+    // Deliberate: submission handler coordinates admission, pipeline, challenge, registry and logging — see ADR-0010
     public function __construct(
         private readonly EventAdmission $admission,
         private readonly AcceptedEventPipeline $pipeline,

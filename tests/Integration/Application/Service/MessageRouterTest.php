@@ -37,20 +37,15 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
-use Innis\Nostr\Relay\Application\Service\AuthMessageHandler;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
-use Innis\Nostr\Relay\Application\Service\CloseMessageHandler;
-use Innis\Nostr\Relay\Application\Service\CountMessageHandler;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
-use Innis\Nostr\Relay\Application\Service\EventMessageHandler;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
-use Innis\Nostr\Relay\Application\Service\ReqMessageHandler;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
@@ -182,11 +177,11 @@ final class MessageRouterTest extends TestCase
         $dispatcher = new ClientMessageDispatcher(
             $this->deserialiser,
             $logger,
-            new EventMessageHandler($processEvent),
-            new ReqMessageHandler($createSubscription),
-            new CloseMessageHandler($closeSubscription),
-            new AuthMessageHandler($processAuth),
-            new CountMessageHandler($countSubscription),
+            $processEvent,
+            $createSubscription,
+            $closeSubscription,
+            $processAuth,
+            $countSubscription,
         );
 
         $this->router = new MessageRouter($dispatcher, $messenger, $logger);

@@ -28,7 +28,7 @@ final class InMemoryClientRegistry implements ClientRegistryInterface
     /** @var array<string, SessionCounters> */
     private array $counters = [];
 
-    // Deliberate: registry needs metrics, id generation and logging plus a max-connections bound; three ports and a scalar limit, nothing to decompose.
+    // Deliberate: registry coordinates metrics, id generation, logging and a max-connections bound — see ADR-0010
     public function __construct(
         private readonly MetricsCollectorInterface $metrics,
         private readonly RandomBytesGeneratorInterface $randomBytes,

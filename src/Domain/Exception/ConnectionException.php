@@ -9,7 +9,7 @@ use Throwable;
 
 final class ConnectionException extends RelayException
 {
-    // Deliberate: mirrors the PHP exception constructor (message, code, previous) plus the IpAddress context this fault carries; the shape is fixed by Throwable, not a decomposable design.
+    // Deliberate: mirrors the Throwable constructor plus one IpAddress context field — see ADR-0010
     public function __construct(
         string $message = '',
         int $code = 0,

@@ -21,7 +21,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
@@ -114,21 +113,6 @@ final class ProcessAuthUseCaseTest extends TestCase
         );
     }
 
-    /**
-     * @param iterable<RelayMessage> $replies
-     *
-     * @return list<RelayMessage>
-     */
-    private function replies(iterable $replies): array
-    {
-        $collected = [];
-        foreach ($replies as $reply) {
-            $collected[] = $reply;
-        }
-
-        return $collected;
-    }
-
     private function buildReevaluator(RelayPolicyInterface $policy, RelayEventStoreInterface $eventStore): SubscriptionReevaluator
     {
         $admission = new SubscriptionAdmission(
@@ -170,7 +154,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -217,7 +201,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         );
 
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
-        $replies = $this->replies($useCase->execute($this->client, $this->createAuthEvent($challenge, 'wss://relay.example.com')));
+        $replies = $useCase->execute($this->client, $this->createAuthEvent($challenge, 'wss://relay.example.com'));
 
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertTrue($replies[0]->isAccepted());
@@ -246,7 +230,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
         );
 
-        $replies = $this->replies($useCase->execute($this->client, $event));
+        $replies = $useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -259,7 +243,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     {
         $event = $this->createAuthEvent('some-challenge', 'wss://relay.example.com');
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(2, $replies);
         $this->assertInstanceOf(AuthMessage::class, $replies[0]);
@@ -275,7 +259,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent('wrong-challenge', 'wss://relay.example.com');
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -289,7 +273,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://wrong-relay.example.com');
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -314,7 +298,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             EventContent::fromString(''),
         ));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $forged));
+        $replies = $this->useCase->execute($this->client, $forged);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -329,7 +313,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEventWithTimestamp($challenge, 'wss://relay.example.com', time() - 700);
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -360,7 +344,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
         );
 
-        $replies = $this->replies($useCase->execute($this->client, $event));
+        $replies = $useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);

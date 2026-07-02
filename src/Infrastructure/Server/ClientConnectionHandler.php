@@ -24,7 +24,7 @@ final class ClientConnectionHandler
 {
     private const int DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
 
-    // Deliberate: per-connection lifecycle needs the client registry, disconnection handler, router and connection gate plus logging and an idle timeout; distinct collaborators bound by the connection loop.
+    // Deliberate: per-connection lifecycle coordinates registry, disconnection, router, gate, logging and timeout — see ADR-0010
     public function __construct(
         private readonly InMemoryClientRegistry $clientManager,
         private readonly ClientDisconnectionHandler $disconnectionHandler,

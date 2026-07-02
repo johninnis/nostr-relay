@@ -18,7 +18,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
 
 final class RelayInstance
 {
-    // Deliberate: the assembled relay aggregate — the server plus the registries and metrics it exposes for lifecycle and inspection; an assembled whole, not a behavioural unit to split.
+    // Deliberate: assembled relay aggregate of the server and the registries it exposes — see ADR-0010
     public function __construct(
         private readonly AmphpRelayServer $server,
         private readonly EventDistributor $distributor,

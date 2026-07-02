@@ -38,7 +38,7 @@ final class AmphpRelayServer
 
     private ?SocketHttpServer $server = null;
 
-    // Deliberate: server adapter wiring config, connection handler, NIP-11 handler and logger with optional HTTP and error handlers; a composition seam, not a decomposable unit.
+    // Deliberate: server adapter wires config, handlers, logger and optional HTTP/error handlers — see ADR-0010
     public function __construct(
         private readonly RelayConfigInterface $config,
         private readonly ClientConnectionHandler $connectionHandler,

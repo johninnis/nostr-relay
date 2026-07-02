@@ -18,7 +18,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
@@ -131,21 +130,6 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         );
     }
 
-    /**
-     * @param iterable<RelayMessage> $replies
-     *
-     * @return list<RelayMessage>
-     */
-    private function replies(iterable $replies): array
-    {
-        $collected = [];
-        foreach ($replies as $reply) {
-            $collected[] = $reply;
-        }
-
-        return $collected;
-    }
-
     private function createSignedEvent(?EventKind $kind = null): Event
     {
         $keyPair = KeyPair::generate($this->signatureService());
@@ -184,7 +168,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
+        $replies = $useCase->execute($this->makeClient(), $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -203,7 +187,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
+        $replies = $useCase->execute($this->makeClient(), $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -223,7 +207,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
+        $replies = $useCase->execute($this->makeClient(), $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -238,7 +222,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->policy->method('allowEventSubmission')
             ->willThrowException(new PolicyViolationException('not allowed'));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -253,7 +237,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -273,7 +257,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore, $metrics);
 
-        $replies = $this->replies($useCase->execute($this->makeClient(), $event));
+        $replies = $useCase->execute($this->makeClient(), $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -287,7 +271,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->policy->method('allowEventSubmission')
             ->willThrowException(new AuthRequiredException('auth needed'));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $event));
+        $replies = $this->useCase->execute($this->client, $event);
 
         $this->assertCount(2, $replies);
         $this->assertInstanceOf(AuthMessage::class, $replies[0]);
@@ -332,7 +316,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $replies = $this->replies($useCase->execute($this->makeClient(), $deletionEvent));
+        $replies = $useCase->execute($this->makeClient(), $deletionEvent);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -367,7 +351,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $replies = $this->replies($useCase->execute($this->client, $deletionEvent));
+        $replies = $useCase->execute($this->client, $deletionEvent);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -401,7 +385,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $replies = $this->replies($useCase->execute($this->client, $event));
+        $replies = $useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -427,7 +411,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $replies = $this->replies($useCase->execute($this->client, $deletionEvent));
+        $replies = $useCase->execute($this->client, $deletionEvent);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
@@ -445,7 +429,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $useCase = $this->makeUseCase($eventStore);
 
-        $replies = $this->replies($useCase->execute($this->client, $event));
+        $replies = $useCase->execute($this->client, $event);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);

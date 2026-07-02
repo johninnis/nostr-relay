@@ -14,13 +14,13 @@ final readonly class ClientId implements Stringable
     ) {
     }
 
-    // Deliberate: trusted construction from server-generated random bytes, not untrusted input; hex-encoding is total.
+    // Deliberate: minted from server random bytes, not parsed — see ADR-0011
     public static function fromBytes(string $bytes): self
     {
         return new self(bin2hex($bytes));
     }
 
-    // Deliberate: an opaque server-side identifier with no validity constraint to enforce; construction is total.
+    // Deliberate: opaque server-minted id, not parsed — see ADR-0011
     public static function fromString(string $value): self
     {
         return new self($value);

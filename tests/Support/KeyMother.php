@@ -17,9 +17,6 @@ final class KeyMother
     public const BOB_PRIVATE_KEY_HEX = '0000000000000000000000000000000000000000000000000000000000000002';
     public const BOB_PUBLIC_KEY_HEX = 'c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5';
 
-    public const CAROL_PRIVATE_KEY_HEX = '0000000000000000000000000000000000000000000000000000000000000003';
-    public const CAROL_PUBLIC_KEY_HEX = 'f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9';
-
     public static function alice(): KeyPair
     {
         return self::keyPair(self::ALICE_PRIVATE_KEY_HEX, self::ALICE_PUBLIC_KEY_HEX);
@@ -30,11 +27,6 @@ final class KeyMother
         return self::keyPair(self::BOB_PRIVATE_KEY_HEX, self::BOB_PUBLIC_KEY_HEX);
     }
 
-    public static function carol(): KeyPair
-    {
-        return self::keyPair(self::CAROL_PRIVATE_KEY_HEX, self::CAROL_PUBLIC_KEY_HEX);
-    }
-
     public static function alicePublicKey(): PublicKey
     {
         return self::alice()->getPublicKey();
@@ -43,11 +35,6 @@ final class KeyMother
     public static function bobPublicKey(): PublicKey
     {
         return self::bob()->getPublicKey();
-    }
-
-    public static function carolPublicKey(): PublicKey
-    {
-        return self::carol()->getPublicKey();
     }
 
     private static function keyPair(string $privateKeyHex, string $publicKeyHex): KeyPair

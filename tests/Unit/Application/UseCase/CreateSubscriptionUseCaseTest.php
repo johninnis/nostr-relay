@@ -81,21 +81,6 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         );
     }
 
-    /**
-     * @param iterable<RelayMessage> $replies
-     *
-     * @return list<RelayMessage>
-     */
-    private function replies(iterable $replies): array
-    {
-        $collected = [];
-        foreach ($replies as $reply) {
-            $collected[] = $reply;
-        }
-
-        return $collected;
-    }
-
     public function testSuccessfulSubscriptionCreation(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
@@ -104,7 +89,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $subId, $filters));
+        $replies = $this->useCase->execute($this->client, $subId, $filters);
 
         $this->assertSame([], $replies);
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
@@ -128,7 +113,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         });
         $client = $this->makeClient($connection);
 
-        $replies = $this->replies($this->useCase->execute($client, $subId, new FilterCollection([new Filter()])));
+        $replies = $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
 
         $this->assertSame([], $replies);
         $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
@@ -156,7 +141,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
         $this->authManager->getOrCreateChallenge($client->getId());
 
-        $replies = $this->replies($this->useCase->execute($client, $subId, new FilterCollection([new Filter()])));
+        $replies = $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
 
         $this->assertSame([], $replies);
         $types = array_map(static fn (array $message): string => (string) $message[0], $sent);
@@ -170,7 +155,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), true));
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))])));
+        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))]));
 
         $this->assertSame([], $replies);
         $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
@@ -184,7 +169,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('allowSubscription')
             ->willThrowException(new PolicyViolationException('subscription not allowed'));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $subId, $filters));
+        $replies = $this->useCase->execute($this->client, $subId, $filters);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
@@ -200,7 +185,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $replies = $this->replies($this->useCase->execute($this->client, $subId, $filters));
+        $replies = $this->useCase->execute($this->client, $subId, $filters);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
@@ -222,8 +207,8 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $client = $this->makeClient();
 
         $replies = [
-            ...$this->replies($this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([new Filter()]))),
-            ...$this->replies($this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([new Filter()]))),
+            ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([new Filter()])),
+            ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([new Filter()])),
         ];
 
         $closed = array_values(array_filter($replies, static fn (RelayMessage $message): bool => $message instanceof ClosedMessage));

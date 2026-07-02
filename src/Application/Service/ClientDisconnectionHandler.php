@@ -9,7 +9,7 @@ use Psr\Log\LoggerInterface;
 
 final class ClientDisconnectionHandler
 {
-    // Deliberate: coordinates teardown across the client, subscription and auth registries plus logging; three distinct ports, nothing to bundle.
+    // Deliberate: coordinates teardown across three registries plus logging — see ADR-0010
     public function __construct(
         private readonly ClientRegistryInterface $registry,
         private readonly SubscriptionRegistryInterface $subscriptionManager,

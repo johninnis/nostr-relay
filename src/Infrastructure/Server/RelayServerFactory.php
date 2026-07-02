@@ -24,21 +24,16 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
-use Innis\Nostr\Relay\Application\Service\AuthMessageHandler;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
-use Innis\Nostr\Relay\Application\Service\CloseMessageHandler;
-use Innis\Nostr\Relay\Application\Service\CountMessageHandler;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
-use Innis\Nostr\Relay\Application\Service\EventMessageHandler;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
-use Innis\Nostr\Relay\Application\Service\ReqMessageHandler;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
@@ -61,7 +56,7 @@ final class RelayServerFactory
     private readonly SignatureServiceInterface $signatureService;
     private readonly RandomBytesGeneratorInterface $randomBytes;
 
-    // Deliberate: composition root — assembling the relay object graph is this factory's sole responsibility; the dependency breadth is inherent to wiring, not a decomposable design smell.
+    // Deliberate: composition root wiring the object graph — see ADR-0010
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
@@ -211,11 +206,11 @@ final class RelayServerFactory
         $messageDispatcher = new ClientMessageDispatcher(
             $deserialiser,
             $this->logger,
-            new EventMessageHandler($processEventUseCase),
-            new ReqMessageHandler($createSubscriptionUseCase),
-            new CloseMessageHandler($closeSubscriptionUseCase),
-            new AuthMessageHandler($processAuthUseCase),
-            new CountMessageHandler($countSubscriptionUseCase),
+            $processEventUseCase,
+            $createSubscriptionUseCase,
+            $closeSubscriptionUseCase,
+            $processAuthUseCase,
+            $countSubscriptionUseCase,
         );
 
         $messageRouter = new MessageRouter(

@@ -19,7 +19,7 @@ use Throwable;
 
 final class ProcessAuthUseCase
 {
-    // Deliberate: NIP-42 auth orchestration — coordinates the auth registry, pure verifier, event validator, subscription re-evaluation and logging; the pure decision is extracted to AuthEventVerifier, replies are returned for the caller to transmit, and the residual collaborators are irreducible side-effect ports.
+    // Deliberate: NIP-42 auth orchestration coordinates distinct collaborators — see ADR-0010
     public function __construct(
         private readonly AuthenticationRegistryInterface $authRegistry,
         private readonly AuthEventVerifier $verifier,

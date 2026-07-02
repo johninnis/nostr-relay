@@ -8,7 +8,6 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -76,21 +75,6 @@ final class CountSubscriptionUseCaseTest extends TestCase
         );
     }
 
-    /**
-     * @param iterable<RelayMessage> $replies
-     *
-     * @return list<RelayMessage>
-     */
-    private function replies(iterable $replies): array
-    {
-        $collected = [];
-        foreach ($replies as $reply) {
-            $collected[] = $reply;
-        }
-
-        return $collected;
-    }
-
     public function testSuccessfulCountReturnsCountMessage(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
@@ -99,7 +83,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(42);
 
-        $replies = $this->replies($this->useCase->execute($this->makeClient(), $subId, $filters));
+        $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(CountMessage::class, $replies[0]);
@@ -125,7 +109,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         });
         $client = $this->makeClient($connection);
 
-        $replies = $this->replies($this->useCase->execute($client, $subId, new FilterCollection([new Filter()])));
+        $replies = $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
 
         $this->assertSame('NOTICE', $sent[0][0]);
         $this->assertSame('AUTH', $sent[1][0]);
@@ -142,7 +126,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->policy->method('allowSubscription')
             ->willThrowException(new PolicyViolationException('not allowed'));
 
-        $replies = $this->replies($this->useCase->execute($this->makeClient(), $subId, $filters));
+        $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
@@ -157,7 +141,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->rateLimiter->method('checkLimit')
             ->willThrowException(RateLimitException::forKey('127.0.0.1'));
 
-        $replies = $this->replies($this->useCase->execute($this->makeClient(), $subId, $filters));
+        $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(ClosedMessage::class, $replies[0]);

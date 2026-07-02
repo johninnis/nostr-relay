@@ -13,7 +13,7 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Psr\Log\LoggerInterface;
 
-// Deliberate: accepted-event persistence pipeline — store-by-semantics, deletion processing and publish are four distinct collaborators; the breadth is intrinsic, not a readonly-data-record exemption we are quietly leaning on.
+// Deliberate: accepted-event pipeline coordinates store, publish, deletion and logging — see ADR-0010
 final readonly class AcceptedEventPipeline
 {
     public function __construct(
