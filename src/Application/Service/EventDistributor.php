@@ -14,6 +14,7 @@ use Psr\Log\LoggerInterface;
 
 final class EventDistributor
 {
+    // Deliberate: fans an accepted event to matching subscribers — needs policy, subscription lookup, client registry and messenger plus logging; cohesive orchestration.
     public function __construct(
         private readonly RelayPolicyInterface $policy,
         private readonly SubscriptionLookupInterface $subscriptionManager,

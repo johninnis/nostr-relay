@@ -19,6 +19,7 @@ use Throwable;
 
 final class CountSubscriptionUseCase
 {
+    // Deliberate: orchestrates event store, admission and client reply plus cross-cutting logging; minimal collaborators with nothing to extract.
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
         private readonly SubscriptionAdmission $admission,

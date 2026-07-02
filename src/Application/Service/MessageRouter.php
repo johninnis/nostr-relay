@@ -23,6 +23,7 @@ use Throwable;
 
 final class MessageRouter
 {
+    // Deliberate: protocol dispatcher — one use case per client-message verb (EVENT/REQ/CLOSE/AUTH/COUNT) plus deserialiser, messenger and logger; parse, dispatch, reply and log are irreducible concerns of routing.
     public function __construct(
         private readonly ProcessEventSubmissionUseCase $processEventSubmissionUseCase,
         private readonly CreateSubscriptionUseCase $createSubscriptionUseCase,

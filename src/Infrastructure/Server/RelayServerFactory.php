@@ -22,6 +22,7 @@ use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
+use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
@@ -45,6 +46,7 @@ use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
+use Override;
 use Psr\Log\LoggerInterface;
 
 final class RelayServerFactory
@@ -52,6 +54,7 @@ final class RelayServerFactory
     private readonly SignatureServiceInterface $signatureService;
     private readonly RandomBytesGeneratorInterface $randomBytes;
 
+    // Deliberate: composition root — assembling the relay object graph is this factory's sole responsibility; the dependency breadth is inherent to wiring, not a decomposable design smell.
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
         private readonly RelayPolicyInterface $policy,
@@ -177,16 +180,15 @@ final class RelayServerFactory
             $createSubscriptionUseCase
         );
 
+        $authEventVerifier = new AuthEventVerifier($this->config, $this->policy, new SystemClock());
+
         $processAuthUseCase = new ProcessAuthUseCase(
             $authManager,
-            $authManager,
-            $this->config,
-            $this->policy,
-            $this->logger,
+            $authEventVerifier,
             $eventValidator,
             $clientMessenger,
             $subscriptionReevaluator,
-            new SystemClock()
+            $this->logger
         );
 
         $countSubscriptionUseCase = new CountSubscriptionUseCase(
@@ -215,6 +217,7 @@ final class RelayServerFactory
             $messageRouter,
             $this->logger,
             $this->connectionGate ?? new class implements ConnectionGateInterface {
+                #[Override]
                 public function isIpAllowed(IpAddress $ipAddress): bool
                 {
                     return true;

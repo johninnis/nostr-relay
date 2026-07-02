@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\Exception;
 
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\Exception\RelayException;
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -27,17 +28,19 @@ final class ConnectionExceptionTest extends TestCase
 
     public function testGetIpAddressReturnsProvidedValue(): void
     {
-        $exception = new ConnectionException('test', ipAddress: '10.0.0.1');
+        $ipAddress = IpAddress::fromString('10.0.0.1');
+        $exception = new ConnectionException('test', ipAddress: $ipAddress);
 
-        $this->assertSame('10.0.0.1', $exception->getIpAddress());
+        $this->assertSame($ipAddress, $exception->getIpAddress());
     }
 
     public function testMaxConnectionsReachedIncludesIpInMessage(): void
     {
-        $exception = ConnectionException::maxConnectionsReached('192.168.1.1');
+        $ipAddress = IpAddress::fromString('192.168.1.1');
+        $exception = ConnectionException::maxConnectionsReached($ipAddress);
 
         $this->assertStringContainsString('192.168.1.1', $exception->getMessage());
-        $this->assertSame('192.168.1.1', $exception->getIpAddress());
+        $this->assertSame($ipAddress, $exception->getIpAddress());
     }
 
     public function testBindFailedIncludesHostAndPort(): void

@@ -35,6 +35,7 @@ use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
+use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
@@ -157,14 +158,11 @@ final class MessageRouterTest extends TestCase
 
         $processAuth = new ProcessAuthUseCase(
             $this->authManager,
-            $this->authManager,
-            $config,
-            $this->policy,
-            $logger,
+            new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $eventValidator,
             $messenger,
             new SubscriptionReevaluator($this->subscriptionManager, $createSubscription),
-            new SystemClock(),
+            $logger,
         );
 
         $countSubscription = new CountSubscriptionUseCase(

@@ -4,25 +4,27 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Exception;
 
+use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Throwable;
 
 final class ConnectionException extends RelayException
 {
+    // Deliberate: mirrors the PHP exception constructor (message, code, previous) plus the IpAddress context this fault carries; the shape is fixed by Throwable, not a decomposable design.
     public function __construct(
         string $message = '',
         int $code = 0,
         ?Throwable $previous = null,
-        private readonly ?string $ipAddress = null,
+        private readonly ?IpAddress $ipAddress = null,
     ) {
         parent::__construct($message, $code, $previous);
     }
 
-    public function getIpAddress(): ?string
+    public function getIpAddress(): ?IpAddress
     {
         return $this->ipAddress;
     }
 
-    public static function maxConnectionsReached(string $ipAddress): self
+    public static function maxConnectionsReached(IpAddress $ipAddress): self
     {
         return new self(
             message: 'Max connections reached for '.$ipAddress,
@@ -30,7 +32,7 @@ final class ConnectionException extends RelayException
         );
     }
 
-    public static function ipBlocked(string $ipAddress): self
+    public static function ipBlocked(IpAddress $ipAddress): self
     {
         return new self(
             message: 'Connection rejected for '.$ipAddress,

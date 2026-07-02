@@ -25,6 +25,7 @@ use Throwable;
 
 final class ProcessEventSubmissionUseCase
 {
+    // Deliberate: accepted-event pipeline; heavy lifting is already delegated to EventAdmission/AcceptedEventPublisher/EventDeletionProcessor and per-message OK framing lives here per ADR-0003 — residual deps are irreducible glue.
     public function __construct(
         private readonly RelayEventStoreInterface $eventStore,
         private readonly EventAdmission $admission,

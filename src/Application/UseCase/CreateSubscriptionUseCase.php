@@ -22,6 +22,7 @@ use Throwable;
 
 final class CreateSubscriptionUseCase
 {
+    // Deliberate: linear subscription-creation flow across admission, registry, stored-event streaming, client reply and deferred execution plus logging; each collaborator is a distinct concern, not a decomposable bundle.
     public function __construct(
         private readonly SubscriptionAdmission $admission,
         private readonly SubscriptionRegistryInterface $subscriptionManager,

@@ -24,6 +24,7 @@ final class ClientConnectionHandler
 {
     private const int DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
 
+    // Deliberate: per-connection lifecycle needs the client registry, disconnection handler, router and connection gate plus logging and an idle timeout; distinct collaborators bound by the connection loop.
     public function __construct(
         private readonly InMemoryClientRegistry $clientManager,
         private readonly ClientDisconnectionHandler $disconnectionHandler,
@@ -40,7 +41,7 @@ final class ClientConnectionHandler
             $clientIp = IpAddress::fromString($ipAddress);
 
             if (!$this->connectionGate->isIpAllowed($clientIp)) {
-                throw ConnectionException::ipBlocked($ipAddress);
+                throw ConnectionException::ipBlocked($clientIp);
             }
 
             $connectionInfo = new ConnectionInfo($clientIp, $userAgent, Timestamp::now());

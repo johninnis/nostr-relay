@@ -10,7 +10,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Override;
 
-final class InMemoryAuthenticationRegistry implements AuthChallengeInterface, AuthenticatedSessionsInterface
+final class InMemoryAuthenticationRegistry implements AuthenticationRegistryInterface
 {
     private const int CHALLENGE_BYTES = 16;
 

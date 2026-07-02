@@ -28,6 +28,7 @@ final class InMemoryClientRegistry implements ClientRegistryInterface
     /** @var array<string, SessionCounters> */
     private array $counters = [];
 
+    // Deliberate: registry needs metrics, id generation and logging plus a max-connections bound; three ports and a scalar limit, nothing to decompose.
     public function __construct(
         private readonly MetricsCollectorInterface $metrics,
         private readonly RandomBytesGeneratorInterface $randomBytes,
@@ -39,7 +40,7 @@ final class InMemoryClientRegistry implements ClientRegistryInterface
     public function registerClient(ClientConnectionInterface $connection, ConnectionInfo $connectionInfo): RelayClient
     {
         if (count($this->clients) >= $this->maxConnections) {
-            throw ConnectionException::maxConnectionsReached((string) $connectionInfo->getIpAddress());
+            throw ConnectionException::maxConnectionsReached($connectionInfo->getIpAddress());
         }
 
         $clientId = ClientId::fromBytes($this->randomBytes->bytes(self::CLIENT_ID_BYTES));

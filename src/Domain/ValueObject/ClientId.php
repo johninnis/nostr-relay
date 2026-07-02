@@ -4,23 +4,29 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\ValueObject;
 
-final readonly class ClientId
+use Override;
+use Stringable;
+
+final readonly class ClientId implements Stringable
 {
     private function __construct(
         private string $value,
     ) {
     }
 
+    // Deliberate: trusted construction from server-generated random bytes, not untrusted input; hex-encoding is total.
     public static function fromBytes(string $bytes): self
     {
         return new self(bin2hex($bytes));
     }
 
+    // Deliberate: an opaque server-side identifier with no validity constraint to enforce; construction is total.
     public static function fromString(string $value): self
     {
         return new self($value);
     }
 
+    #[Override]
     public function __toString(): string
     {
         return $this->value;

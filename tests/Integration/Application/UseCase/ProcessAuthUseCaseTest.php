@@ -33,6 +33,7 @@ use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
@@ -103,14 +104,11 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->useCase = new ProcessAuthUseCase(
             $this->authManager,
-            $this->authManager,
-            $config,
-            $this->policy,
-            new NullLogger(),
+            new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $this->eventValidator(),
             $this->messenger,
             $this->buildReevaluator($this->policy, $this->createStub(RelayEventStoreInterface::class)),
-            new SystemClock(),
+            new NullLogger(),
         );
     }
 
@@ -201,14 +199,11 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $useCase = new ProcessAuthUseCase(
             $this->authManager,
-            $this->authManager,
-            $config,
-            $policy,
-            new NullLogger(),
+            new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
             $this->messenger,
             $this->buildReevaluator($policy, $eventStore),
-            new SystemClock(),
+            new NullLogger(),
         );
 
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
@@ -233,14 +228,11 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $useCase = new ProcessAuthUseCase(
             $this->authManager,
-            $this->authManager,
-            $config,
-            $policy,
-            new NullLogger(),
+            new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
             $this->messenger,
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
-            new SystemClock(),
+            new NullLogger(),
         );
 
         $this->connection->expects($this->once())->method('sendText')
@@ -374,14 +366,11 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $useCase = new ProcessAuthUseCase(
             $this->authManager,
-            $this->authManager,
-            $config,
-            $policy,
-            new NullLogger(),
+            new AuthEventVerifier($config, $policy, $clock),
             $this->eventValidator(),
             $this->messenger,
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
-            $clock,
+            new NullLogger(),
         );
 
         $this->connection->expects($this->once())->method('sendText')

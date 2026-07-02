@@ -28,6 +28,7 @@ use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use InvalidArgumentException;
+use Override;
 use Psr\Log\LoggerInterface;
 
 final class AmphpRelayServer
@@ -37,6 +38,7 @@ final class AmphpRelayServer
 
     private ?SocketHttpServer $server = null;
 
+    // Deliberate: server adapter wiring config, connection handler, NIP-11 handler and logger with optional HTTP and error handlers; a composition seam, not a decomposable unit.
     public function __construct(
         private readonly RelayConfigInterface $config,
         private readonly ClientConnectionHandler $connectionHandler,
@@ -87,6 +89,7 @@ final class AmphpRelayServer
             ) {
             }
 
+            #[Override]
             public function handleClient(
                 WebsocketClient $client,
                 Request $request,
