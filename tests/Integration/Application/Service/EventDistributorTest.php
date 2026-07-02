@@ -12,11 +12,10 @@ use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
-use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
@@ -28,6 +27,8 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
+use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\MockObject\Stub;
@@ -66,15 +67,13 @@ final class EventDistributorTest extends TestCase
 
     private function createEvent(): Event
     {
-        $keyPair = KeyPair::generate(Secp256k1Signer::create());
-
-        return new Event(
-            $keyPair->getPublicKey(),
+        return EventMother::fromRumour(new Rumour(
+            KeyMother::alicePublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
             new TagCollection(),
             EventContent::fromString('test content'),
-        );
+        ));
     }
 
     /**

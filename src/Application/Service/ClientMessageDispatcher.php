@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Enum\ClientMessageType;
 use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -14,7 +14,7 @@ use Psr\Log\LoggerInterface;
 
 final readonly class ClientMessageDispatcher
 {
-    /** @var array<class-string<ClientMessage>, ClientMessageHandlerInterface> */
+    /** @var array<value-of<ClientMessageType>, ClientMessageHandlerInterface> */
     private array $handlers;
 
     public function __construct(
@@ -24,7 +24,7 @@ final readonly class ClientMessageDispatcher
     ) {
         $indexed = [];
         foreach ($handlers as $handler) {
-            $indexed[$handler->handles()] = $handler;
+            $indexed[$handler->handles()->value] = $handler;
         }
         $this->handlers = $indexed;
     }
@@ -44,7 +44,7 @@ final readonly class ClientMessageDispatcher
             return $this->rejectInvalid($client, $rawMessage, 'unparseable message');
         }
 
-        $handler = $this->handlers[$message::class] ?? null;
+        $handler = $this->handlers[$message->type()->value] ?? null;
         if (null === $handler) {
             return [new NoticeMessage('Unknown message type')];
         }

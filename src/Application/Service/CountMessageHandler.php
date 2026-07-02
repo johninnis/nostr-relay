@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Enum\ClientMessageType;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
@@ -19,15 +20,15 @@ final readonly class CountMessageHandler implements ClientMessageHandlerInterfac
     }
 
     #[Override]
-    public function handles(): string
+    public function handles(): ClientMessageType
     {
-        return CountMessage::class;
+        return ClientMessageType::Count;
     }
 
     #[Override]
     public function handle(RelayClient $client, ClientMessage $message): array
     {
-        // The dispatcher only routes a message to the handler registered for its class, so this
+        // The dispatcher only routes a message to the handler registered for its type, so this
         // narrowing never fails; a mismatch is a wiring fault and must fail loudly, not silently.
         if (!$message instanceof CountMessage) {
             throw new LogicException(sprintf('%s cannot handle %s', self::class, $message::class));

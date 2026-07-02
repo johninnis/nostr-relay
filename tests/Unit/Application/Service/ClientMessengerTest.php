@@ -8,9 +8,9 @@ use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -21,10 +21,11 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
+use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use RuntimeException;
 
 final class ClientMessengerTest extends TestCase
 {
@@ -106,15 +107,12 @@ final class ClientMessengerTest extends TestCase
 
     private function createEvent(): Event
     {
-        $pubkey = PublicKey::fromHex(str_repeat('a', 64))
-            ?? throw new RuntimeException('invalid test pubkey');
-
-        return new Event(
-            $pubkey,
+        return EventMother::fromRumour(new Rumour(
+            KeyMother::alicePublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
             new TagCollection(),
             EventContent::fromString('test'),
-        );
+        ));
     }
 }

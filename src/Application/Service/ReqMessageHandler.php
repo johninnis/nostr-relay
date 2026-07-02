@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Enum\ClientMessageType;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
@@ -19,15 +20,15 @@ final readonly class ReqMessageHandler implements ClientMessageHandlerInterface
     }
 
     #[Override]
-    public function handles(): string
+    public function handles(): ClientMessageType
     {
-        return ReqMessage::class;
+        return ClientMessageType::Req;
     }
 
     #[Override]
     public function handle(RelayClient $client, ClientMessage $message): array
     {
-        // The dispatcher only routes a message to the handler registered for its class, so this
+        // The dispatcher only routes a message to the handler registered for its type, so this
         // narrowing never fails; a mismatch is a wiring fault and must fail loudly, not silently.
         if (!$message instanceof ReqMessage) {
             throw new LogicException(sprintf('%s cannot handle %s', self::class, $message::class));

@@ -7,7 +7,6 @@ namespace Innis\Nostr\Relay\Tests\Integration\Application\Service;
 use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
-use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
@@ -23,6 +22,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage as RelayCountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
@@ -205,7 +205,7 @@ final class MessageRouterTest extends TestCase
     public function testRoutesEventMessage(): void
     {
         $keyPair = KeyPair::generate($this->signatureService());
-        $event = (new Event(
+        $event = (new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
@@ -278,7 +278,7 @@ final class MessageRouterTest extends TestCase
         $client = $this->makeClient($connection);
         $challenge = $this->authManager->getOrCreateChallenge($client->getId());
 
-        $event = (new Event(
+        $event = (new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::CLIENT_AUTH),

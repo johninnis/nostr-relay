@@ -7,33 +7,24 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 use Innis\Nostr\Core\Application\Port\ClockInterface;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
-use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Domain\Enum\AuthRejection;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
+use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use PHPUnit\Framework\TestCase;
 
 final class AuthEventVerifierTest extends TestCase
 {
     private const string RELAY_URL = 'wss://relay.example.com';
     private const string CHALLENGE = 'the-challenge';
-
-    private SignatureServiceInterface $signatureService;
-    private KeyPair $keyPair;
-
-    protected function setUp(): void
-    {
-        $this->signatureService = Secp256k1Signer::create();
-        $this->keyPair = KeyPair::generate($this->signatureService);
-    }
 
     public function testReturnsNullWhenEveryConditionHolds(): void
     {
@@ -98,8 +89,8 @@ final class AuthEventVerifierTest extends TestCase
 
     private function authEvent(string $challenge, string $relayUrl, int $timestamp): Event
     {
-        return (new Event(
-            $this->keyPair->getPublicKey(),
+        return EventMother::fromRumour(new Rumour(
+            KeyMother::alicePublicKey(),
             Timestamp::fromInt($timestamp),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
@@ -107,6 +98,6 @@ final class AuthEventVerifierTest extends TestCase
                 Tag::fromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
-        ))->sign($this->keyPair, $this->signatureService);
+        ));
     }
 }

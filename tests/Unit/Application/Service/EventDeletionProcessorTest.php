@@ -11,10 +11,12 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -25,7 +27,7 @@ final class EventDeletionProcessorTest extends TestCase
     {
         $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
         $target = $this->event($author, EventKind::fromInt(EventKind::TEXT_NOTE));
-        $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($target->getId()->toHex())]));
+        $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($target->getId())]));
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willReturn(new EventCollection([$target]));
@@ -45,7 +47,7 @@ final class EventDeletionProcessorTest extends TestCase
         $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
         $stranger = PublicKey::fromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
         $strangerEvent = $this->event($stranger, EventKind::fromInt(EventKind::TEXT_NOTE));
-        $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($strangerEvent->getId()->toHex())]));
+        $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($strangerEvent->getId())]));
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willReturn(new EventCollection([$strangerEvent]));
@@ -57,12 +59,12 @@ final class EventDeletionProcessorTest extends TestCase
 
     private function event(PublicKey $author, EventKind $kind, ?TagCollection $tags = null): Event
     {
-        return new Event(
+        return EventMother::fromRumour(new Rumour(
             $author,
             Timestamp::now(),
             $kind,
             $tags ?? new TagCollection(),
             EventContent::fromString('x'),
-        );
+        ));
     }
 }

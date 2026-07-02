@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Enum\EventKindCategory;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
@@ -28,7 +29,7 @@ final readonly class AcceptedEventPipeline
      */
     public function accept(RelayClient $client, Event $event): array
     {
-        if ($event->getKind()->isEphemeral()) {
+        if (EventKindCategory::Ephemeral === $event->getKind()->category()) {
             $this->publisher->publish($client, $event);
             $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex()]);
 

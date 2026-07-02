@@ -11,6 +11,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
@@ -23,6 +24,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -116,7 +118,7 @@ final class RelayPolicyTest extends TestCase
     public function testGuestWriteRequiringTenantTagIsAcceptedWhenTagged(): void
     {
         $policy = $this->policyWithGuestRules();
-        $tagged = $this->event(EventKind::ZAP_RECEIPT, 'x', new TagCollection([Tag::pubkey(self::TENANT_HEX)]));
+        $tagged = $this->event(EventKind::ZAP_RECEIPT, 'x', new TagCollection([Tag::pubkey($this->publicKey(self::TENANT_HEX))]));
 
         $policy->allowEventSubmission($this->guestClient(), $tagged);
 
@@ -230,13 +232,13 @@ final class RelayPolicyTest extends TestCase
 
     private function event(int $kind, string $content, ?TagCollection $tags = null, string $author = self::STRANGER_HEX): Event
     {
-        return new Event(
+        return EventMother::fromRumour(new Rumour(
             $this->publicKey($author),
             Timestamp::now(),
             EventKind::fromInt($kind),
             $tags ?? new TagCollection(),
             EventContent::fromString($content),
-        );
+        ));
     }
 
     private function publicKey(string $hex): PublicKey

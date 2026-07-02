@@ -19,6 +19,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
@@ -149,7 +150,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $keyPair = KeyPair::generate($this->signatureService());
 
-        return (new Event(
+        return (new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             $kind ?? EventKind::fromInt(EventKind::TEXT_NOTE),
@@ -162,7 +163,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $keyPair ??= KeyPair::generate($this->signatureService());
 
-        return (new Event(
+        return (new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::EVENT_DELETION),
@@ -298,7 +299,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     public function testDeletionEventTriggersDeleteByEventIds(): void
     {
         $keyPair = KeyPair::generate($this->signatureService());
-        $targetEvent = (new Event(
+        $targetEvent = (new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
@@ -307,7 +308,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         ))->sign($keyPair, $this->signatureService());
 
         $tags = new TagCollection([
-            Tag::event($targetEvent->getId()->toHex()),
+            Tag::event($targetEvent->getId()),
             Tag::fromArray(['k', '1']),
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $keyPair);
@@ -341,7 +342,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
     {
         $victimKeyPair = KeyPair::generate($this->signatureService());
-        $victimEvent = (new Event(
+        $victimEvent = (new Rumour(
             $victimKeyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
@@ -351,7 +352,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $attackerKeyPair = KeyPair::generate($this->signatureService());
         $tags = new TagCollection([
-            Tag::event($victimEvent->getId()->toHex()),
+            Tag::event($victimEvent->getId()),
             Tag::fromArray(['k', '1']),
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);

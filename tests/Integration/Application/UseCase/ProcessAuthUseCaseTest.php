@@ -23,6 +23,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
@@ -49,11 +50,12 @@ use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
+use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use RuntimeException;
 
 final class ProcessAuthUseCaseTest extends TestCase
 {
@@ -298,21 +300,19 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testRejectsUnsignedAuthEventClaimingVictimPubkey(): void
     {
-        $victim = KeyPair::generate($this->signatureService())->getPublicKey();
+        $victim = KeyMother::bobPublicKey();
         $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
 
-        $forged = Event::fromArray([
-            'id' => str_repeat('a', 64),
-            'pubkey' => $victim->toHex(),
-            'created_at' => time(),
-            'kind' => EventKind::fromInt(EventKind::CLIENT_AUTH)->toInt(),
-            'tags' => [
-                ['relay', 'wss://relay.example.com'],
-                ['challenge', $challenge],
-            ],
-            'content' => '',
-            'sig' => '',
-        ]) ?? throw new RuntimeException('Invalid forged event');
+        $forged = EventMother::fromRumour(new Rumour(
+            $victim,
+            Timestamp::now(),
+            EventKind::fromInt(EventKind::CLIENT_AUTH),
+            new TagCollection([
+                Tag::fromArray(['relay', 'wss://relay.example.com']),
+                Tag::fromArray(['challenge', $challenge]),
+            ]),
+            EventContent::fromString(''),
+        ));
 
         $replies = $this->replies($this->useCase->execute($this->client, $forged));
 
@@ -373,7 +373,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     {
         $author = KeyPair::generate($this->signatureService());
 
-        return (new Event(
+        return (new Rumour(
             $author->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::NOSTR_CONNECT),
@@ -389,7 +389,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     private function createAuthEventWithTimestamp(string $challenge, string $relayUrl, int $timestamp): Event
     {
-        return (new Event(
+        return (new Rumour(
             $this->keyPair->getPublicKey(),
             Timestamp::fromInt($timestamp),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
