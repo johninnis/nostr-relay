@@ -85,7 +85,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->keyPair = KeyPair::generate($this->signatureService());
 
         $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+        $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
 
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->policy->method('allowsAuthentication')->willReturn(true);
@@ -171,7 +171,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             });
 
         $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+        $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
 
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('allowsAuthentication')->willReturn(true);
@@ -185,7 +185,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willReturn(new EventCollection([$request]));
 
-        $originalFilters = new FilterCollection([Filter::fromArray([
+        $originalFilters = new FilterCollection([Filter::tryFromArray([
             'kinds' => [EventKind::fromInt(EventKind::NOSTR_CONNECT)->toInt()],
             '#p' => [$this->keyPair->getPublicKey()->toHex()],
         ])]);
@@ -217,7 +217,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
 
         $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+        $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
 
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('allowsAuthentication')->willReturn(false);
@@ -292,8 +292,8 @@ final class ProcessAuthUseCaseTest extends TestCase
             Timestamp::now(),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
-                Tag::fromArray(['relay', 'wss://relay.example.com']),
-                Tag::fromArray(['challenge', $challenge]),
+                Tag::tryFromArray(['relay', 'wss://relay.example.com']),
+                Tag::tryFromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
         ));
@@ -328,7 +328,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $event = $this->createAuthEventWithTimestamp($challenge, 'wss://relay.example.com', time());
 
         $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+        $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
 
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('allowsAuthentication')->willReturn(true);
@@ -361,7 +361,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             $author->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::NOSTR_CONNECT),
-            new TagCollection([Tag::fromArray(['p', $this->keyPair->getPublicKey()->toHex()])]),
+            new TagCollection([Tag::tryFromArray(['p', $this->keyPair->getPublicKey()->toHex()])]),
             EventContent::fromString('encrypted-request'),
         ))->sign($author, $this->signatureService());
     }
@@ -378,8 +378,8 @@ final class ProcessAuthUseCaseTest extends TestCase
             Timestamp::fromInt($timestamp),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
-                Tag::fromArray(['relay', $relayUrl]),
-                Tag::fromArray(['challenge', $challenge]),
+                Tag::tryFromArray(['relay', $relayUrl]),
+                Tag::tryFromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
         ))->sign($this->keyPair, $this->signatureService());

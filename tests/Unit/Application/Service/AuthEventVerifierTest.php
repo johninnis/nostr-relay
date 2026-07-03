@@ -76,7 +76,7 @@ final class AuthEventVerifierTest extends TestCase
     private function verifier(bool $allowsAuthentication, int $now): AuthEventVerifier
     {
         $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString(self::RELAY_URL));
+        $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString(self::RELAY_URL));
 
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('allowsAuthentication')->willReturn($allowsAuthentication);
@@ -94,8 +94,8 @@ final class AuthEventVerifierTest extends TestCase
             Timestamp::fromInt($timestamp),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
-                Tag::fromArray(['relay', $relayUrl]),
-                Tag::fromArray(['challenge', $challenge]),
+                Tag::tryFromArray(['relay', $relayUrl]),
+                Tag::tryFromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
         ));

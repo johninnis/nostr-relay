@@ -61,12 +61,12 @@ final class RelayServerAcceptanceTest extends TestCase
         $event = $this->signedTextNote('hello from acceptance');
         $connection->sendText(new ClientEventMessage($event)->toJson());
 
-        $ok = OkMessage::fromJson($this->nextFrame($connection));
+        $ok = OkMessage::tryFromJson($this->nextFrame($connection));
         self::assertNotNull($ok);
         self::assertTrue($ok->isAccepted(), 'relay should accept a valid signed event');
         self::assertSame($event->getId()->toHex(), $ok->getEventId()->toHex());
 
-        $subscriptionId = SubscriptionId::fromString('acc-sub') ?? throw new RuntimeException('bad subscription id');
+        $subscriptionId = SubscriptionId::tryFromString('acc-sub') ?? throw new RuntimeException('bad subscription id');
         $connection->sendText(new ReqMessage($subscriptionId, new FilterCollection([new Filter()]))->toJson());
 
         $eventFrame = $this->decodeFrame($this->nextFrame($connection));
@@ -100,7 +100,7 @@ final class RelayServerAcceptanceTest extends TestCase
 
     private function startRelay(): string
     {
-        $relayUrl = RelayUrl::fromString('ws://127.0.0.1:8080') ?? throw new RuntimeException('bad relay url');
+        $relayUrl = RelayUrl::tryFromString('ws://127.0.0.1:8080') ?? throw new RuntimeException('bad relay url');
 
         $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getHost')->willReturn('127.0.0.1');

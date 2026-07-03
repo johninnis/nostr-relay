@@ -25,7 +25,7 @@ final class EventDeletionProcessorTest extends TestCase
 {
     public function testDeletesEventsOwnedByTheAuthor(): void
     {
-        $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        $author = PublicKey::tryFromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
         $target = $this->event($author, EventKind::fromInt(EventKind::TEXT_NOTE));
         $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($target->getId())]));
 
@@ -44,8 +44,8 @@ final class EventDeletionProcessorTest extends TestCase
 
     public function testSkipsEventsOwnedBySomeoneElse(): void
     {
-        $author = PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
-        $stranger = PublicKey::fromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        $author = PublicKey::tryFromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        $stranger = PublicKey::tryFromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
         $strangerEvent = $this->event($stranger, EventKind::fromInt(EventKind::TEXT_NOTE));
         $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($strangerEvent->getId())]));
 

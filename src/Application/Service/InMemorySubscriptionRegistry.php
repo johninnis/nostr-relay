@@ -19,7 +19,6 @@ use Psr\Log\LoggerInterface;
 
 final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterface
 {
-    // Deliberate: in-memory single-process subscription registry, not a swappable store — see ADR-0008
     /** @var array<string, Subscription> */
     private array $subscriptions = [];
     /** @var array<string, ClientId> */

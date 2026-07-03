@@ -158,7 +158,7 @@ final class MessageRouterTest extends TestCase
         $closeSubscription = new CloseSubscriptionUseCase($this->subscriptionManager, $logger);
 
         $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getRelayUrl')->willReturn(RelayUrl::fromString('wss://relay.example.com'));
+        $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
 
         $processAuth = new ProcessAuthUseCase(
             $this->authManager,
@@ -278,8 +278,8 @@ final class MessageRouterTest extends TestCase
             Timestamp::now(),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
-                Tag::fromArray(['relay', 'wss://relay.example.com']),
-                Tag::fromArray(['challenge', $challenge]),
+                Tag::tryFromArray(['relay', 'wss://relay.example.com']),
+                Tag::tryFromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
         ))->sign($keyPair, $this->signatureService());
@@ -303,7 +303,7 @@ final class MessageRouterTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $message = RelayCountMessage::fromJson($json);
+                $message = RelayCountMessage::tryFromJson($json);
 
                 return null !== $message && 'count-1' === (string) $message->getSubscriptionId() && 42 === $message->getCount();
             }));
@@ -321,7 +321,7 @@ final class MessageRouterTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $message = NoticeMessage::fromJson($json);
+                $message = NoticeMessage::tryFromJson($json);
 
                 return null !== $message && str_contains($message->getMessage(), 'Invalid message');
             }));
@@ -339,7 +339,7 @@ final class MessageRouterTest extends TestCase
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
-                $message = NoticeMessage::fromJson($json);
+                $message = NoticeMessage::tryFromJson($json);
 
                 return null !== $message && str_contains($message->getMessage(), 'Internal server error');
             }));

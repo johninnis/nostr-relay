@@ -23,7 +23,6 @@ use Psr\Log\LoggerInterface;
 
 final readonly class ClientMessageDispatcher
 {
-    // Deliberate: a dispatch table — one use case per protocol verb plus the deserialiser and logger — see ADR-0010
     public function __construct(
         private MessageDeserialiserInterface $deserialiser,
         private LoggerInterface $logger,

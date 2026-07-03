@@ -96,7 +96,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('count-1');
 
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::fromArray(['kinds' => [1]])]), true),
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
         $this->eventStore->method('countByFilters')->willReturn(7);
 

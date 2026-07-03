@@ -80,7 +80,7 @@ final class InMemoryAuthenticationRegistryTest extends TestCase
     public function testIsAuthenticatedAsReturnsFalseForDifferentPubkey(): void
     {
         $pubkey1 = self::createPubkey();
-        $pubkey2 = PublicKey::fromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        $pubkey2 = PublicKey::tryFromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
 
         $this->authManager->authenticate($this->clientId, $pubkey1);
 
@@ -116,6 +116,6 @@ final class InMemoryAuthenticationRegistryTest extends TestCase
 
     private static function createPubkey(): PublicKey
     {
-        return PublicKey::fromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
+        return PublicKey::tryFromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
     }
 }

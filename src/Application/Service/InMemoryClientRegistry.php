@@ -20,7 +20,6 @@ final class InMemoryClientRegistry implements ClientRegistryInterface
 {
     private const int CLIENT_ID_BYTES = 16;
 
-    // Deliberate: in-memory single-process registry of live connections, not a swappable store — see ADR-0008
     /** @var array<string, RelayClient> */
     private array $clients = [];
     /** @var array<string, ClientConnectionInterface> */

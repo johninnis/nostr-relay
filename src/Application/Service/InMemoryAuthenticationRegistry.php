@@ -14,7 +14,6 @@ final class InMemoryAuthenticationRegistry implements AuthenticationRegistryInte
 {
     private const int CHALLENGE_BYTES = 16;
 
-    // Deliberate: in-memory single-process auth-session registry, not a swappable store — see ADR-0008
     /** @var array<string, list<PublicKey>> */
     private array $authenticatedPubkeys = [];
     /** @var array<string, string> */

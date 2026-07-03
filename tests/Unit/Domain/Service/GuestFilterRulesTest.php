@@ -189,7 +189,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         return new GuestFilterRules(
             new PublicKeyCollection(array_map(
-                static fn (string $hex): PublicKey => PublicKey::fromHex($hex) ?? throw new RuntimeException('Invalid test pubkey'),
+                static fn (string $hex): PublicKey => PublicKey::tryFromHex($hex) ?? throw new RuntimeException('Invalid test pubkey'),
                 $tenantHexes,
             )),
             new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $kindInts)),

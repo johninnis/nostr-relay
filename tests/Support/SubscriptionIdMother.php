@@ -11,6 +11,6 @@ final class SubscriptionIdMother
 {
     public static function from(string $id): SubscriptionId
     {
-        return SubscriptionId::fromString($id) ?? throw new InvalidArgumentException("Invalid subscription id: {$id}");
+        return SubscriptionId::tryFromString($id) ?? throw new InvalidArgumentException("Invalid subscription id: {$id}");
     }
 }

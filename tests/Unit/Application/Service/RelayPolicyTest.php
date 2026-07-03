@@ -137,7 +137,7 @@ final class RelayPolicyTest extends TestCase
     public function testFilterForClientLeavesTenantFiltersUnchanged(): void
     {
         $policy = $this->policyWithGuestRules();
-        $filters = new FilterCollection([Filter::fromArray(['kinds' => [1, 2, 3]]) ?? throw new RuntimeException('bad filter')]);
+        $filters = new FilterCollection([Filter::tryFromArray(['kinds' => [1, 2, 3]]) ?? throw new RuntimeException('bad filter')]);
 
         $scoped = $policy->filterForClient($this->tenantClient(), $filters);
 
@@ -147,7 +147,7 @@ final class RelayPolicyTest extends TestCase
     public function testFilterForClientFlagsGuestRequestBeyondReadableScope(): void
     {
         $policy = $this->policyWithGuestRules();
-        $filters = new FilterCollection([Filter::fromArray(['kinds' => [1, 2]]) ?? throw new RuntimeException('bad filter')]);
+        $filters = new FilterCollection([Filter::tryFromArray(['kinds' => [1, 2]]) ?? throw new RuntimeException('bad filter')]);
 
         $scoped = $policy->filterForClient($this->guestClient(), $filters);
 
@@ -243,6 +243,6 @@ final class RelayPolicyTest extends TestCase
 
     private function publicKey(string $hex): PublicKey
     {
-        return PublicKey::fromHex($hex) ?? throw new RuntimeException('Invalid pubkey');
+        return PublicKey::tryFromHex($hex) ?? throw new RuntimeException('Invalid pubkey');
     }
 }

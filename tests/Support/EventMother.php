@@ -18,6 +18,6 @@ final class EventMother
 
     public static function signature(): Signature
     {
-        return Signature::fromHex(str_repeat('a', 128)) ?? throw new RuntimeException('Invalid fixture signature');
+        return Signature::tryFromHex(str_repeat('a', 128)) ?? throw new RuntimeException('Invalid fixture signature');
     }
 }

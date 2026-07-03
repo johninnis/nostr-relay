@@ -87,7 +87,7 @@ final readonly class RelayPolicyConfig
                 return null;
             }
 
-            $pubkey = PublicKey::fromNpubOrHex($tenant);
+            $pubkey = PublicKey::tryFromNpubOrHex($tenant);
 
             if (null === $pubkey) {
                 return null;

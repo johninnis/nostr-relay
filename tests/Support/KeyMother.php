@@ -40,8 +40,8 @@ final class KeyMother
     private static function keyPair(string $privateKeyHex, string $publicKeyHex): KeyPair
     {
         return new KeyPair(
-            PrivateKey::fromHex($privateKeyHex) ?? throw new RuntimeException('Invalid test private key'),
-            PublicKey::fromHex($publicKeyHex) ?? throw new RuntimeException('Invalid test public key'),
+            PrivateKey::tryFromHex($privateKeyHex) ?? throw new RuntimeException('Invalid test private key'),
+            PublicKey::tryFromHex($publicKeyHex) ?? throw new RuntimeException('Invalid test public key'),
         );
     }
 }

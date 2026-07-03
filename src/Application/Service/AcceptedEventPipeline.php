@@ -13,7 +13,6 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Psr\Log\LoggerInterface;
 
-// Deliberate: accepted-event pipeline coordinates store, publish, deletion and logging — see ADR-0010
 final readonly class AcceptedEventPipeline
 {
     public function __construct(

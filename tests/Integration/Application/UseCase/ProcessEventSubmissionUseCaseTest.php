@@ -293,7 +293,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $tags = new TagCollection([
             Tag::event($targetEvent->getId()),
-            Tag::fromArray(['k', '1']),
+            Tag::tryFromArray(['k', '1']),
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $keyPair);
 
@@ -337,7 +337,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $attackerKeyPair = KeyPair::generate($this->signatureService());
         $tags = new TagCollection([
             Tag::event($victimEvent->getId()),
-            Tag::fromArray(['k', '1']),
+            Tag::tryFromArray(['k', '1']),
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
 
@@ -363,8 +363,8 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $keyPair = KeyPair::generate($this->signatureService());
         $coordinate = '30023:'.$keyPair->getPublicKey()->toHex().':my-article';
         $tags = new TagCollection([
-            Tag::fromArray(['a', $coordinate]),
-            Tag::fromArray(['k', '30023']),
+            Tag::tryFromArray(['a', $coordinate]),
+            Tag::tryFromArray(['k', '30023']),
         ]);
         $event = $this->createSignedDeletionEvent($tags, $keyPair);
 
@@ -398,8 +398,8 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $attackerKeyPair = KeyPair::generate($this->signatureService());
         $victimCoordinate = '30023:'.$victimKeyPair->getPublicKey()->toHex().':target-article';
         $tags = new TagCollection([
-            Tag::fromArray(['a', $victimCoordinate]),
-            Tag::fromArray(['k', '30023']),
+            Tag::tryFromArray(['a', $victimCoordinate]),
+            Tag::tryFromArray(['k', '30023']),
         ]);
         $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
 

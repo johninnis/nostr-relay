@@ -100,7 +100,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
 
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::fromArray(['kinds' => [1]])]), true),
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
@@ -126,7 +126,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
 
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::fromArray(['kinds' => [1]])]), true),
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
