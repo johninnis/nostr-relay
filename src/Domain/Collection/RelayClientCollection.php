@@ -20,25 +20,6 @@ final class RelayClientCollection extends TypedCollection
         return RelayClient::class;
     }
 
-    public function add(RelayClient $client): self
-    {
-        return new self([
-            ...array_filter(
-                $this->items,
-                static fn (RelayClient $existing): bool => !$existing->getId()->equals($client->getId()),
-            ),
-            $client,
-        ]);
-    }
-
-    public function remove(ClientId $clientId): self
-    {
-        return new self(array_filter(
-            $this->items,
-            static fn (RelayClient $client): bool => !$client->getId()->equals($clientId),
-        ));
-    }
-
     public function get(ClientId $clientId): ?RelayClient
     {
         return array_find(

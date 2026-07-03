@@ -75,7 +75,7 @@ Optional interfaces extend the relay's behaviour:
 ```php
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
-use Innis\Nostr\Relay\Application\Service\AuthenticationManager;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
@@ -85,7 +85,7 @@ use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 
 use function Amp\trapSignal;
 
-$authManager = new AuthenticationManager(new NativeRandomBytesGenerator());
+$authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 $logger = new \Psr\Log\NullLogger();
 
 $policyConfig = RelayPolicyConfig::fromArray([
@@ -222,7 +222,7 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 │                                                     │
 │  WebSocket Server → Message Router → Use Cases      │
 │                                                     │
-│  SubscriptionManager → EventDistributor             │
+│  SubscriptionRegistry → EventDistributor            │
 └─────────────────────────────────────────────────────┘
 ```
 

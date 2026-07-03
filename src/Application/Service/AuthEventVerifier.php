@@ -24,12 +24,12 @@ final readonly class AuthEventVerifier
 
     public function verify(Event $event, string $challenge): ?AuthRejection
     {
-        $challengeTags = $event->getTags()->getValuesByType(TagType::fromString('challenge'));
+        $challengeTags = $event->getTags()->getValuesByType(TagType::fromString(TagType::CHALLENGE));
         if (empty($challengeTags) || reset($challengeTags) !== $challenge) {
             return AuthRejection::InvalidChallenge;
         }
 
-        $relayTags = $event->getTags()->getValuesByType(TagType::fromString('relay'));
+        $relayTags = $event->getTags()->getValuesByType(TagType::fromString(TagType::RELAY));
         if (empty($relayTags) || reset($relayTags) !== (string) $this->config->getRelayUrl()) {
             return AuthRejection::InvalidRelayUrl;
         }

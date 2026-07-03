@@ -23,6 +23,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
+use Innis\Nostr\Relay\Application\Service\AuthenticationRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
@@ -30,7 +31,6 @@ use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
-use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
@@ -62,7 +62,7 @@ final class RelayServerFactory
         private readonly RelayPolicyInterface $policy,
         private readonly RelayConfigInterface $config,
         private readonly RateLimitPolicyInterface $rateLimitPolicy,
-        private readonly InMemoryAuthenticationRegistry $authManager,
+        private readonly AuthenticationRegistryInterface $authManager,
         private readonly LoggerInterface $logger,
         private readonly Nip11InfoProviderInterface $nip11InfoProvider,
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
@@ -94,12 +94,10 @@ final class RelayServerFactory
 
         $clientMessenger = new ClientMessenger($clientManager);
 
-        $authManager = $this->authManager;
-
         $disconnectionHandler = new ClientDisconnectionHandler(
             $clientManager,
             $subscriptionManager,
-            $authManager,
+            $this->authManager,
             $this->logger
         );
 
@@ -124,7 +122,7 @@ final class RelayServerFactory
         $subscriptionAdmission = new SubscriptionAdmission(
             $this->policy,
             $subscriptionRateLimiter,
-            $authManager,
+            $this->authManager,
             $clientMessenger,
             $subscriptionManager
         );
@@ -153,7 +151,7 @@ final class RelayServerFactory
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $eventAdmission,
             $acceptedEventPipeline,
-            $authManager,
+            $this->authManager,
             $clientManager,
             $this->logger
         );
@@ -188,7 +186,7 @@ final class RelayServerFactory
         $authEventVerifier = new AuthEventVerifier($this->config, $this->policy, new SystemClock());
 
         $processAuthUseCase = new ProcessAuthUseCase(
-            $authManager,
+            $this->authManager,
             $authEventVerifier,
             $eventValidator,
             $subscriptionReevaluator,

@@ -38,41 +38,6 @@ final class RelayClientCollectionTest extends TestCase
         new RelayClientCollection(['not-a-client']);
     }
 
-    public function testAddReturnsNewCollectionWithClient(): void
-    {
-        $collection = new RelayClientCollection();
-        $client = $this->createClient('client-1');
-
-        $updated = $collection->add($client);
-
-        $this->assertSame(0, $collection->count());
-        $this->assertSame(1, $updated->count());
-    }
-
-    public function testRemoveReturnsNewCollectionWithoutClient(): void
-    {
-        $client1 = $this->createClient('client-1');
-        $client2 = $this->createClient('client-2');
-        $collection = new RelayClientCollection([$client1, $client2]);
-
-        $updated = $collection->remove(ClientId::fromString('client-1'));
-
-        $this->assertSame(2, $collection->count());
-        $this->assertSame(1, $updated->count());
-        $this->assertFalse($updated->has(ClientId::fromString('client-1')));
-        $this->assertTrue($updated->has(ClientId::fromString('client-2')));
-    }
-
-    public function testRemoveNonExistentClientReturnsEquivalentCollection(): void
-    {
-        $client = $this->createClient('client-1');
-        $collection = new RelayClientCollection([$client]);
-
-        $updated = $collection->remove(ClientId::fromString('missing'));
-
-        $this->assertSame(1, $updated->count());
-    }
-
     public function testGetReturnsClientById(): void
     {
         $client = $this->createClient('client-1');

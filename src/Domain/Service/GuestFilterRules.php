@@ -9,6 +9,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
@@ -60,7 +61,7 @@ final readonly class GuestFilterRules
 
     private function referencesTenantInPTag(Filter $filter): bool
     {
-        $taggedPubkeys = PublicKeyCollection::fromHexValues($filter->getTags()?->getValues()['p'] ?? []);
+        $taggedPubkeys = PublicKeyCollection::fromHexValues($filter->getTags()?->getValues()[TagType::PUBKEY] ?? []);
 
         return !$taggedPubkeys->intersect($this->tenants)->isEmpty();
     }
