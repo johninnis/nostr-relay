@@ -22,8 +22,8 @@ final class RelayInstance
     public function __construct(
         private readonly AmphpRelayServer $server,
         private readonly EventDistributor $distributor,
-        private readonly InMemorySubscriptionRegistry $subscriptionManager,
-        private readonly InMemoryClientRegistry $clientManager,
+        private readonly InMemorySubscriptionRegistry $subscriptionRegistry,
+        private readonly InMemoryClientRegistry $clientRegistry,
         private readonly MetricsCollectorInterface $metrics,
     ) {
     }
@@ -55,21 +55,21 @@ final class RelayInstance
 
     public function getClients(): RelayClientCollection
     {
-        return $this->clientManager->getAllClients();
+        return $this->clientRegistry->getAllClients();
     }
 
     public function getSubscriptions(): SubscriptionCollection
     {
-        return $this->subscriptionManager->getAllSubscriptions();
+        return $this->subscriptionRegistry->getAllSubscriptions();
     }
 
     public function getSubscriptionsForClient(ClientId $clientId): SubscriptionCollection
     {
-        return $this->subscriptionManager->getSubscriptionsForClient($clientId);
+        return $this->subscriptionRegistry->getSubscriptionsForClient($clientId);
     }
 
     public function getSessionCounters(ClientId $clientId): SessionCounters
     {
-        return $this->clientManager->getSessionCounters($clientId);
+        return $this->clientRegistry->getSessionCounters($clientId);
     }
 }

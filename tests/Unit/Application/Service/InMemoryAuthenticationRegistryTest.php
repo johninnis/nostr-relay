@@ -14,18 +14,18 @@ use RuntimeException;
 
 final class InMemoryAuthenticationRegistryTest extends TestCase
 {
-    private InMemoryAuthenticationRegistry $authManager;
+    private InMemoryAuthenticationRegistry $authenticationRegistry;
     private ClientId $clientId;
 
     protected function setUp(): void
     {
-        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+        $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $this->clientId = ClientId::fromString('client-1');
     }
 
     public function testGenerateChallengeReturnsNonEmptyString(): void
     {
-        $challenge = $this->authManager->getOrCreateChallenge($this->clientId);
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->clientId);
 
         $this->assertNotEmpty($challenge);
         $this->assertSame(32, strlen($challenge));
@@ -35,46 +35,46 @@ final class InMemoryAuthenticationRegistryTest extends TestCase
     {
         $generator = $this->createStub(RandomBytesGeneratorInterface::class);
         $generator->method('bytes')->willReturn(str_repeat("\x01", 16));
-        $authManager = new InMemoryAuthenticationRegistry($generator);
+        $authenticationRegistry = new InMemoryAuthenticationRegistry($generator);
 
-        $challenge = $authManager->getOrCreateChallenge($this->clientId);
+        $challenge = $authenticationRegistry->getOrCreateChallenge($this->clientId);
 
         $this->assertSame(str_repeat('01', 16), $challenge);
     }
 
     public function testGetChallengeReturnsStoredChallenge(): void
     {
-        $challenge = $this->authManager->getOrCreateChallenge($this->clientId);
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->clientId);
 
-        $this->assertSame($challenge, $this->authManager->getChallenge($this->clientId));
+        $this->assertSame($challenge, $this->authenticationRegistry->getChallenge($this->clientId));
     }
 
     public function testGetChallengeReturnsNullForUnknownClient(): void
     {
-        $this->assertNull($this->authManager->getChallenge(ClientId::fromString('unknown')));
+        $this->assertNull($this->authenticationRegistry->getChallenge(ClientId::fromString('unknown')));
     }
 
     public function testIsAuthenticatedReturnsFalseByDefault(): void
     {
-        $this->assertFalse($this->authManager->isAuthenticated($this->clientId));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->clientId));
     }
 
     public function testAuthenticateMarksClientAsAuthenticated(): void
     {
         $pubkey = self::createPubkey();
 
-        $this->authManager->authenticate($this->clientId, $pubkey);
+        $this->authenticationRegistry->authenticate($this->clientId, $pubkey);
 
-        $this->assertTrue($this->authManager->isAuthenticated($this->clientId));
+        $this->assertTrue($this->authenticationRegistry->isAuthenticated($this->clientId));
     }
 
     public function testIsAuthenticatedAsReturnsTrueForMatchingPubkey(): void
     {
         $pubkey = self::createPubkey();
 
-        $this->authManager->authenticate($this->clientId, $pubkey);
+        $this->authenticationRegistry->authenticate($this->clientId, $pubkey);
 
-        $this->assertTrue($this->authManager->isAuthenticatedAs($this->clientId, $pubkey));
+        $this->assertTrue($this->authenticationRegistry->isAuthenticatedAs($this->clientId, $pubkey));
     }
 
     public function testIsAuthenticatedAsReturnsFalseForDifferentPubkey(): void
@@ -82,36 +82,36 @@ final class InMemoryAuthenticationRegistryTest extends TestCase
         $pubkey1 = self::createPubkey();
         $pubkey2 = PublicKey::tryFromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
 
-        $this->authManager->authenticate($this->clientId, $pubkey1);
+        $this->authenticationRegistry->authenticate($this->clientId, $pubkey1);
 
-        $this->assertFalse($this->authManager->isAuthenticatedAs($this->clientId, $pubkey2));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticatedAs($this->clientId, $pubkey2));
     }
 
     public function testAuthenticateDoesNotDuplicatePubkeys(): void
     {
         $pubkey = self::createPubkey();
 
-        $this->authManager->authenticate($this->clientId, $pubkey);
-        $this->authManager->authenticate($this->clientId, $pubkey);
+        $this->authenticationRegistry->authenticate($this->clientId, $pubkey);
+        $this->authenticationRegistry->authenticate($this->clientId, $pubkey);
 
-        $this->assertCount(1, $this->authManager->getAuthenticatedPubkeys($this->clientId));
+        $this->assertCount(1, $this->authenticationRegistry->getAuthenticatedPubkeys($this->clientId));
     }
 
     public function testGetAuthenticatedPubkeysReturnsEmptyForUnknownClient(): void
     {
-        $this->assertCount(0, $this->authManager->getAuthenticatedPubkeys(ClientId::fromString('unknown')));
+        $this->assertCount(0, $this->authenticationRegistry->getAuthenticatedPubkeys(ClientId::fromString('unknown')));
     }
 
     public function testRemoveClientClearsAuthStateAndChallenge(): void
     {
         $pubkey = self::createPubkey();
-        $this->authManager->getOrCreateChallenge($this->clientId);
-        $this->authManager->authenticate($this->clientId, $pubkey);
+        $this->authenticationRegistry->getOrCreateChallenge($this->clientId);
+        $this->authenticationRegistry->authenticate($this->clientId, $pubkey);
 
-        $this->authManager->removeClient($this->clientId);
+        $this->authenticationRegistry->removeClient($this->clientId);
 
-        $this->assertFalse($this->authManager->isAuthenticated($this->clientId));
-        $this->assertNull($this->authManager->getChallenge($this->clientId));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->clientId));
+        $this->assertNull($this->authenticationRegistry->getChallenge($this->clientId));
     }
 
     private static function createPubkey(): PublicKey

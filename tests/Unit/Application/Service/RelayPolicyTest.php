@@ -34,11 +34,11 @@ final class RelayPolicyTest extends TestCase
     private const string TENANT_HEX = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
     private const string STRANGER_HEX = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-    private InMemoryAuthenticationRegistry $authManager;
+    private InMemoryAuthenticationRegistry $authenticationRegistry;
 
     protected function setUp(): void
     {
-        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+        $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
     }
 
     public function testTenantIsExemptFromSubscriptionCap(): void
@@ -52,7 +52,7 @@ final class RelayPolicyTest extends TestCase
 
     public function testOpenRelayStillEnforcesSubscriptionCap(): void
     {
-        $policy = new RelayPolicy($this->authManager, new NullLogger(), $this->relayPolicyConfig(['max_subscriptions' => 2]));
+        $policy = new RelayPolicy($this->authenticationRegistry, new NullLogger(), $this->relayPolicyConfig(['max_subscriptions' => 2]));
 
         $this->expectException(PolicyViolationException::class);
         $this->expectExceptionMessage('too many subscriptions (max 2)');
@@ -62,7 +62,7 @@ final class RelayPolicyTest extends TestCase
 
     public function testOpenRelayRateLimitsAnonymousClients(): void
     {
-        $policy = new RelayPolicy($this->authManager, new NullLogger(), $this->relayPolicyConfig([]));
+        $policy = new RelayPolicy($this->authenticationRegistry, new NullLogger(), $this->relayPolicyConfig([]));
 
         $this->assertFalse($policy->isRateLimitExempt($this->guestClient()));
     }
@@ -191,7 +191,7 @@ final class RelayPolicyTest extends TestCase
      */
     private function policyWithGuestRules(array $overrides = []): RelayPolicy
     {
-        return new RelayPolicy($this->authManager, new NullLogger(), $this->relayPolicyConfig([
+        return new RelayPolicy($this->authenticationRegistry, new NullLogger(), $this->relayPolicyConfig([
             'tenants' => [self::TENANT_HEX],
             'guest' => [
                 'read' => [['kinds' => [EventKind::TEXT_NOTE], 'from' => 'tenants']],
@@ -220,7 +220,7 @@ final class RelayPolicyTest extends TestCase
     private function tenantClient(): RelayClient
     {
         $client = new RelayClient(ClientId::fromString('tenant'), $this->connectionInfo());
-        $this->authManager->authenticate($client->getId(), $this->publicKey(self::TENANT_HEX));
+        $this->authenticationRegistry->authenticate($client->getId(), $this->publicKey(self::TENANT_HEX));
 
         return $client;
     }

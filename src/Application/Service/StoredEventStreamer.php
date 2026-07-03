@@ -25,7 +25,7 @@ final readonly class StoredEventStreamer
         private RelayEventStoreInterface $eventStore,
         private RelayPolicyInterface $policy,
         private ClientMessengerInterface $messenger,
-        private SubscriptionRegistryInterface $subscriptionManager,
+        private SubscriptionRegistryInterface $subscriptionRegistry,
         private LoggerInterface $logger,
     ) {
     }
@@ -43,7 +43,7 @@ final readonly class StoredEventStreamer
 
             $this->messenger->send($client, new EoseMessage($subscription->getId()));
 
-            $this->subscriptionManager->updateSubscriptionState($client->getId(), $subscription->getId(), SubscriptionState::Live);
+            $this->subscriptionRegistry->updateSubscriptionState($client->getId(), $subscription->getId(), SubscriptionState::Live);
 
             $this->logger->debug('Stored events sent, subscription now live', [
                 'subscription_id' => (string) $subscription->getId(),

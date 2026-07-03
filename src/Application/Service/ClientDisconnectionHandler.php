@@ -12,7 +12,7 @@ final class ClientDisconnectionHandler
     // Deliberate: coordinates teardown across three registries plus logging — see ADR-0010
     public function __construct(
         private readonly ClientRegistryInterface $registry,
-        private readonly SubscriptionRegistryInterface $subscriptionManager,
+        private readonly SubscriptionRegistryInterface $subscriptionRegistry,
         private readonly AuthenticatedSessionsInterface $authenticatedSessions,
         private readonly LoggerInterface $logger,
     ) {
@@ -24,7 +24,7 @@ final class ClientDisconnectionHandler
             return;
         }
 
-        $this->subscriptionManager->removeAllForClient($clientId);
+        $this->subscriptionRegistry->removeAllForClient($clientId);
         $this->authenticatedSessions->removeClient($clientId);
         $this->registry->removeClient($clientId);
 

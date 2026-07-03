@@ -52,14 +52,15 @@ use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
+use Override;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
 final class ProcessAuthUseCaseTest extends TestCase
 {
-    private InMemoryAuthenticationRegistry $authManager;
-    private InMemoryClientRegistry $clientManager;
+    private InMemoryAuthenticationRegistry $authenticationRegistry;
+    private InMemoryClientRegistry $clientRegistry;
     private ClientMessenger $messenger;
     private ProcessAuthUseCase $useCase;
     private RelayPolicyInterface $policy;
@@ -67,7 +68,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     private ClientConnectionInterface&Stub $connection;
     private KeyPair $keyPair;
     private SignatureServiceInterface $sigService;
-    private InMemorySubscriptionRegistry $subscriptionManager;
+    private InMemorySubscriptionRegistry $subscriptionRegistry;
 
     private function signatureService(): SignatureServiceInterface
     {
@@ -81,7 +82,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+        $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $this->keyPair = KeyPair::generate($this->signatureService());
 
         $config = $this->createStub(RelayConfigInterface::class);
@@ -91,21 +92,21 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->policy->method('allowsAuthentication')->willReturn(true);
 
         $this->connection = $this->createStub(ClientConnectionInterface::class);
-        $this->clientManager = new InMemoryClientRegistry(
+        $this->clientRegistry = new InMemoryClientRegistry(
             new InMemoryMetricsCollector(),
             new NativeRandomBytesGenerator(),
             new NullLogger(),
         );
-        $this->messenger = new ClientMessenger($this->clientManager);
-        $this->client = $this->clientManager->registerClient(
+        $this->messenger = new ClientMessenger($this->clientRegistry);
+        $this->client = $this->clientRegistry->registerClient(
             $this->connection,
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
 
-        $this->subscriptionManager = new InMemorySubscriptionRegistry(new InMemoryMetricsCollector(), new NullLogger());
+        $this->subscriptionRegistry = new InMemorySubscriptionRegistry(new InMemoryMetricsCollector(), new NullLogger());
 
         $this->useCase = new ProcessAuthUseCase(
-            $this->authManager,
+            $this->authenticationRegistry,
             new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $this->eventValidator(),
             $this->buildReevaluator($this->policy, $this->createStub(RelayEventStoreInterface::class)),
@@ -118,13 +119,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $admission = new SubscriptionAdmission(
             $policy,
             $this->createStub(RateLimiterInterface::class),
-            $this->authManager,
+            $this->authenticationRegistry,
             $this->messenger,
-            $this->subscriptionManager,
+            $this->subscriptionRegistry,
         );
 
         $synchronousExecutor = new class implements DeferredExecutorInterface {
-            #[\Override]
+            #[Override]
             public function defer(Closure $task): void
             {
                 $task();
@@ -135,24 +136,24 @@ final class ProcessAuthUseCaseTest extends TestCase
             $eventStore,
             $policy,
             $this->messenger,
-            $this->subscriptionManager,
+            $this->subscriptionRegistry,
             new NullLogger(),
         );
 
         $createSubscription = new CreateSubscriptionUseCase(
             $admission,
-            $this->subscriptionManager,
+            $this->subscriptionRegistry,
             $storedEventStreamer,
             $synchronousExecutor,
             new NullLogger(),
         );
 
-        return new SubscriptionReevaluator($this->subscriptionManager, $createSubscription, $this->messenger);
+        return new SubscriptionReevaluator($this->subscriptionRegistry, $createSubscription, $this->messenger);
     }
 
     public function testSuccessfulAuthentication(): void
     {
-        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
 
         $replies = $this->useCase->execute($this->client, $event);
@@ -160,7 +161,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertTrue($replies[0]->isAccepted());
-        $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertTrue($this->authenticationRegistry->isAuthenticated($this->client->getId()));
     }
 
     public function testReevaluatesClientSubscriptionsOnSuccessfulAuth(): void
@@ -191,22 +192,22 @@ final class ProcessAuthUseCaseTest extends TestCase
             '#p' => [$this->keyPair->getPublicKey()->toHex()],
         ])]);
         $subscription = Subscription::create(SubscriptionIdMother::from('bunker'), $originalFilters, SubscriptionState::Live);
-        $this->subscriptionManager->addSubscription($this->client->getId(), $subscription, $originalFilters);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, $originalFilters);
 
         $useCase = new ProcessAuthUseCase(
-            $this->authManager,
+            $this->authenticationRegistry,
             new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
             $this->buildReevaluator($policy, $eventStore),
             new NullLogger(),
         );
 
-        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $replies = $useCase->execute($this->client, $this->createAuthEvent($challenge, 'wss://relay.example.com'));
 
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertTrue($replies[0]->isAccepted());
-        $this->assertTrue($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertTrue($this->authenticationRegistry->isAuthenticated($this->client->getId()));
 
         $eventMessages = array_filter($sent, static fn (string $json): bool => str_starts_with($json, '["EVENT"'));
         $this->assertNotEmpty($eventMessages, 'auth should re-run the subscription and stream the now-visible request');
@@ -214,7 +215,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testRejectsAuthenticationFromNonTenantPubkey(): void
     {
-        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://relay.example.com');
 
         $config = $this->createStub(RelayConfigInterface::class);
@@ -224,7 +225,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $policy->method('allowsAuthentication')->willReturn(false);
 
         $useCase = new ProcessAuthUseCase(
-            $this->authManager,
+            $this->authenticationRegistry,
             new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
@@ -237,7 +238,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertFalse($replies[0]->isAccepted());
         $this->assertStringContainsString('restricted', $replies[0]->getMessage());
-        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->client->getId()));
     }
 
     public function testIssuesChallengeWhenNoneOutstanding(): void
@@ -251,13 +252,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[1]);
         $this->assertFalse($replies[1]->isAccepted());
         $this->assertStringContainsString('auth-required', $replies[1]->getMessage());
-        $this->assertNotNull($this->authManager->getChallenge($this->client->getId()));
-        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertNotNull($this->authenticationRegistry->getChallenge($this->client->getId()));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->client->getId()));
     }
 
     public function testRejectsInvalidChallenge(): void
     {
-        $this->authManager->getOrCreateChallenge($this->client->getId());
+        $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent('wrong-challenge', 'wss://relay.example.com');
 
         $replies = $this->useCase->execute($this->client, $event);
@@ -266,12 +267,12 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertFalse($replies[0]->isAccepted());
         $this->assertStringContainsString('invalid challenge', $replies[0]->getMessage());
-        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->client->getId()));
     }
 
     public function testRejectsInvalidRelayUrl(): void
     {
-        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEvent($challenge, 'wss://wrong-relay.example.com');
 
         $replies = $this->useCase->execute($this->client, $event);
@@ -280,13 +281,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertFalse($replies[0]->isAccepted());
         $this->assertStringContainsString('invalid relay URL', $replies[0]->getMessage());
-        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->client->getId()));
     }
 
     public function testRejectsUnsignedAuthEventClaimingVictimPubkey(): void
     {
         $victim = KeyMother::bobPublicKey();
-        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
 
         $forged = EventMother::fromRumour(new Rumour(
             $victim,
@@ -305,13 +306,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertFalse($replies[0]->isAccepted());
         $this->assertStringContainsString('signature is invalid', $replies[0]->getMessage());
-        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
-        $this->assertFalse($this->authManager->isAuthenticatedAs($this->client->getId(), $victim));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->client->getId()));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticatedAs($this->client->getId(), $victim));
     }
 
     public function testRejectsExpiredTimestamp(): void
     {
-        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEventWithTimestamp($challenge, 'wss://relay.example.com', time() - 700);
 
         $replies = $this->useCase->execute($this->client, $event);
@@ -320,12 +321,12 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertFalse($replies[0]->isAccepted());
         $this->assertStringContainsString('timestamp', $replies[0]->getMessage());
-        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->client->getId()));
     }
 
     public function testRejectsTimestampAgainstTheInjectedClockNotWallClock(): void
     {
-        $challenge = $this->authManager->getOrCreateChallenge($this->client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $event = $this->createAuthEventWithTimestamp($challenge, 'wss://relay.example.com', time());
 
         $config = $this->createStub(RelayConfigInterface::class);
@@ -338,7 +339,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $clock->method('now')->willReturn(Timestamp::fromInt(time() + 601));
 
         $useCase = new ProcessAuthUseCase(
-            $this->authManager,
+            $this->authenticationRegistry,
             new AuthEventVerifier($config, $policy, $clock),
             $this->eventValidator(),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
@@ -351,7 +352,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertFalse($replies[0]->isAccepted());
         $this->assertStringContainsString('timestamp', $replies[0]->getMessage());
-        $this->assertFalse($this->authManager->isAuthenticated($this->client->getId()));
+        $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->client->getId()));
     }
 
     private function createNostrConnectRequest(): Event

@@ -14,7 +14,7 @@ use Throwable;
 final class CloseSubscriptionUseCase
 {
     public function __construct(
-        private readonly SubscriptionRegistryInterface $subscriptionManager,
+        private readonly SubscriptionRegistryInterface $subscriptionRegistry,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -25,7 +25,7 @@ final class CloseSubscriptionUseCase
     public function execute(RelayClient $client, SubscriptionId $subscriptionId): array
     {
         try {
-            $this->subscriptionManager->removeSubscription($client->getId(), $subscriptionId);
+            $this->subscriptionRegistry->removeSubscription($client->getId(), $subscriptionId);
         } catch (Throwable $e) {
             $this->logger->error('Subscription close error', [
                 'client_id' => (string) $client->getId(),

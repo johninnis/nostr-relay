@@ -20,8 +20,8 @@ use Psr\Log\NullLogger;
 
 final class ClientDisconnectionHandlerTest extends TestCase
 {
-    private InMemoryClientRegistry $clientManager;
-    private InMemorySubscriptionRegistry $subscriptionManager;
+    private InMemoryClientRegistry $clientRegistry;
+    private InMemorySubscriptionRegistry $subscriptionRegistry;
     private ClientDisconnectionHandler $handler;
 
     protected function setUp(): void
@@ -29,16 +29,16 @@ final class ClientDisconnectionHandlerTest extends TestCase
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
-        $this->clientManager = new InMemoryClientRegistry(
+        $this->subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->clientRegistry = new InMemoryClientRegistry(
             $metrics,
             new NativeRandomBytesGenerator(),
             $logger,
         );
 
         $this->handler = new ClientDisconnectionHandler(
-            $this->clientManager,
-            $this->subscriptionManager,
+            $this->clientRegistry,
+            $this->subscriptionRegistry,
             new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
             $logger,
         );
@@ -48,18 +48,18 @@ final class ClientDisconnectionHandlerTest extends TestCase
     {
         $connection = $this->createStub(ClientConnectionInterface::class);
         $connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
-        $client = $this->clientManager->registerClient($connection, $connectionInfo);
+        $client = $this->clientRegistry->registerClient($connection, $connectionInfo);
 
         $this->handler->disconnect($client->getId());
 
-        $this->assertNull($this->clientManager->getClient($client->getId()));
-        $this->assertSame(0, $this->clientManager->getClientCount());
+        $this->assertNull($this->clientRegistry->getClient($client->getId()));
+        $this->assertSame(0, $this->clientRegistry->getClientCount());
     }
 
     public function testDisconnectNonExistentClientIsNoOp(): void
     {
         $this->handler->disconnect(ClientId::fromString('unknown'));
 
-        $this->assertSame(0, $this->clientManager->getClientCount());
+        $this->assertSame(0, $this->clientRegistry->getClientCount());
     }
 }

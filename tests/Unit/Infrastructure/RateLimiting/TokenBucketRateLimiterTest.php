@@ -11,6 +11,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
+use Override;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 
@@ -39,7 +40,7 @@ final class TokenBucketRateLimiterTest extends TestCase
             {
             }
 
-            #[\Override]
+            #[Override]
             public function limitFor(RateLimitMetric $metric): int
             {
                 return $this->limit;

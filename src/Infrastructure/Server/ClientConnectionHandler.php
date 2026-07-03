@@ -26,7 +26,7 @@ final class ClientConnectionHandler
 
     // Deliberate: per-connection lifecycle coordinates registry, disconnection, router, gate, logging and timeout — see ADR-0010
     public function __construct(
-        private readonly InMemoryClientRegistry $clientManager,
+        private readonly InMemoryClientRegistry $clientRegistry,
         private readonly ClientDisconnectionHandler $disconnectionHandler,
         private readonly MessageRouter $messageRouter,
         private readonly LoggerInterface $logger,
@@ -47,7 +47,7 @@ final class ClientConnectionHandler
             $connectionInfo = new ConnectionInfo($clientIp, $userAgent, Timestamp::now());
 
             $adapter = new WebsocketClientConnection($websocketClient);
-            $client = $this->clientManager->registerClient($adapter, $connectionInfo);
+            $client = $this->clientRegistry->registerClient($adapter, $connectionInfo);
 
             while ($message = $websocketClient->receive(new TimeoutCancellation($this->idleTimeoutSeconds))) {
                 $this->messageRouter->route($client, $message->buffer());

@@ -43,12 +43,10 @@ use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
-use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
-use Override;
 use Psr\Log\LoggerInterface;
 
 final class RelayServerFactory
@@ -62,7 +60,7 @@ final class RelayServerFactory
         private readonly RelayPolicyInterface $policy,
         private readonly RelayConfigInterface $config,
         private readonly RateLimitPolicyInterface $rateLimitPolicy,
-        private readonly AuthenticationRegistryInterface $authManager,
+        private readonly AuthenticationRegistryInterface $authenticationRegistry,
         private readonly LoggerInterface $logger,
         private readonly Nip11InfoProviderInterface $nip11InfoProvider,
         private readonly ?HttpRequestHandlerInterface $httpHandler = null,
@@ -80,31 +78,31 @@ final class RelayServerFactory
     {
         $metrics = $this->metricsCollector ?? new InMemoryMetricsCollector();
 
-        $subscriptionManager = new InMemorySubscriptionRegistry(
+        $subscriptionRegistry = new InMemorySubscriptionRegistry(
             $metrics,
             $this->logger
         );
 
-        $clientManager = new InMemoryClientRegistry(
+        $clientRegistry = new InMemoryClientRegistry(
             $metrics,
             $this->randomBytes,
             $this->logger,
             $this->config->getMaxConnections()
         );
 
-        $clientMessenger = new ClientMessenger($clientManager);
+        $clientMessenger = new ClientMessenger($clientRegistry);
 
         $disconnectionHandler = new ClientDisconnectionHandler(
-            $clientManager,
-            $subscriptionManager,
-            $this->authManager,
+            $clientRegistry,
+            $subscriptionRegistry,
+            $this->authenticationRegistry,
             $this->logger
         );
 
         $eventDistributor = new EventDistributor(
             $this->policy,
-            $subscriptionManager,
-            $clientManager,
+            $subscriptionRegistry,
+            $clientRegistry,
             $clientMessenger,
             $this->logger
         );
@@ -122,9 +120,9 @@ final class RelayServerFactory
         $subscriptionAdmission = new SubscriptionAdmission(
             $this->policy,
             $subscriptionRateLimiter,
-            $this->authManager,
+            $this->authenticationRegistry,
             $clientMessenger,
-            $subscriptionManager
+            $subscriptionRegistry
         );
 
         $eventDeletionProcessor = new EventDeletionProcessor($this->eventStore, $this->logger);
@@ -136,7 +134,7 @@ final class RelayServerFactory
         );
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
-            $clientManager,
+            $clientRegistry,
             $eventDistributor,
             $deferredExecutor
         );
@@ -151,8 +149,8 @@ final class RelayServerFactory
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $eventAdmission,
             $acceptedEventPipeline,
-            $this->authManager,
-            $clientManager,
+            $this->authenticationRegistry,
+            $clientRegistry,
             $this->logger
         );
 
@@ -160,25 +158,25 @@ final class RelayServerFactory
             $this->eventStore,
             $this->policy,
             $clientMessenger,
-            $subscriptionManager,
+            $subscriptionRegistry,
             $this->logger
         );
 
         $createSubscriptionUseCase = new CreateSubscriptionUseCase(
             $subscriptionAdmission,
-            $subscriptionManager,
+            $subscriptionRegistry,
             $storedEventStreamer,
             $deferredExecutor,
             $this->logger
         );
 
         $closeSubscriptionUseCase = new CloseSubscriptionUseCase(
-            $subscriptionManager,
+            $subscriptionRegistry,
             $this->logger
         );
 
         $subscriptionReevaluator = new SubscriptionReevaluator(
-            $subscriptionManager,
+            $subscriptionRegistry,
             $createSubscriptionUseCase,
             $clientMessenger
         );
@@ -186,7 +184,7 @@ final class RelayServerFactory
         $authEventVerifier = new AuthEventVerifier($this->config, $this->policy, new SystemClock());
 
         $processAuthUseCase = new ProcessAuthUseCase(
-            $this->authManager,
+            $this->authenticationRegistry,
             $authEventVerifier,
             $eventValidator,
             $subscriptionReevaluator,
@@ -218,17 +216,11 @@ final class RelayServerFactory
         );
 
         $connectionHandler = new ClientConnectionHandler(
-            $clientManager,
+            $clientRegistry,
             $disconnectionHandler,
             $messageRouter,
             $this->logger,
-            $this->connectionGate ?? new class implements ConnectionGateInterface {
-                #[Override]
-                public function isIpAllowed(IpAddress $ipAddress): bool
-                {
-                    return true;
-                }
-            },
+            $this->connectionGate ?? new AllowAllConnectionGate(),
         );
 
         $nip11Handler = new Nip11HttpHandler($this->nip11InfoProvider);
@@ -245,8 +237,8 @@ final class RelayServerFactory
         return new RelayInstance(
             $server,
             $eventDistributor,
-            $subscriptionManager,
-            $clientManager,
+            $subscriptionRegistry,
+            $clientRegistry,
             $metrics
         );
     }

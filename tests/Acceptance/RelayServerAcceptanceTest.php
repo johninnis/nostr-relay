@@ -109,14 +109,14 @@ final class RelayServerAcceptanceTest extends TestCase
         $config->method('getRelayUrl')->willReturn($relayUrl);
         $config->method('getTrustedProxies')->willReturn([]);
 
-        $authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+        $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
         $relay = new RelayServerFactory(
             eventStore: new InMemoryEventStore(),
-            policy: new RelayPolicy($authManager, new NullLogger(), RelayPolicyConfig::tryFromArray([]) ?? self::fail('config did not parse')),
+            policy: new RelayPolicy($authenticationRegistry, new NullLogger(), RelayPolicyConfig::tryFromArray([]) ?? self::fail('config did not parse')),
             config: $config,
             rateLimitPolicy: new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 1000, subscriptionsPerMinute: 1000)),
-            authManager: $authManager,
+            authenticationRegistry: $authenticationRegistry,
             logger: new NullLogger(),
             nip11InfoProvider: new StaticNip11InfoProvider(Nip11Info::fromArray($relayUrl, [
                 'name' => 'Acceptance Relay',

@@ -77,9 +77,9 @@ final class MessageRouterTest extends TestCase
     private MessageDeserialiserInterface&Stub $deserialiser;
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
-    private InMemorySubscriptionRegistry $subscriptionManager;
-    private InMemoryAuthenticationRegistry $authManager;
-    private InMemoryClientRegistry $clientManager;
+    private InMemorySubscriptionRegistry $subscriptionRegistry;
+    private InMemoryAuthenticationRegistry $authenticationRegistry;
+    private InMemoryClientRegistry $clientRegistry;
     private MessageRouter $router;
     private RelayClient $client;
 
@@ -93,20 +93,20 @@ final class MessageRouterTest extends TestCase
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
-        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+        $this->subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
-        $this->clientManager = new InMemoryClientRegistry(
+        $this->clientRegistry = new InMemoryClientRegistry(
             $metrics,
             new NativeRandomBytesGenerator(),
             $logger,
         );
-        $messenger = new ClientMessenger($this->clientManager);
+        $messenger = new ClientMessenger($this->clientRegistry);
 
         $distributor = new EventDistributor(
             $this->policy,
-            $this->subscriptionManager,
-            $this->clientManager,
+            $this->subscriptionRegistry,
+            $this->clientRegistry,
             $messenger,
             $logger,
         );
@@ -114,12 +114,12 @@ final class MessageRouterTest extends TestCase
         $signatureService = $this->signatureService();
         $eventValidator = new EventValidator($signatureService, new NipComplianceValidator($signatureService));
 
-        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authManager, $messenger, $this->subscriptionManager);
+        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authenticationRegistry, $messenger, $this->subscriptionRegistry);
 
         $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
-            $this->clientManager,
+            $this->clientRegistry,
             $distributor,
             new AmphpDeferredExecutor(),
         );
@@ -134,8 +134,8 @@ final class MessageRouterTest extends TestCase
         $processEvent = new ProcessEventSubmissionUseCase(
             $eventAdmission,
             $acceptedEventPipeline,
-            $this->authManager,
-            $this->clientManager,
+            $this->authenticationRegistry,
+            $this->clientRegistry,
             $logger,
         );
 
@@ -143,28 +143,28 @@ final class MessageRouterTest extends TestCase
             $this->eventStore,
             $this->policy,
             $messenger,
-            $this->subscriptionManager,
+            $this->subscriptionRegistry,
             $logger,
         );
 
         $createSubscription = new CreateSubscriptionUseCase(
             $admission,
-            $this->subscriptionManager,
+            $this->subscriptionRegistry,
             $storedEventStreamer,
             new AmphpDeferredExecutor(),
             $logger,
         );
 
-        $closeSubscription = new CloseSubscriptionUseCase($this->subscriptionManager, $logger);
+        $closeSubscription = new CloseSubscriptionUseCase($this->subscriptionRegistry, $logger);
 
         $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
 
         $processAuth = new ProcessAuthUseCase(
-            $this->authManager,
+            $this->authenticationRegistry,
             new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $eventValidator,
-            new SubscriptionReevaluator($this->subscriptionManager, $createSubscription, $messenger),
+            new SubscriptionReevaluator($this->subscriptionRegistry, $createSubscription, $messenger),
             $logger,
         );
 
@@ -191,7 +191,7 @@ final class MessageRouterTest extends TestCase
 
     private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
     {
-        return $this->clientManager->registerClient(
+        return $this->clientRegistry->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
@@ -236,7 +236,7 @@ final class MessageRouterTest extends TestCase
         $this->router->route($this->client, '["REQ","sub-1",{}]');
 
         $clientId = $this->client->getId();
-        $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($clientId));
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($clientId));
     }
 
     public function testRoutesCloseMessage(): void
@@ -255,7 +255,7 @@ final class MessageRouterTest extends TestCase
         $this->router->route($this->client, '["REQ","sub-1",{}]');
         $this->router->route($this->client, '["CLOSE","sub-1"]');
 
-        $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+        $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testRoutesAuthMessage(): void
@@ -271,7 +271,7 @@ final class MessageRouterTest extends TestCase
                 return 'OK' === $data[0] && true === $data[2];
             }));
         $client = $this->makeClient($connection);
-        $challenge = $this->authManager->getOrCreateChallenge($client->getId());
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($client->getId());
 
         $event = (new Rumour(
             $keyPair->getPublicKey(),
@@ -288,7 +288,7 @@ final class MessageRouterTest extends TestCase
 
         $this->router->route($client, '["AUTH",{}]');
 
-        $this->assertTrue($this->authManager->isAuthenticated($client->getId()));
+        $this->assertTrue($this->authenticationRegistry->isAuthenticated($client->getId()));
     }
 
     public function testRoutesCountMessage(): void

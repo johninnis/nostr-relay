@@ -54,7 +54,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 {
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
-    private InMemoryClientRegistry $clientManager;
+    private InMemoryClientRegistry $clientRegistry;
     private ProcessEventSubmissionUseCase $useCase;
     private RelayClient $client;
     private SignatureServiceInterface $sigService;
@@ -80,24 +80,24 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $metrics ??= $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
-        $this->clientManager = new InMemoryClientRegistry(
+        $subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->clientRegistry = new InMemoryClientRegistry(
             $metrics,
             new NativeRandomBytesGenerator(),
             $logger,
         );
-        $messenger = new ClientMessenger($this->clientManager);
+        $messenger = new ClientMessenger($this->clientRegistry);
 
         $distributor = new EventDistributor(
             $this->policy,
-            $subscriptionManager,
-            $this->clientManager,
+            $subscriptionRegistry,
+            $this->clientRegistry,
             $messenger,
             $logger,
         );
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
-            $this->clientManager,
+            $this->clientRegistry,
             $distributor,
             new AmphpDeferredExecutor(),
         );
@@ -117,14 +117,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             ),
             $pipeline,
             new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
-            $this->clientManager,
+            $this->clientRegistry,
             $logger,
         );
     }
 
     private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
     {
-        return $this->clientManager->registerClient(
+        return $this->clientRegistry->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );

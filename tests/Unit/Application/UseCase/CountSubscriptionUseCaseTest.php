@@ -37,7 +37,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
-    private InMemoryClientRegistry $clientManager;
+    private InMemoryClientRegistry $clientRegistry;
     private CountSubscriptionUseCase $useCase;
 
     protected function setUp(): void
@@ -45,12 +45,12 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
-        $this->clientManager = new InMemoryClientRegistry(
+        $this->clientRegistry = new InMemoryClientRegistry(
             $this->createStub(MetricsCollectorInterface::class),
             new NativeRandomBytesGenerator(),
             new NullLogger(),
         );
-        $messenger = new ClientMessenger($this->clientManager);
+        $messenger = new ClientMessenger($this->clientRegistry);
 
         $admission = new SubscriptionAdmission(
             $this->policy,
@@ -69,7 +69,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
 
     private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
     {
-        return $this->clientManager->registerClient(
+        return $this->clientRegistry->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );

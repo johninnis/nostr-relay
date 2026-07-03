@@ -38,8 +38,8 @@ use Psr\Log\NullLogger;
 final class EventDistributorTest extends TestCase
 {
     private RelayPolicyInterface&Stub $policy;
-    private InMemorySubscriptionRegistry $subscriptionManager;
-    private InMemoryClientRegistry $clientManager;
+    private InMemorySubscriptionRegistry $subscriptionRegistry;
+    private InMemoryClientRegistry $clientRegistry;
     private MetricsCollectorInterface&MockObject $metrics;
     private EventDistributor $distributor;
 
@@ -49,8 +49,8 @@ final class EventDistributorTest extends TestCase
         $this->metrics = $this->createMock(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new InMemorySubscriptionRegistry($this->metrics, $logger);
-        $this->clientManager = new InMemoryClientRegistry(
+        $this->subscriptionRegistry = new InMemorySubscriptionRegistry($this->metrics, $logger);
+        $this->clientRegistry = new InMemoryClientRegistry(
             $this->metrics,
             new NativeRandomBytesGenerator(),
             $logger,
@@ -58,9 +58,9 @@ final class EventDistributorTest extends TestCase
 
         $this->distributor = new EventDistributor(
             $this->policy,
-            $this->subscriptionManager,
-            $this->clientManager,
-            new ClientMessenger($this->clientManager),
+            $this->subscriptionRegistry,
+            $this->clientRegistry,
+            new ClientMessenger($this->clientRegistry),
             $logger,
         );
     }
@@ -83,13 +83,13 @@ final class EventDistributorTest extends TestCase
     {
         $connection ??= $this->createStub(ClientConnectionInterface::class);
         $connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
-        $client = $this->clientManager->registerClient($connection, $connectionInfo);
+        $client = $this->clientRegistry->registerClient($connection, $connectionInfo);
 
         $filter = new Filter(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null);
         $subscription = Subscription::create(SubscriptionIdMother::from($subIdStr), new FilterCollection([$filter]))
             ->withState(SubscriptionState::Active);
 
-        $this->subscriptionManager->addSubscription($client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($client->getId(), $subscription);
 
         return $client;
     }

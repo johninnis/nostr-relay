@@ -10,7 +10,7 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 final readonly class SubscriptionReevaluator
 {
     public function __construct(
-        private SubscriptionLookupInterface $subscriptionManager,
+        private SubscriptionLookupInterface $subscriptionLookup,
         private CreateSubscriptionUseCase $createSubscription,
         private ClientMessengerInterface $messenger,
     ) {
@@ -18,8 +18,8 @@ final readonly class SubscriptionReevaluator
 
     public function reevaluate(RelayClient $client): void
     {
-        foreach ($this->subscriptionManager->getSubscriptionsForClient($client->getId()) as $subscription) {
-            $originalFilters = $this->subscriptionManager->getOriginalFilters($client->getId(), $subscription->getId());
+        foreach ($this->subscriptionLookup->getSubscriptionsForClient($client->getId()) as $subscription) {
+            $originalFilters = $this->subscriptionLookup->getOriginalFilters($client->getId(), $subscription->getId());
 
             if ($originalFilters->isEmpty()) {
                 continue;

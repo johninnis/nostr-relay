@@ -25,7 +25,7 @@ final class CreateSubscriptionUseCase
     // Deliberate: subscription-creation orchestration coordinates distinct collaborators — see ADR-0010
     public function __construct(
         private readonly SubscriptionAdmission $admission,
-        private readonly SubscriptionRegistryInterface $subscriptionManager,
+        private readonly SubscriptionRegistryInterface $subscriptionRegistry,
         private readonly StoredEventStreamer $storedEventStreamer,
         private readonly DeferredExecutorInterface $deferredExecutor,
         private readonly LoggerInterface $logger,
@@ -43,7 +43,7 @@ final class CreateSubscriptionUseCase
 
             $subscription = Subscription::create($subscriptionId, $modifiedFilters, SubscriptionState::Active);
 
-            $this->subscriptionManager->addSubscription($client->getId(), $subscription, $filters);
+            $this->subscriptionRegistry->addSubscription($client->getId(), $subscription, $filters);
 
             $this->deferredExecutor->defer(fn () => $this->storedEventStreamer->stream($client, $subscription, $modifiedFilters));
 
@@ -60,7 +60,7 @@ final class CreateSubscriptionUseCase
         } catch (RateLimitException) {
             return [new ClosedMessage($subscriptionId, 'rate-limited: slow down')];
         } catch (Throwable $e) {
-            $this->subscriptionManager->removeSubscription($client->getId(), $subscriptionId);
+            $this->subscriptionRegistry->removeSubscription($client->getId(), $subscriptionId);
             $this->logger->error('Subscription creation error', [
                 'client_id' => (string) $client->getId(),
                 'subscription_id' => (string) $subscriptionId,

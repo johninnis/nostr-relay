@@ -36,7 +36,7 @@ final class RelayServerFactoryTest extends TestCase
             policy: $this->createStub(RelayPolicyInterface::class),
             config: $config,
             rateLimitPolicy: $this->createStub(RateLimitPolicyInterface::class),
-            authManager: new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
+            authenticationRegistry: new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
             logger: new NullLogger(),
             nip11InfoProvider: $this->createStub(Nip11InfoProviderInterface::class),
             signatureService: $this->createStub(SignatureServiceInterface::class),

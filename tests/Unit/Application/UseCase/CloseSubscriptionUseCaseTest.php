@@ -21,7 +21,7 @@ use Psr\Log\NullLogger;
 
 final class CloseSubscriptionUseCaseTest extends TestCase
 {
-    private InMemorySubscriptionRegistry $subscriptionManager;
+    private InMemorySubscriptionRegistry $subscriptionRegistry;
     private CloseSubscriptionUseCase $useCase;
     private RelayClient $client;
 
@@ -29,8 +29,8 @@ final class CloseSubscriptionUseCaseTest extends TestCase
     {
         $logger = new NullLogger();
         $metrics = $this->createStub(MetricsCollectorInterface::class);
-        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
-        $this->useCase = new CloseSubscriptionUseCase($this->subscriptionManager, $logger);
+        $this->subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->useCase = new CloseSubscriptionUseCase($this->subscriptionRegistry, $logger);
 
         $this->client = new RelayClient(
             ClientId::fromString('client-1'),
@@ -42,17 +42,17 @@ final class CloseSubscriptionUseCaseTest extends TestCase
     {
         $subId = SubscriptionIdMother::from('sub-1');
         $subscription = Subscription::create($subId, new FilterCollection([new Filter()]));
-        $this->subscriptionManager->addSubscription($this->client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
 
         $this->useCase->execute($this->client, $subId);
 
-        $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+        $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testExecuteHandlesNonExistentSubscription(): void
     {
         $this->useCase->execute($this->client, SubscriptionIdMother::from('missing'));
 
-        $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+        $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 }

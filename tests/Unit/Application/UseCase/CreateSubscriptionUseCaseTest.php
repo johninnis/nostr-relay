@@ -40,10 +40,10 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 {
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
-    private InMemorySubscriptionRegistry $subscriptionManager;
+    private InMemorySubscriptionRegistry $subscriptionRegistry;
     private RateLimiterInterface&Stub $rateLimiter;
-    private InMemoryClientRegistry $clientManager;
-    private InMemoryAuthenticationRegistry $authManager;
+    private InMemoryClientRegistry $clientRegistry;
+    private InMemoryAuthenticationRegistry $authenticationRegistry;
     private CreateSubscriptionUseCase $useCase;
     private RelayClient $client;
 
@@ -55,16 +55,16 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
-        $this->subscriptionManager = new InMemorySubscriptionRegistry($metrics, $logger);
-        $this->clientManager = new InMemoryClientRegistry($metrics, new NativeRandomBytesGenerator(), $logger);
-        $messenger = new ClientMessenger($this->clientManager);
-        $this->authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
-        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authManager, $messenger, $this->subscriptionManager);
-        $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionManager, $logger);
+        $this->subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->clientRegistry = new InMemoryClientRegistry($metrics, new NativeRandomBytesGenerator(), $logger);
+        $messenger = new ClientMessenger($this->clientRegistry);
+        $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authenticationRegistry, $messenger, $this->subscriptionRegistry);
+        $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionRegistry, $logger);
 
         $this->useCase = new CreateSubscriptionUseCase(
             $admission,
-            $this->subscriptionManager,
+            $this->subscriptionRegistry,
             $storedEventStreamer,
             new AmphpDeferredExecutor(),
             $logger,
@@ -75,7 +75,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
     private function makeClient(?ClientConnectionInterface $connection = null): RelayClient
     {
-        return $this->clientManager->registerClient(
+        return $this->clientRegistry->registerClient(
             $connection ?? $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
         );
@@ -92,7 +92,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $replies = $this->useCase->execute($this->client, $subId, $filters);
 
         $this->assertSame([], $replies);
-        $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testBeyondScopeSendsNoticeAndChallenge(): void
@@ -139,7 +139,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         });
         $client = $this->makeClient($connection);
 
-        $this->authManager->getOrCreateChallenge($client->getId());
+        $this->authenticationRegistry->getOrCreateChallenge($client->getId());
 
         $replies = $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
 
@@ -158,7 +158,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))]));
 
         $this->assertSame([], $replies);
-        $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testPolicyViolationReturnsClosedMessage(): void
@@ -174,7 +174,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
         $this->assertStringContainsString('blocked', $replies[0]->getMessage());
-        $this->assertSame(0, $this->subscriptionManager->getSubscriptionCountForClient($this->client->getId()));
+        $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testRateLimitReturnsClosedMessage(): void
@@ -214,6 +214,6 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $closed = array_values(array_filter($replies, static fn (RelayMessage $message): bool => $message instanceof ClosedMessage));
         $this->assertCount(1, $closed);
         $this->assertStringContainsString('blocked', $closed[0]->getMessage());
-        $this->assertSame(1, $this->subscriptionManager->getSubscriptionCountForClient($client->getId()));
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($client->getId()));
     }
 }

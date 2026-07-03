@@ -17,7 +17,7 @@ final class EventDistributor
     // Deliberate: fan-out coordinates policy, subscription lookup, registry, messenger and logging — see ADR-0010
     public function __construct(
         private readonly RelayPolicyInterface $policy,
-        private readonly SubscriptionLookupInterface $subscriptionManager,
+        private readonly SubscriptionLookupInterface $subscriptionLookup,
         private readonly ClientRegistryInterface $registry,
         private readonly ClientMessengerInterface $messenger,
         private readonly LoggerInterface $logger,
@@ -26,7 +26,7 @@ final class EventDistributor
 
     public function distributeToSubscribers(Event $event): void
     {
-        $subscriptionsWithClients = $this->subscriptionManager->getSubscriptionsForEvent(
+        $subscriptionsWithClients = $this->subscriptionLookup->getSubscriptionsForEvent(
             $event->getKind()
         );
 

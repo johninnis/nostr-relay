@@ -85,7 +85,7 @@ use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 
 use function Amp\trapSignal;
 
-$authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+$authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 $logger = new \Psr\Log\NullLogger();
 
 $policyConfig = RelayPolicyConfig::tryFromArray([
@@ -100,7 +100,7 @@ $policyConfig = RelayPolicyConfig::tryFromArray([
     ],
 ]) ?? throw new RuntimeException('Invalid relay policy configuration');
 
-$policy = new RelayPolicy($authManager, $logger, $policyConfig);
+$policy = new RelayPolicy($authenticationRegistry, $logger, $policyConfig);
 
 $rateLimitPolicy = new StaticRateLimitPolicy(new RateLimitConfig(
     eventsPerMinute: 60,
@@ -120,7 +120,7 @@ $factory = new RelayServerFactory(
     policy: $policy,
     config: $config,
     rateLimitPolicy: $rateLimitPolicy,
-    authManager: $authManager,
+    authenticationRegistry: $authenticationRegistry,
     logger: $logger,
     nip11InfoProvider: $nip11InfoProvider,
     // Optional: custom HTTP handler for additional endpoints
