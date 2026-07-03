@@ -124,6 +124,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         );
 
         $synchronousExecutor = new class implements DeferredExecutorInterface {
+            #[\Override]
             public function defer(Closure $task): void
             {
                 $task();

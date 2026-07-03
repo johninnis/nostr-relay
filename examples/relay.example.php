@@ -127,7 +127,7 @@ final class ExampleRelayConfig implements RelayConfigInterface
     #[Override]
     public function getRelayUrl(): RelayUrl
     {
-        return RelayUrl::fromString('ws://127.0.0.1:8080')
+        return RelayUrl::tryFromString('ws://127.0.0.1:8080')
             ?? throw new RuntimeException('invalid relay URL');
     }
 

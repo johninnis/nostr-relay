@@ -39,6 +39,7 @@ final class TokenBucketRateLimiterTest extends TestCase
             {
             }
 
+            #[\Override]
             public function limitFor(RateLimitMetric $metric): int
             {
                 return $this->limit;
