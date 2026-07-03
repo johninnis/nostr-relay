@@ -14,13 +14,11 @@ final readonly class ClientId implements Stringable
     ) {
     }
 
-    // Deliberate: minted from server random bytes, not parsed — see ADR-0011
     public static function fromBytes(string $bytes): self
     {
         return new self(bin2hex($bytes));
     }
 
-    // Deliberate: opaque server-minted id, not parsed — see ADR-0011
     public static function fromString(string $value): self
     {
         return new self($value);

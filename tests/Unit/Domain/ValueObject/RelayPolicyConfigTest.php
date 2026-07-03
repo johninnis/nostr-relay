@@ -11,17 +11,17 @@ final class RelayPolicyConfigTest extends TestCase
 {
     public function testReturnsNullWhenTenantKeyDoesNotParse(): void
     {
-        $this->assertNull(RelayPolicyConfig::fromArray(['tenants' => ['not-a-valid-key']]));
+        $this->assertNull(RelayPolicyConfig::tryFromArray(['tenants' => ['not-a-valid-key']]));
     }
 
     public function testReturnsNullWhenTenantIsNotAString(): void
     {
-        $this->assertNull(RelayPolicyConfig::fromArray(['tenants' => [123]]));
+        $this->assertNull(RelayPolicyConfig::tryFromArray(['tenants' => [123]]));
     }
 
     public function testDefaultsWhenMaxEventSizeIsMalformed(): void
     {
-        $config = RelayPolicyConfig::fromArray(['max_event_size' => 'huge']);
+        $config = RelayPolicyConfig::tryFromArray(['max_event_size' => 'huge']);
 
         $this->assertNotNull($config);
         $this->assertSame(65536, $config->getMaxEventSize());
@@ -29,7 +29,7 @@ final class RelayPolicyConfigTest extends TestCase
 
     public function testParsesValidHexTenantKey(): void
     {
-        $config = RelayPolicyConfig::fromArray(['tenants' => [str_repeat('a', 64)]]);
+        $config = RelayPolicyConfig::tryFromArray(['tenants' => [str_repeat('a', 64)]]);
 
         $this->assertNotNull($config);
         $this->assertCount(1, $config->getTenants());

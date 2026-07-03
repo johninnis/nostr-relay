@@ -167,8 +167,8 @@ $logger = new StderrLogger();
 $authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
 // A tenant relay: the owner key may publish and read freely; guests get the configured read/write scope.
-// Configure no tenants instead (`RelayPolicyConfig::fromArray([])`) to run a fully open public relay.
-$policyConfig = RelayPolicyConfig::fromArray([
+// Configure no tenants instead (`RelayPolicyConfig::tryFromArray([])`) to run a fully open public relay.
+$policyConfig = RelayPolicyConfig::tryFromArray([
     'tenants' => [$ownerPubkeyHex],
     'guest' => [
         'read' => [

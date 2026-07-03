@@ -25,7 +25,7 @@ final readonly class RateLimitConfig
     /**
      * @param array<string, mixed> $data
      */
-    public static function fromArray(array $data): ?self
+    public static function tryFromArray(array $data): ?self
     {
         $events = $data['events_per_minute'] ?? null;
         $subscriptions = $data['subscriptions_per_minute'] ?? null;

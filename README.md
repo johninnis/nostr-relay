@@ -88,7 +88,7 @@ use function Amp\trapSignal;
 $authManager = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 $logger = new \Psr\Log\NullLogger();
 
-$policyConfig = RelayPolicyConfig::fromArray([
+$policyConfig = RelayPolicyConfig::tryFromArray([
     'tenants' => ['your-hex-pubkey'],
     'guest' => [
         'read' => [

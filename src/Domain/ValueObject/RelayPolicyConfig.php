@@ -28,7 +28,7 @@ final readonly class RelayPolicyConfig
     /**
      * @param array<string, mixed> $config
      */
-    public static function fromArray(array $config): ?self
+    public static function tryFromArray(array $config): ?self
     {
         $tenants = self::resolveTenants($config['tenants'] ?? null);
 

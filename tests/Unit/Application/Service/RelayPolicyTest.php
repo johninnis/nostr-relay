@@ -209,7 +209,7 @@ final class RelayPolicyTest extends TestCase
      */
     private function relayPolicyConfig(array $config): RelayPolicyConfig
     {
-        return RelayPolicyConfig::fromArray($config) ?? self::fail('config did not parse');
+        return RelayPolicyConfig::tryFromArray($config) ?? self::fail('config did not parse');
     }
 
     private function guestClient(): RelayClient

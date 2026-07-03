@@ -45,7 +45,7 @@ final class RateLimitConfigTest extends TestCase
     {
         $config = new RateLimitConfig(200, 50);
 
-        $restored = RateLimitConfig::fromArray($config->toArray());
+        $restored = RateLimitConfig::tryFromArray($config->toArray());
 
         $this->assertNotNull($restored);
         $this->assertSame(200, $restored->perMinute(RateLimitMetric::Events));
@@ -54,7 +54,7 @@ final class RateLimitConfigTest extends TestCase
 
     public function testFromArrayCoercesNumericStrings(): void
     {
-        $config = RateLimitConfig::fromArray(['events_per_minute' => '90', 'subscriptions_per_minute' => '15']);
+        $config = RateLimitConfig::tryFromArray(['events_per_minute' => '90', 'subscriptions_per_minute' => '15']);
 
         $this->assertNotNull($config);
         $this->assertSame(90, $config->perMinute(RateLimitMetric::Events));
@@ -63,16 +63,16 @@ final class RateLimitConfigTest extends TestCase
 
     public function testFromArrayReturnsNullWhenKeyMissing(): void
     {
-        $this->assertNull(RateLimitConfig::fromArray(['events_per_minute' => 60]));
+        $this->assertNull(RateLimitConfig::tryFromArray(['events_per_minute' => 60]));
     }
 
     public function testFromArrayReturnsNullWhenNotPositive(): void
     {
-        $this->assertNull(RateLimitConfig::fromArray(['events_per_minute' => 0, 'subscriptions_per_minute' => 30]));
+        $this->assertNull(RateLimitConfig::tryFromArray(['events_per_minute' => 0, 'subscriptions_per_minute' => 30]));
     }
 
     public function testFromArrayReturnsNullWhenNonNumeric(): void
     {
-        $this->assertNull(RateLimitConfig::fromArray(['events_per_minute' => 'fast', 'subscriptions_per_minute' => 30]));
+        $this->assertNull(RateLimitConfig::tryFromArray(['events_per_minute' => 'fast', 'subscriptions_per_minute' => 30]));
     }
 }
