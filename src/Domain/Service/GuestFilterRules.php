@@ -8,16 +8,23 @@ use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
 {
+    private EventKindCollection $readableKindsWithGlobal;
+
     public function __construct(
         private PublicKeyCollection $tenants,
         private EventKindCollection $readableKinds,
+        private EventKindCollection $globalKinds,
     ) {
+        $this->readableKindsWithGlobal = $readableKinds->isEmpty()
+            ? $readableKinds
+            : EventKindCollection::fromInts([...$readableKinds->toInts(), ...$globalKinds->toInts()]);
     }
 
     public function scope(FilterCollection $filters, bool $fromTenantsOnly): ScopedFilters
@@ -26,8 +33,9 @@ final readonly class GuestFilterRules
         $scoped = [];
 
         foreach ($filters as $filter) {
-            $beyondScope = $beyondScope || $this->isBeyondScope($filter, $fromTenantsOnly);
-            $scoped[] = $this->constrain($filter, $fromTenantsOnly);
+            $tenantScoped = $fromTenantsOnly && !$this->isGlobalOnly($filter);
+            $beyondScope = $beyondScope || $this->isBeyondScope($filter, $tenantScoped);
+            $scoped[] = $this->constrain($filter, $tenantScoped);
         }
 
         return ScopedFilters::scoped(new FilterCollection($scoped), $beyondScope);
@@ -35,8 +43,12 @@ final readonly class GuestFilterRules
 
     public function allowsEvent(Event $event, bool $fromTenantsOnly): bool
     {
-        if (!$this->readableKinds->isEmpty() && !$this->readableKinds->contains($event->getKind())) {
+        if (!$this->isReadableKind($event->getKind())) {
             return false;
+        }
+
+        if ($this->globalKinds->contains($event->getKind())) {
+            return true;
         }
 
         if ($fromTenantsOnly) {
@@ -44,6 +56,26 @@ final readonly class GuestFilterRules
         }
 
         return true;
+    }
+
+    private function isGlobalOnly(Filter $filter): bool
+    {
+        if ($this->globalKinds->isEmpty()) {
+            return false;
+        }
+
+        $kinds = $filter->getKinds();
+
+        if (null === $kinds || $kinds->isEmpty()) {
+            return false;
+        }
+
+        return $kinds->diff($this->globalKinds)->isEmpty();
+    }
+
+    private function isReadableKind(EventKind $kind): bool
+    {
+        return $this->readableKindsWithGlobal->isEmpty() || $this->readableKindsWithGlobal->contains($kind);
     }
 
     private function isBeyondScope(Filter $filter, bool $fromTenantsOnly): bool
@@ -86,17 +118,17 @@ final readonly class GuestFilterRules
 
     private function constrainKindsToReadable(Filter $filter): Filter
     {
-        if ($this->readableKinds->isEmpty()) {
+        if ($this->readableKindsWithGlobal->isEmpty()) {
             return $filter;
         }
 
         $kinds = $filter->getKinds();
 
         if (null === $kinds) {
-            return $filter->withKinds($this->readableKinds);
+            return $filter->withKinds($this->readableKindsWithGlobal);
         }
 
-        return $filter->withKinds($kinds->intersect($this->readableKinds));
+        return $filter->withKinds($kinds->intersect($this->readableKindsWithGlobal));
     }
 
     private function authorsWithinTenants(Filter $filter): bool
@@ -108,12 +140,12 @@ final readonly class GuestFilterRules
 
     private function kindsWithinReadable(Filter $filter): bool
     {
-        if ($this->readableKinds->isEmpty()) {
+        if ($this->readableKindsWithGlobal->isEmpty()) {
             return true;
         }
 
         $kinds = $filter->getKinds();
 
-        return null === $kinds || $kinds->diff($this->readableKinds)->isEmpty();
+        return null === $kinds || $kinds->diff($this->readableKindsWithGlobal)->isEmpty();
     }
 }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
@@ -40,7 +41,7 @@ final class RelayPolicy implements RelayPolicyInterface
         $this->subscriptionLimits = $config->getSubscriptionLimits();
         $this->guestReadFromTenants = $guest->readsFromTenantsOnly();
         $this->guestWriteRules = $guest->getWriteRules();
-        $this->guestFilterRules = new GuestFilterRules($config->getTenants(), $guest->getReadableKinds());
+        $this->guestFilterRules = new GuestFilterRules($config->getTenants(), $guest->getReadableKinds(), new EventKindCollection([]));
     }
 
     #[Override]

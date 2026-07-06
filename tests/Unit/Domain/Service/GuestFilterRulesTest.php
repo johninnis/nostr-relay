@@ -7,11 +7,17 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\Service;
 use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
+use Innis\Nostr\Core\Domain\Collection\TagCollection;
+use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagFilter;
+use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 
@@ -181,11 +187,88 @@ final class GuestFilterRulesTest extends TestCase
         self::assertFalse($scoped->isBeyondScope());
     }
 
+    public function testGlobalOnlyFilterLeavesNonTenantAuthorsUnconstrained(): void
+    {
+        $rules = self::rules([self::TENANT], [24133], [24133]);
+
+        $scoped = $rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::OTHER]), kinds: EventKindCollection::fromInts([24133]))]), true);
+
+        self::assertFalse($scoped->isBeyondScope());
+        self::assertSame([self::OTHER], self::authorHexes($scoped->getFilters()->toArray()[0]));
+    }
+
+    public function testGlobalOnlyFilterDoesNotDefaultAuthorsToTenants(): void
+    {
+        $rules = self::rules([self::TENANT], [24133], [24133]);
+
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]))]), true);
+
+        self::assertFalse($scoped->isBeyondScope());
+        self::assertNull($scoped->getFilters()->toArray()[0]->getAuthors());
+    }
+
+    public function testGlobalOnlyFilterPTaggedToTenantIsNotBeyondScope(): void
+    {
+        $rules = self::rules([self::TENANT], [24133], [24133]);
+
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), true);
+
+        self::assertFalse($scoped->isBeyondScope());
+    }
+
+    public function testGlobalKindReadableEvenWhenAbsentFromReadableKinds(): void
+    {
+        $rules = self::rules([self::TENANT], [1], [24133]);
+
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]))]), true);
+
+        self::assertFalse($scoped->isBeyondScope());
+        self::assertSame([24133], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
+    }
+
+    public function testMixedGlobalAndScopedKindsStaysTenantScoped(): void
+    {
+        $rules = self::rules([self::TENANT], [1, 24133], [24133]);
+
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 24133]))]), true);
+
+        self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
+        self::assertSame([1, 24133], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
+    }
+
+    public function testAllowsEventForGlobalKindFromNonTenant(): void
+    {
+        $rules = self::rules([self::TENANT], [24133], [24133]);
+
+        self::assertTrue($rules->allowsEvent(self::event(self::OTHER, 24133), true));
+    }
+
+    public function testAllowsEventRejectsNonGlobalKindFromNonTenant(): void
+    {
+        $rules = self::rules([self::TENANT], [1, 24133], [24133]);
+
+        self::assertFalse($rules->allowsEvent(self::event(self::OTHER, 1), true));
+    }
+
+    private static function event(string $authorHex, int $kind): Event
+    {
+        $author = PublicKey::tryFromHex($authorHex) ?? throw new RuntimeException('Invalid test pubkey');
+
+        return EventMother::fromRumour(new Rumour(
+            $author,
+            Timestamp::now(),
+            EventKind::fromInt($kind),
+            new TagCollection(),
+            EventContent::fromString('x'),
+        ));
+    }
+
     /**
      * @param list<string> $tenantHexes
      * @param list<int>    $kindInts
+     * @param list<int>    $globalKindInts
      */
-    private static function rules(array $tenantHexes, array $kindInts): GuestFilterRules
+    private static function rules(array $tenantHexes, array $kindInts, array $globalKindInts = []): GuestFilterRules
     {
         return new GuestFilterRules(
             new PublicKeyCollection(array_map(
@@ -193,6 +276,7 @@ final class GuestFilterRulesTest extends TestCase
                 $tenantHexes,
             )),
             new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $kindInts)),
+            new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $globalKindInts)),
         );
     }
 
