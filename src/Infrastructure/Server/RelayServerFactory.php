@@ -25,6 +25,7 @@ use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthenticationRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
+use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
@@ -117,10 +118,12 @@ final class RelayServerFactory
 
         $deferredExecutor = new AmphpDeferredExecutor();
 
+        $clientAuthChallenger = new ClientAuthChallenger($this->authenticationRegistry, $clientMessenger);
+
         $subscriptionAdmission = new SubscriptionAdmission(
             $this->policy,
             $subscriptionRateLimiter,
-            $this->authenticationRegistry,
+            $clientAuthChallenger,
             $clientMessenger,
             $subscriptionRegistry
         );
@@ -130,7 +133,8 @@ final class RelayServerFactory
         $eventAdmission = new EventAdmission(
             $this->policy,
             $eventRateLimiter,
-            $eventValidator
+            $eventValidator,
+            $clientAuthChallenger
         );
 
         $acceptedEventPublisher = new AcceptedEventPublisher(

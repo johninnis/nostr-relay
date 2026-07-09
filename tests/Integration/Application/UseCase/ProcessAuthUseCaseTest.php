@@ -35,6 +35,7 @@ use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
+use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
@@ -119,7 +120,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $admission = new SubscriptionAdmission(
             $policy,
             $this->createStub(RateLimiterInterface::class),
-            $this->authenticationRegistry,
+            new ClientAuthChallenger($this->authenticationRegistry, $this->messenger),
             $this->messenger,
             $this->subscriptionRegistry,
         );

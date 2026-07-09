@@ -17,6 +17,7 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
@@ -59,7 +60,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->clientRegistry = new InMemoryClientRegistry($metrics, new NativeRandomBytesGenerator(), $logger);
         $messenger = new ClientMessenger($this->clientRegistry);
         $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
-        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, $this->authenticationRegistry, $messenger, $this->subscriptionRegistry);
+        $admission = new SubscriptionAdmission($this->policy, $this->rateLimiter, new ClientAuthChallenger($this->authenticationRegistry, $messenger), $messenger, $this->subscriptionRegistry);
         $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionRegistry, $logger);
 
         $this->useCase = new CreateSubscriptionUseCase(

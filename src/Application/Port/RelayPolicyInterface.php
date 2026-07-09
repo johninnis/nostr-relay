@@ -14,6 +14,8 @@ interface RelayPolicyInterface
 {
     public function allowEventSubmission(RelayClient $client, Event $event): void;
 
+    public function offersAuthChallenge(RelayClient $client, Event $event): bool;
+
     public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): void;
 
     public function allowsAuthentication(PublicKey $pubkey): bool;

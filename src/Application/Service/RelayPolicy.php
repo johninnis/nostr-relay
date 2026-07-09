@@ -116,6 +116,12 @@ final class RelayPolicy implements RelayPolicyInterface
     }
 
     #[Override]
+    public function offersAuthChallenge(RelayClient $client, Event $event): bool
+    {
+        return false;
+    }
+
+    #[Override]
     public function allowsAuthentication(PublicKey $pubkey): bool
     {
         return $this->isOpenRelay() || $this->isTenantPubkey($pubkey);

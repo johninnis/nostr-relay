@@ -16,6 +16,7 @@ final readonly class EventAdmission
         private RelayPolicyInterface $policy,
         private RateLimiterInterface $rateLimiter,
         private EventValidatorInterface $eventValidator,
+        private ClientAuthChallengerInterface $authChallenger,
     ) {
     }
 
@@ -28,5 +29,9 @@ final readonly class EventAdmission
         $this->eventValidator->validateEvent($event);
 
         $this->policy->allowEventSubmission($client, $event);
+
+        if ($this->policy->offersAuthChallenge($client, $event)) {
+            $this->authChallenger->offer($client);
+        }
     }
 }

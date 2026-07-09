@@ -30,6 +30,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
+use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
@@ -46,6 +47,7 @@ use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
+use Override;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -109,14 +111,17 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             $logger,
         );
 
+        $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+
         return new ProcessEventSubmissionUseCase(
             new EventAdmission(
                 $this->policy,
                 $this->rateLimiter,
                 new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
+                new ClientAuthChallenger($authenticationRegistry, $messenger),
             ),
             $pipeline,
-            new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
+            $authenticationRegistry,
             $this->clientRegistry,
             $logger,
         );
@@ -278,6 +283,29 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[1]);
         $this->assertFalse($replies[1]->isAccepted());
         $this->assertStringContainsString('auth-required', $replies[1]->getMessage());
+    }
+
+    public function testOfferedAuthChallengeIsSentToTheAdmittedClient(): void
+    {
+        $event = $this->createSignedEvent();
+        $connection = new class implements ClientConnectionInterface {
+            /** @var list<string> */
+            public array $messages = [];
+
+            #[Override]
+            public function sendText(string $text): void
+            {
+                $this->messages[] = $text;
+            }
+        };
+        $client = $this->makeClient($connection);
+
+        $this->policy->method('offersAuthChallenge')->willReturn(true);
+
+        $this->useCase->execute($client, $event);
+
+        // The challenge is offered only after allowEventSubmission admits the event, so its arrival proves admission (not rejection).
+        $this->assertStringContainsString('"AUTH"', implode('', $connection->messages));
     }
 
     public function testDeletionEventTriggersDeleteByEventIds(): void

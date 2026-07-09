@@ -37,6 +37,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
+use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
@@ -114,9 +115,11 @@ final class MessageRouterTest extends TestCase
         $signatureService = $this->signatureService();
         $eventValidator = new EventValidator($signatureService, new NipComplianceValidator($signatureService));
 
-        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->authenticationRegistry, $messenger, $this->subscriptionRegistry);
+        $clientAuthChallenger = new ClientAuthChallenger($this->authenticationRegistry, $messenger);
 
-        $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
+        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $clientAuthChallenger, $messenger, $this->subscriptionRegistry);
+
+        $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator, $clientAuthChallenger);
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
             $this->clientRegistry,
