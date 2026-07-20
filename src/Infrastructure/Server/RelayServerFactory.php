@@ -45,6 +45,7 @@ use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
+use Innis\Nostr\Relay\Infrastructure\Http\ChainedHttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
@@ -227,14 +228,11 @@ final class RelayServerFactory
             $this->connectionGate ?? new AllowAllConnectionGate(),
         );
 
-        $nip11Handler = new Nip11HttpHandler($this->nip11InfoProvider);
-
         $server = new AmphpRelayServer(
             $this->config,
             $connectionHandler,
-            $nip11Handler,
+            $this->httpHandlerChain(),
             $this->logger,
-            $this->httpHandler,
             $this->errorHandler,
         );
 
@@ -245,5 +243,14 @@ final class RelayServerFactory
             $clientRegistry,
             $metrics
         );
+    }
+
+    private function httpHandlerChain(): ChainedHttpHandler
+    {
+        $nip11Handler = new Nip11HttpHandler($this->nip11InfoProvider);
+
+        return null === $this->httpHandler
+            ? new ChainedHttpHandler($nip11Handler)
+            : new ChainedHttpHandler($nip11Handler, $this->httpHandler);
     }
 }

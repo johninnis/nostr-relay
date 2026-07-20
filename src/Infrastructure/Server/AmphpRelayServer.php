@@ -26,7 +26,6 @@ use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
-use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use InvalidArgumentException;
 use Override;
 use Psr\Log\LoggerInterface;
@@ -38,13 +37,12 @@ final class AmphpRelayServer
 
     private ?SocketHttpServer $server = null;
 
-    // Deliberate: server adapter wires config, handlers, logger and optional HTTP/error handlers — see ADR-0010
+    // Deliberate: server adapter wires config, handlers, logger and an optional error handler — see ADR-0010
     public function __construct(
         private readonly RelayConfigInterface $config,
         private readonly ClientConnectionHandler $connectionHandler,
-        private readonly Nip11HttpHandler $nip11Handler,
+        private readonly HttpRequestHandlerInterface $httpHandler,
         private readonly LoggerInterface $logger,
-        private readonly ?HttpRequestHandlerInterface $httpHandler = null,
         private readonly ?ErrorHandler $errorHandler = null,
     ) {
     }
@@ -130,19 +128,10 @@ final class AmphpRelayServer
                     return $this->addCorsHeaders(new Response(204));
                 }
 
-                if ('GET' === $request->getMethod() && '/' === $request->getUri()->getPath()) {
-                    $acceptHeader = $request->getHeader('accept') ?? '';
+                $response = $this->delegateToHttpHandler($request, $this->httpHandler);
 
-                    if (str_contains($acceptHeader, 'application/nostr+json')) {
-                        return $this->addCorsHeaders($this->nip11Handler->handle());
-                    }
-                }
-
-                if (null !== $this->httpHandler) {
-                    $response = $this->delegateToHttpHandler($request, $this->httpHandler);
-                    if (null !== $response) {
-                        return $this->addCorsHeaders($response);
-                    }
+                if (null !== $response) {
+                    return $this->addCorsHeaders($response);
                 }
 
                 return $this->addCorsHeaders($websocket->handleRequest($request));
