@@ -47,6 +47,7 @@ use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\RateLimitGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
@@ -119,9 +120,11 @@ final class MessageRouterTest extends TestCase
 
         $authChallengeIssuer = new AuthChallengeIssuer($this->authenticationRegistry);
 
-        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->subscriptionRegistry);
+        $rateLimitGate = new RateLimitGate($rateLimiter, $this->policy);
 
-        $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
+        $admission = new SubscriptionAdmission($this->policy, $rateLimitGate, $this->subscriptionRegistry);
+
+        $eventAdmission = new EventAdmission($this->policy, $rateLimitGate, $eventValidator);
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
             $this->clientRegistry,
@@ -162,7 +165,6 @@ final class MessageRouterTest extends TestCase
 
         $createSubscription = new CreateSubscriptionUseCase(
             $subscriptionActivator,
-            $this->subscriptionRegistry,
             $logger,
         );
 

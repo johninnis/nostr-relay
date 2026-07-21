@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
+use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class AuthChallengeIssuer
 {
@@ -33,8 +34,12 @@ final readonly class AuthChallengeIssuer
     /**
      * @return list<RelayMessage>
      */
-    public function scopeLimitOffer(ClientId $clientId): array
+    public function offerForScope(ScopedFilters $scopedFilters, ClientId $clientId): array
     {
+        if (!$scopedFilters->isBeyondScope()) {
+            return [];
+        }
+
         return [
             new NoticeMessage('limited to readable scope: authenticate for full access'),
             $this->issue($clientId),

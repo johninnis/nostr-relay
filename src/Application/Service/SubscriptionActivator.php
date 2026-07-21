@@ -13,6 +13,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
+use Throwable;
 
 final readonly class SubscriptionActivator
 {
@@ -42,11 +43,15 @@ final readonly class SubscriptionActivator
         $subscription = Subscription::create($subscriptionId, $modifiedFilters, SubscriptionState::Active);
         $this->subscriptionRegistry->addSubscription($client->getId(), $subscription, $filters);
 
-        $this->deferredExecutor->defer(fn () => $this->storedEventStreamer->stream($client, $subscription, $modifiedFilters));
+        try {
+            $this->deferredExecutor->defer(fn () => $this->storedEventStreamer->stream($client, $subscription, $modifiedFilters));
 
-        // Deliberate: the AUTH challenge is offered lazily on a scope-exceeding request, never on connect — see ADR-0004
-        return $admission->isBeyondScope()
-            ? $this->authChallengeIssuer->scopeLimitOffer($client->getId())
-            : [];
+            // Deliberate: the AUTH challenge is offered lazily on a scope-exceeding request, never on connect — see ADR-0004
+            return $this->authChallengeIssuer->offerForScope($admission, $client->getId());
+        } catch (Throwable $e) {
+            $this->subscriptionRegistry->removeSubscription($client->getId(), $subscriptionId);
+
+            throw $e;
+        }
     }
 }

@@ -20,6 +20,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\RateLimitGate;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
@@ -55,7 +56,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         );
         $admission = new SubscriptionAdmission(
             $this->policy,
-            $this->rateLimiter,
+            new RateLimitGate($this->rateLimiter, $this->policy),
             $this->createStub(SubscriptionLookupInterface::class),
         );
 

@@ -35,6 +35,7 @@ use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\RateLimitGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
@@ -109,8 +110,8 @@ final class RelayServerFactory
         );
 
         $monotonicClock = new SystemMonotonicClock();
-        $eventRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Events, $monotonicClock);
-        $subscriptionRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Subscriptions, $monotonicClock);
+        $eventRateLimitGate = new RateLimitGate(new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Events, $monotonicClock), $this->policy);
+        $subscriptionRateLimitGate = new RateLimitGate(new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Subscriptions, $monotonicClock), $this->policy);
 
         $eventValidator = new EventValidator(
             $this->signatureService,
@@ -123,7 +124,7 @@ final class RelayServerFactory
 
         $subscriptionAdmission = new SubscriptionAdmission(
             $this->policy,
-            $subscriptionRateLimiter,
+            $subscriptionRateLimitGate,
             $subscriptionRegistry
         );
 
@@ -131,7 +132,7 @@ final class RelayServerFactory
 
         $eventAdmission = new EventAdmission(
             $this->policy,
-            $eventRateLimiter,
+            $eventRateLimitGate,
             $eventValidator
         );
 
@@ -174,7 +175,6 @@ final class RelayServerFactory
 
         $createSubscriptionUseCase = new CreateSubscriptionUseCase(
             $subscriptionActivator,
-            $subscriptionRegistry,
             $this->logger
         );
 

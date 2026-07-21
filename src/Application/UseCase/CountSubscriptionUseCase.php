@@ -43,7 +43,7 @@ final class CountSubscriptionUseCase
             }
 
             // Deliberate: the AUTH challenge is offered lazily on a scope-exceeding request, never on connect — see ADR-0004
-            $replies = $admission->isBeyondScope() ? $this->authChallengeIssuer->scopeLimitOffer($client->getId()) : [];
+            $replies = $this->authChallengeIssuer->offerForScope($admission, $client->getId());
             $replies[] = new CountMessage($subscriptionId, $this->eventStore->countByFilters($admission->getFilters()));
 
             return $replies;

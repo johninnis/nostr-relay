@@ -6,7 +6,6 @@ namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
-use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\EventAdmitted;
@@ -16,16 +15,16 @@ final readonly class EventAdmission
 {
     public function __construct(
         private RelayPolicyInterface $policy,
-        private RateLimiterInterface $rateLimiter,
+        private RateLimitGate $rateLimitGate,
         private EventValidatorInterface $eventValidator,
     ) {
     }
 
     public function admit(RelayClient $client, Event $event): PolicyRejection|EventAdmitted
     {
-        if (!$this->policy->isRateLimitExempt($client)
-            && !$this->rateLimiter->tryConsume($client->getConnectionInfo()->getIpAddress())) {
-            return PolicyRejection::rateLimited('slow down');
+        $rateLimit = $this->rateLimitGate->admit($client);
+        if (null !== $rateLimit) {
+            return $rateLimit;
         }
 
         $this->eventValidator->validateEvent($event);

@@ -38,6 +38,7 @@ use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
+use Innis\Nostr\Relay\Application\Service\RateLimitGate;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
@@ -115,7 +116,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         return new ProcessEventSubmissionUseCase(
             new EventAdmission(
                 $this->policy,
-                $this->rateLimiter,
+                new RateLimitGate($this->rateLimiter, $this->policy),
                 new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
             ),
             $pipeline,

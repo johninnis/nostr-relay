@@ -40,6 +40,7 @@ use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
+use Innis\Nostr\Relay\Application\Service\RateLimitGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
@@ -122,7 +123,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $rateLimiter->method('tryConsume')->willReturn(true);
         $admission = new SubscriptionAdmission(
             $policy,
-            $rateLimiter,
+            new RateLimitGate($rateLimiter, $policy),
             $this->subscriptionRegistry,
         );
 
