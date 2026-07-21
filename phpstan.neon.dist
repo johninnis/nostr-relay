@@ -8,4 +8,5 @@ parameters:
         - src
         - tests
         - examples
+        - tools
     tmpDir: var/phpstan

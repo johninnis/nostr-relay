@@ -8,6 +8,7 @@ use Amp\Http\Server\RequestHandler;
 use Innis\Nostr\Core\Domain\Collection\SubscriptionCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
+use Innis\Nostr\Relay\Application\Service\ClientSessionCoordinator;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
@@ -18,19 +19,25 @@ use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
 
 final class RelayInstance
 {
-    // Deliberate: assembled relay aggregate of the request handler and the registries it exposes — see ADR-0010
+    // Deliberate: assembled relay aggregate of the request handler, session coordinator and registries it exposes — see ADR-0010
     public function __construct(
         private readonly RequestHandler $requestHandler,
         private readonly EventDistributor $distributor,
         private readonly InMemorySubscriptionRegistry $subscriptionRegistry,
         private readonly InMemoryClientRegistry $clientRegistry,
         private readonly MetricsCollectorInterface $metrics,
+        private readonly ClientSessionCoordinator $sessionCoordinator,
     ) {
     }
 
     public function getRequestHandler(): RequestHandler
     {
         return $this->requestHandler;
+    }
+
+    public function getSessionCoordinator(): ClientSessionCoordinator
+    {
+        return $this->sessionCoordinator;
     }
 
     public function distributeEvent(Event $event): void

@@ -41,6 +41,7 @@
     "scripts": {
         "test": [
             "phpunit",
+            "@soak",
             "@analyse"
         ],
         "test-unit": "phpunit --testsuite=Unit",
@@ -49,7 +50,8 @@
         "fix-style": "php-cs-fixer fix",
         "check-style": "php-cs-fixer fix --dry-run --diff",
         "rector": "rector process",
-        "check-rector": "rector process --dry-run"
+        "check-rector": "rector process --dry-run",
+        "soak": "php tools/soak-harness.php"
     },
     "config": {
         "sort-packages": true

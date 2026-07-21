@@ -11,9 +11,7 @@ use Amp\Websocket\WebsocketCloseCode;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
-use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
-use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
-use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\ClientSessionCoordinator;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
@@ -24,11 +22,9 @@ final class ClientConnectionHandler
 {
     private const int DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
 
-    // Deliberate: per-connection lifecycle coordinates registry, disconnection, router, gate, logging and timeout — see ADR-0010
+    // Deliberate: websocket adapter turning a socket into a coordinated session behind an IP gate, bounded by an idle timeout — see ADR-0010
     public function __construct(
-        private readonly InMemoryClientRegistry $clientRegistry,
-        private readonly ClientDisconnectionHandler $disconnectionHandler,
-        private readonly MessageRouter $messageRouter,
+        private readonly ClientSessionCoordinator $sessionCoordinator,
         private readonly LoggerInterface $logger,
         private readonly ConnectionGateInterface $connectionGate,
         private readonly int $idleTimeoutSeconds = self::DEFAULT_IDLE_TIMEOUT_SECONDS,
@@ -47,10 +43,10 @@ final class ClientConnectionHandler
             $connectionInfo = new ConnectionInfo($clientIp, $userAgent, Timestamp::now());
 
             $adapter = new WebsocketClientConnection($websocketClient);
-            $client = $this->clientRegistry->registerClient($adapter, $connectionInfo);
+            $client = $this->sessionCoordinator->open($adapter, $connectionInfo);
 
             while ($message = $websocketClient->receive(new TimeoutCancellation($this->idleTimeoutSeconds))) {
-                $this->messageRouter->route($client, $message->buffer());
+                $this->sessionCoordinator->route($client, $message->buffer());
             }
         } catch (CancelledException) {
             $this->logger->info('Client idle timeout', ['ip' => $ipAddress]);
@@ -67,7 +63,7 @@ final class ClientConnectionHandler
             ]);
         } finally {
             if (isset($client)) {
-                $this->disconnectionHandler->disconnect($client->getId());
+                $this->sessionCoordinator->close($client->getId());
             }
 
             try {

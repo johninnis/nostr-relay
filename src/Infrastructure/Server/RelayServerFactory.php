@@ -28,6 +28,7 @@ use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\ClientSessionCoordinator;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
@@ -216,10 +217,14 @@ final class RelayServerFactory
             $this->logger
         );
 
-        $connectionHandler = new ClientConnectionHandler(
+        $sessionCoordinator = new ClientSessionCoordinator(
             $clientRegistry,
             $disconnectionHandler,
             $messageRouter,
+        );
+
+        $connectionHandler = new ClientConnectionHandler(
+            $sessionCoordinator,
             $this->logger,
             $this->connectionGate ?? new AllowAllConnectionGate(),
         );
@@ -236,7 +241,8 @@ final class RelayServerFactory
             $eventDistributor,
             $subscriptionRegistry,
             $clientRegistry,
-            $metrics
+            $metrics,
+            $sessionCoordinator
         );
     }
 }
