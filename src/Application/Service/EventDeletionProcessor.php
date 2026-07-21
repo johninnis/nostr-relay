@@ -17,11 +17,11 @@ use Innis\Nostr\Core\Domain\ValueObject\Reference\EventReference;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Psr\Log\LoggerInterface;
 
-final class EventDeletionProcessor
+final readonly class EventDeletionProcessor
 {
     public function __construct(
-        private readonly RelayEventStoreInterface $eventStore,
-        private readonly LoggerInterface $logger,
+        private RelayEventStoreInterface $eventStore,
+        private LoggerInterface $logger,
     ) {
     }
 

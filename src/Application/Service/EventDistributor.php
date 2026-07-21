@@ -12,15 +12,15 @@ use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
 use Psr\Log\LoggerInterface;
 
-final class EventDistributor
+final readonly class EventDistributor
 {
     // Deliberate: fan-out coordinates policy, subscription lookup, registry, messenger and logging — see ADR-0010
     public function __construct(
-        private readonly RelayPolicyInterface $policy,
-        private readonly SubscriptionLookupInterface $subscriptionLookup,
-        private readonly ClientRegistryInterface $registry,
-        private readonly ClientMessengerInterface $messenger,
-        private readonly LoggerInterface $logger,
+        private RelayPolicyInterface $policy,
+        private SubscriptionLookupInterface $subscriptionLookup,
+        private ClientRegistryInterface $registry,
+        private ClientMessengerInterface $messenger,
+        private LoggerInterface $logger,
     ) {
     }
 

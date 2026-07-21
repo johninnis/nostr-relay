@@ -40,6 +40,11 @@ final class ConnectionException extends RelayException
         );
     }
 
+    public static function malformedIpAddress(string $rawAddress): self
+    {
+        return new self(message: 'Malformed client address: '.$rawAddress);
+    }
+
     public static function peerDisconnected(?Throwable $previous = null): self
     {
         return new self(

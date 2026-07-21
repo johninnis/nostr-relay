@@ -18,8 +18,6 @@ use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
-use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
@@ -45,19 +43,17 @@ final class RelayPolicyTest extends TestCase
     {
         $policy = $this->policyWithGuestRules(['max_subscriptions' => 2]);
 
-        $policy->allowSubscription($this->tenantClient(), new FilterCollection(), 99);
-
-        $this->expectNotToPerformAssertions();
+        $this->assertNull($policy->allowSubscription($this->tenantClient(), new FilterCollection(), 99));
     }
 
     public function testOpenRelayStillEnforcesSubscriptionCap(): void
     {
         $policy = new RelayPolicy($this->authenticationRegistry, new NullLogger(), $this->relayPolicyConfig(['max_subscriptions' => 2]));
 
-        $this->expectException(PolicyViolationException::class);
-        $this->expectExceptionMessage('too many subscriptions (max 2)');
+        $rejection = $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
 
-        $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
+        $this->assertNotNull($rejection);
+        $this->assertStringContainsString('too many subscriptions (max 2)', $rejection->toWireReason());
     }
 
     public function testOpenRelayRateLimitsAnonymousClients(): void
@@ -71,48 +67,47 @@ final class RelayPolicyTest extends TestCase
     {
         $policy = $this->policyWithGuestRules(['max_subscriptions' => 2]);
 
-        $this->expectException(PolicyViolationException::class);
-        $this->expectExceptionMessage('too many subscriptions (max 2)');
+        $rejection = $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
 
-        $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
+        $this->assertNotNull($rejection);
+        $this->assertStringContainsString('too many subscriptions (max 2)', $rejection->toWireReason());
     }
 
     public function testRejectsOversizedEvent(): void
     {
         $policy = $this->policyWithGuestRules(['max_event_size' => 4]);
 
-        $this->expectException(PolicyViolationException::class);
-        $this->expectExceptionMessage('event too large');
+        $rejection = $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::TEXT_NOTE, 'too long content'));
 
-        $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::TEXT_NOTE, 'too long content'));
+        $this->assertNotNull($rejection);
+        $this->assertStringContainsString('event too large', $rejection->toWireReason());
     }
 
     public function testGuestMayPublishConfiguredWriteKind(): void
     {
         $policy = $this->policyWithGuestRules();
 
-        $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::REACTION, 'x'));
-
-        $this->expectNotToPerformAssertions();
+        $this->assertNull($policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::REACTION, 'x')));
     }
 
     public function testGuestPublishingUnconfiguredKindRequiresAuth(): void
     {
         $policy = $this->policyWithGuestRules();
 
-        $this->expectException(AuthRequiredException::class);
+        $rejection = $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::TEXT_NOTE, 'x'));
 
-        $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::TEXT_NOTE, 'x'));
+        $this->assertNotNull($rejection);
+        $this->assertTrue($rejection->isAuthRequired());
     }
 
     public function testGuestWriteRequiringTenantTagIsRejectedWhenUntagged(): void
     {
         $policy = $this->policyWithGuestRules();
 
-        $this->expectException(PolicyViolationException::class);
-        $this->expectExceptionMessage('event must be tagged to a relay tenant');
+        $rejection = $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::ZAP_RECEIPT, 'x'));
 
-        $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::ZAP_RECEIPT, 'x'));
+        $this->assertNotNull($rejection);
+        $this->assertStringContainsString('event must be tagged to a relay tenant', $rejection->toWireReason());
     }
 
     public function testGuestWriteRequiringTenantTagIsAcceptedWhenTagged(): void
@@ -120,18 +115,14 @@ final class RelayPolicyTest extends TestCase
         $policy = $this->policyWithGuestRules();
         $tagged = $this->event(EventKind::ZAP_RECEIPT, 'x', new TagCollection([Tag::pubkey($this->publicKey(self::TENANT_HEX))]));
 
-        $policy->allowEventSubmission($this->guestClient(), $tagged);
-
-        $this->expectNotToPerformAssertions();
+        $this->assertNull($policy->allowEventSubmission($this->guestClient(), $tagged));
     }
 
     public function testTenantBypassesWriteRules(): void
     {
         $policy = $this->policyWithGuestRules();
 
-        $policy->allowEventSubmission($this->tenantClient(), $this->event(EventKind::TEXT_NOTE, 'x'));
-
-        $this->expectNotToPerformAssertions();
+        $this->assertNull($policy->allowEventSubmission($this->tenantClient(), $this->event(EventKind::TEXT_NOTE, 'x')));
     }
 
     public function testFilterForClientLeavesTenantFiltersUnchanged(): void

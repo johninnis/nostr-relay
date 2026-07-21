@@ -8,5 +8,5 @@ use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 
 interface RateLimiterInterface
 {
-    public function checkLimit(IpAddress $ipAddress): void;
+    public function tryConsume(IpAddress $ipAddress): bool;
 }

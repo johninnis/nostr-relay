@@ -8,15 +8,16 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 interface RelayPolicyInterface
 {
-    public function allowEventSubmission(RelayClient $client, Event $event): void;
+    public function allowEventSubmission(RelayClient $client, Event $event): ?PolicyRejection;
 
     public function offersAuthChallenge(RelayClient $client, Event $event): bool;
 
-    public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): void;
+    public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): ?PolicyRejection;
 
     public function allowsAuthentication(PublicKey $pubkey): bool;
 

@@ -22,9 +22,9 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\AuthenticationRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
-use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
@@ -36,6 +36,7 @@ use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
+use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
@@ -48,6 +49,7 @@ use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
+use Innis\Nostr\Relay\Infrastructure\Time\SystemMonotonicClock;
 use Psr\Log\LoggerInterface;
 
 final class RelayServerFactory
@@ -106,8 +108,9 @@ final class RelayServerFactory
             $this->logger
         );
 
-        $eventRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Events);
-        $subscriptionRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Subscriptions);
+        $monotonicClock = new SystemMonotonicClock();
+        $eventRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Events, $monotonicClock);
+        $subscriptionRateLimiter = new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Subscriptions, $monotonicClock);
 
         $eventValidator = new EventValidator(
             $this->signatureService,
@@ -116,13 +119,11 @@ final class RelayServerFactory
 
         $deferredExecutor = new AmphpDeferredExecutor();
 
-        $clientAuthChallenger = new ClientAuthChallenger($this->authenticationRegistry, $clientMessenger);
+        $authChallengeIssuer = new AuthChallengeIssuer($this->authenticationRegistry);
 
         $subscriptionAdmission = new SubscriptionAdmission(
             $this->policy,
             $subscriptionRateLimiter,
-            $clientAuthChallenger,
-            $clientMessenger,
             $subscriptionRegistry
         );
 
@@ -131,8 +132,7 @@ final class RelayServerFactory
         $eventAdmission = new EventAdmission(
             $this->policy,
             $eventRateLimiter,
-            $eventValidator,
-            $clientAuthChallenger
+            $eventValidator
         );
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
@@ -151,7 +151,7 @@ final class RelayServerFactory
         $processEventUseCase = new ProcessEventSubmissionUseCase(
             $eventAdmission,
             $acceptedEventPipeline,
-            $this->authenticationRegistry,
+            $authChallengeIssuer,
             $clientRegistry,
             $this->logger
         );
@@ -164,11 +164,17 @@ final class RelayServerFactory
             $this->logger
         );
 
-        $createSubscriptionUseCase = new CreateSubscriptionUseCase(
+        $subscriptionActivator = new SubscriptionActivator(
             $subscriptionAdmission,
             $subscriptionRegistry,
             $storedEventStreamer,
             $deferredExecutor,
+            $authChallengeIssuer
+        );
+
+        $createSubscriptionUseCase = new CreateSubscriptionUseCase(
+            $subscriptionActivator,
+            $subscriptionRegistry,
             $this->logger
         );
 
@@ -179,8 +185,7 @@ final class RelayServerFactory
 
         $subscriptionReevaluator = new SubscriptionReevaluator(
             $subscriptionRegistry,
-            $createSubscriptionUseCase,
-            $clientMessenger
+            $subscriptionActivator
         );
 
         $authEventVerifier = new AuthEventVerifier($this->config, $this->policy, new SystemClock());
@@ -190,12 +195,14 @@ final class RelayServerFactory
             $authEventVerifier,
             $eventValidator,
             $subscriptionReevaluator,
+            $authChallengeIssuer,
             $this->logger
         );
 
         $countSubscriptionUseCase = new CountSubscriptionUseCase(
             $this->eventStore,
             $subscriptionAdmission,
+            $authChallengeIssuer,
             $this->logger
         );
 
@@ -238,7 +245,6 @@ final class RelayServerFactory
 
         return new RelayInstance(
             $requestHandler,
-            $eventDistributor,
             $subscriptionRegistry,
             $clientRegistry,
             $metrics,

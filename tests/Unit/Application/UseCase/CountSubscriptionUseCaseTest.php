@@ -6,8 +6,10 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -15,18 +17,16 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
-use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
-use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\Stub;
@@ -38,6 +38,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
+    private bool $rateLimited = false;
     private InMemoryClientRegistry $clientRegistry;
     private CountSubscriptionUseCase $useCase;
 
@@ -46,24 +47,22 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
+        $this->rateLimiter->method('tryConsume')->willReturnCallback(fn (): bool => !$this->rateLimited);
         $this->clientRegistry = new InMemoryClientRegistry(
             $this->createStub(MetricsCollectorInterface::class),
             new NativeRandomBytesGenerator(),
             new NullLogger(),
         );
-        $messenger = new ClientMessenger($this->clientRegistry);
-
         $admission = new SubscriptionAdmission(
             $this->policy,
             $this->rateLimiter,
-            new ClientAuthChallenger(new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()), $messenger),
-            $messenger,
             $this->createStub(SubscriptionLookupInterface::class),
         );
 
         $this->useCase = new CountSubscriptionUseCase(
             $this->eventStore,
             $admission,
+            new AuthChallengeIssuer(new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator())),
             new NullLogger(),
         );
     }
@@ -101,22 +100,12 @@ final class CountSubscriptionUseCaseTest extends TestCase
         );
         $this->eventStore->method('countByFilters')->willReturn(7);
 
-        $sent = [];
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
-            $decoded = json_decode($json, true);
-            assert(is_array($decoded));
-            $sent[] = $decoded;
-        });
-        $client = $this->makeClient($connection);
+        $replies = $this->useCase->execute($this->makeClient(), $subId, new FilterCollection([new Filter()]));
 
-        $replies = $this->useCase->execute($client, $subId, new FilterCollection([new Filter()]));
-
-        $this->assertSame('NOTICE', $sent[0][0]);
-        $this->assertSame('AUTH', $sent[1][0]);
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(CountMessage::class, $replies[0]);
-        $this->assertSame(7, $replies[0]->getCount());
+        $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
+        $this->assertInstanceOf(AuthMessage::class, $replies[1]);
+        $this->assertInstanceOf(CountMessage::class, $replies[2]);
+        $this->assertSame(7, $replies[2]->getCount());
     }
 
     public function testPolicyViolationReturnsClosedMessage(): void
@@ -125,7 +114,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $filters = new FilterCollection([new Filter()]);
 
         $this->policy->method('allowSubscription')
-            ->willThrowException(new PolicyViolationException('not allowed'));
+            ->willReturn(PolicyRejection::blocked('not allowed'));
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
@@ -139,8 +128,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('count-1');
         $filters = new FilterCollection([new Filter()]);
 
-        $this->rateLimiter->method('checkLimit')
-            ->willThrowException(RateLimitException::forKey('127.0.0.1'));
+        $this->rateLimited = true;
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 

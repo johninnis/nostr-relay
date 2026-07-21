@@ -6,11 +6,11 @@ namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\RateLimiting;
 
 use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
-use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
+use Innis\Nostr\Relay\Tests\Support\FrozenMonotonicClock;
 use Override;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
@@ -22,15 +22,14 @@ final class TokenBucketRateLimiterTest extends TestCase
         $limiter = new TokenBucketRateLimiter(
             new StaticRateLimitPolicy(new RateLimitConfig(3, 3)),
             RateLimitMetric::Events,
+            new FrozenMonotonicClock(1000.0),
         );
 
         $ip = IpAddress::fromString('192.0.2.1');
-        $limiter->checkLimit($ip);
-        $limiter->checkLimit($ip);
-        $limiter->checkLimit($ip);
-
-        $this->expectException(RateLimitException::class);
-        $limiter->checkLimit($ip);
+        $this->assertTrue($limiter->tryConsume($ip));
+        $this->assertTrue($limiter->tryConsume($ip));
+        $this->assertTrue($limiter->tryConsume($ip));
+        $this->assertFalse($limiter->tryConsume($ip));
     }
 
     public function testCapacityIsReadOnEachCheck(): void
@@ -47,33 +46,81 @@ final class TokenBucketRateLimiterTest extends TestCase
             }
         };
 
-        $limiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events);
-        $limiter->checkLimit(IpAddress::fromString('192.0.2.1'));
+        $limiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events, new FrozenMonotonicClock(1000.0));
+        $this->assertTrue($limiter->tryConsume(IpAddress::fromString('192.0.2.1')));
 
         $policy->limit = 10;
         $widened = IpAddress::fromString('192.0.2.2');
         for ($i = 0; $i < 10; ++$i) {
-            $limiter->checkLimit($widened);
+            $this->assertTrue($limiter->tryConsume($widened));
         }
 
-        $this->expectException(RateLimitException::class);
-        $limiter->checkLimit($widened);
+        $this->assertFalse($limiter->tryConsume($widened));
     }
 
     public function testMetricSelectsCorrectField(): void
     {
         $policy = new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 1, subscriptionsPerMinute: 10));
-        $eventLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events);
-        $subLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Subscriptions);
+        $clock = new FrozenMonotonicClock(1000.0);
+        $eventLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Events, $clock);
+        $subLimiter = new TokenBucketRateLimiter($policy, RateLimitMetric::Subscriptions, $clock);
 
         $ip = IpAddress::fromString('192.0.2.1');
-        $eventLimiter->checkLimit($ip);
+        $this->assertTrue($eventLimiter->tryConsume($ip));
         for ($i = 0; $i < 10; ++$i) {
-            $subLimiter->checkLimit($ip);
+            $this->assertTrue($subLimiter->tryConsume($ip));
         }
 
-        $this->expectException(RateLimitException::class);
-        $eventLimiter->checkLimit($ip);
+        $this->assertFalse($eventLimiter->tryConsume($ip));
+    }
+
+    public function testTokensRefillOverElapsedTime(): void
+    {
+        $clock = new FrozenMonotonicClock(1000.0);
+        $limiter = new TokenBucketRateLimiter(
+            new StaticRateLimitPolicy(new RateLimitConfig(60, 60)),
+            RateLimitMetric::Events,
+            $clock,
+        );
+
+        $ip = IpAddress::fromString('192.0.2.1');
+        for ($i = 0; $i < 60; ++$i) {
+            $this->assertTrue($limiter->tryConsume($ip));
+        }
+
+        $this->assertFalse($limiter->tryConsume($ip));
+
+        $clock->advance(1.0);
+        $this->assertTrue($limiter->tryConsume($ip));
+        $this->assertFalse($limiter->tryConsume($ip));
+    }
+
+    public function testStaleBucketsEvictedAfterInactivity(): void
+    {
+        $clock = new FrozenMonotonicClock(1000.0);
+        $limiter = new TokenBucketRateLimiter(
+            new StaticRateLimitPolicy(new RateLimitConfig(60, 60)),
+            RateLimitMetric::Events,
+            $clock,
+        );
+
+        $reflection = new ReflectionClass($limiter);
+        $threshold = $reflection->getConstant('EVICTION_THRESHOLD');
+        assert(is_int($threshold));
+
+        for ($i = 0; $i < $threshold; ++$i) {
+            $limiter->tryConsume(self::ipForIndex($i));
+        }
+
+        $clock->advance(120.0);
+        $limiter->tryConsume(self::ipForIndex(9_999_999));
+
+        $buckets = $reflection->getProperty('buckets')->getValue($limiter);
+        assert(is_array($buckets));
+
+        $this->assertArrayNotHasKey((string) self::ipForIndex(0), $buckets);
+        $this->assertArrayHasKey((string) self::ipForIndex(9_999_999), $buckets);
+        $this->assertLessThan($threshold, count($buckets));
     }
 
     public function testBucketTableIsBoundedWhenAllBucketsAreFresh(): void
@@ -81,10 +128,11 @@ final class TokenBucketRateLimiterTest extends TestCase
         $limiter = new TokenBucketRateLimiter(
             new StaticRateLimitPolicy(new RateLimitConfig(60, 60)),
             RateLimitMetric::Events,
+            new FrozenMonotonicClock(1000.0),
         );
 
         for ($i = 0; $i < 6000; ++$i) {
-            $limiter->checkLimit(self::ipForIndex($i));
+            $limiter->tryConsume(self::ipForIndex($i));
         }
 
         $reflection = new ReflectionClass($limiter);
@@ -98,9 +146,11 @@ final class TokenBucketRateLimiterTest extends TestCase
 
     public function testOldestBucketsEvictedFirstWhenAtHardCap(): void
     {
+        $clock = new FrozenMonotonicClock(1000.0);
         $limiter = new TokenBucketRateLimiter(
             new StaticRateLimitPolicy(new RateLimitConfig(60, 60)),
             RateLimitMetric::Events,
+            $clock,
         );
 
         $reflection = new ReflectionClass($limiter);
@@ -108,7 +158,8 @@ final class TokenBucketRateLimiterTest extends TestCase
         assert(is_int($hardMax));
 
         for ($i = 0; $i < $hardMax + 500; ++$i) {
-            $limiter->checkLimit(self::ipForIndex($i));
+            $clock->advance(0.001);
+            $limiter->tryConsume(self::ipForIndex($i));
         }
 
         $buckets = $reflection->getProperty('buckets')->getValue($limiter);

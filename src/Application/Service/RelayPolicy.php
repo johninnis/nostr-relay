@@ -12,10 +12,9 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Collection\GuestWriteRuleCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
-use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Override;
@@ -45,14 +44,14 @@ final class RelayPolicy implements RelayPolicyInterface
     }
 
     #[Override]
-    public function allowEventSubmission(RelayClient $client, Event $event): void
+    public function allowEventSubmission(RelayClient $client, Event $event): ?PolicyRejection
     {
         if ($event->getContent()->getLength() > $this->maxEventSize) {
-            throw new PolicyViolationException('event too large');
+            return PolicyRejection::blocked('event too large');
         }
 
         if ($this->isOpenRelay() || $this->isTenant($client)) {
-            return;
+            return null;
         }
 
         $kind = $event->getKind();
@@ -63,10 +62,10 @@ final class RelayPolicy implements RelayPolicyInterface
             }
 
             if ($rule->requiresTenantTag() && !$this->isTaggedToTenant($event)) {
-                throw new PolicyViolationException('event must be tagged to a relay tenant');
+                return PolicyRejection::blocked('event must be tagged to a relay tenant');
             }
 
-            return;
+            return null;
         }
 
         $this->logger->info('Auth required for event submission', [
@@ -74,18 +73,18 @@ final class RelayPolicy implements RelayPolicyInterface
             'kind' => $kind->toInt(),
         ]);
 
-        throw new AuthRequiredException('authentication required to publish this event kind');
+        return PolicyRejection::authRequired('authentication required to publish this event kind');
     }
 
     #[Override]
-    public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): void
+    public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): ?PolicyRejection
     {
         // Deliberate: resource caps protect the store and apply to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0009
         if ($this->isTenant($client)) {
-            return;
+            return null;
         }
 
-        $this->subscriptionLimits->enforce($currentSubscriptionCount, $filters);
+        return $this->subscriptionLimits->enforce($currentSubscriptionCount, $filters);
     }
 
     #[Override]

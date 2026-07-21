@@ -175,40 +175,36 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
 
     private function addToKindIndex(Subscription $subscription, string $key): void
     {
-        $indexedKinds = [];
-
-        foreach ($subscription->getFilters() as $filter) {
-            if ($filter->hasKinds()) {
-                foreach ($filter->getKinds()?->toInts() ?? [] as $kindInt) {
-                    if (!isset($indexedKinds[$kindInt])) {
-                        $this->subscriptionsByKind[$kindInt][$key] = true;
-                        $indexedKinds[$kindInt] = true;
-                    }
-                }
-            } elseif (!isset($indexedKinds['*'])) {
-                $this->subscriptionsByKind['*'][$key] = true;
-                $indexedKinds['*'] = true;
-            }
+        foreach ($this->kindKeysFor($subscription) as $kind) {
+            $this->subscriptionsByKind[$kind][$key] = true;
         }
     }
 
     private function removeFromKindIndex(Subscription $subscription, string $key): void
     {
-        $removedKinds = [];
+        foreach ($this->kindKeysFor($subscription) as $kind) {
+            $this->removeKindEntry($kind, $key);
+        }
+    }
+
+    /**
+     * @return list<int|string>
+     */
+    private function kindKeysFor(Subscription $subscription): array
+    {
+        $keys = [];
 
         foreach ($subscription->getFilters() as $filter) {
             if ($filter->hasKinds()) {
                 foreach ($filter->getKinds()?->toInts() ?? [] as $kindInt) {
-                    if (!isset($removedKinds[$kindInt])) {
-                        $this->removeKindEntry($kindInt, $key);
-                        $removedKinds[$kindInt] = true;
-                    }
+                    $keys[$kindInt] = $kindInt;
                 }
-            } elseif (!isset($removedKinds['*'])) {
-                $this->removeKindEntry('*', $key);
-                $removedKinds['*'] = true;
+            } else {
+                $keys['*'] = '*';
             }
         }
+
+        return array_values($keys);
     }
 
     private function removeKindEntry(string|int $kind, string $key): void

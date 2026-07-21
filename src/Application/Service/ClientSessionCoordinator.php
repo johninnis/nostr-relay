@@ -12,7 +12,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 final readonly class ClientSessionCoordinator
 {
     public function __construct(
-        private InMemoryClientRegistry $clientRegistry,
+        private ClientRegistryInterface $clientRegistry,
         private ClientDisconnectionHandler $disconnectionHandler,
         private MessageRouter $messageRouter,
     ) {

@@ -34,7 +34,8 @@ final class ClientConnectionHandler
     public function handle(WebsocketClient $websocketClient, string $ipAddress, string $userAgent): void
     {
         try {
-            $clientIp = IpAddress::fromString($ipAddress);
+            $clientIp = IpAddress::tryFromString($ipAddress)
+                ?? throw ConnectionException::malformedIpAddress($ipAddress);
 
             if (!$this->connectionGate->isIpAllowed($clientIp)) {
                 throw ConnectionException::ipBlocked($clientIp);

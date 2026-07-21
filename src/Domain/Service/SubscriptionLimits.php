@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Domain\Service;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
-use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 
 final readonly class SubscriptionLimits
 {
@@ -16,20 +16,22 @@ final readonly class SubscriptionLimits
     ) {
     }
 
-    public function enforce(int $currentSubscriptionCount, FilterCollection $filters): void
+    public function enforce(int $currentSubscriptionCount, FilterCollection $filters): ?PolicyRejection
     {
         if ($currentSubscriptionCount >= $this->maxSubscriptions) {
-            throw new PolicyViolationException('too many subscriptions (max '.$this->maxSubscriptions.')');
+            return PolicyRejection::blocked('too many subscriptions (max '.$this->maxSubscriptions.')');
         }
 
         if (count($filters) > $this->maxFilters) {
-            throw new PolicyViolationException('too many filters (max '.$this->maxFilters.')');
+            return PolicyRejection::blocked('too many filters (max '.$this->maxFilters.')');
         }
 
         foreach ($filters as $filter) {
             if ($filter->hasLimit() && $filter->getLimit() > $this->maxQueryLimit) {
-                throw new PolicyViolationException('filter limit too high (max '.$this->maxQueryLimit.')');
+                return PolicyRejection::blocked('filter limit too high (max '.$this->maxQueryLimit.')');
             }
         }
+
+        return null;
     }
 }

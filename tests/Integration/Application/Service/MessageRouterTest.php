@@ -36,8 +36,8 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
-use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
@@ -48,6 +48,7 @@ use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
+use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
@@ -91,6 +92,7 @@ final class MessageRouterTest extends TestCase
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->policy->method('allowsAuthentication')->willReturn(true);
         $rateLimiter = $this->createStub(RateLimiterInterface::class);
+        $rateLimiter->method('tryConsume')->willReturn(true);
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $logger = new NullLogger();
 
@@ -115,11 +117,11 @@ final class MessageRouterTest extends TestCase
         $signatureService = $this->signatureService();
         $eventValidator = new EventValidator($signatureService, new NipComplianceValidator($signatureService));
 
-        $clientAuthChallenger = new ClientAuthChallenger($this->authenticationRegistry, $messenger);
+        $authChallengeIssuer = new AuthChallengeIssuer($this->authenticationRegistry);
 
-        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $clientAuthChallenger, $messenger, $this->subscriptionRegistry);
+        $admission = new SubscriptionAdmission($this->policy, $rateLimiter, $this->subscriptionRegistry);
 
-        $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator, $clientAuthChallenger);
+        $eventAdmission = new EventAdmission($this->policy, $rateLimiter, $eventValidator);
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
             $this->clientRegistry,
@@ -137,7 +139,7 @@ final class MessageRouterTest extends TestCase
         $processEvent = new ProcessEventSubmissionUseCase(
             $eventAdmission,
             $acceptedEventPipeline,
-            $this->authenticationRegistry,
+            $authChallengeIssuer,
             $this->clientRegistry,
             $logger,
         );
@@ -150,11 +152,17 @@ final class MessageRouterTest extends TestCase
             $logger,
         );
 
-        $createSubscription = new CreateSubscriptionUseCase(
+        $subscriptionActivator = new SubscriptionActivator(
             $admission,
             $this->subscriptionRegistry,
             $storedEventStreamer,
             new AmphpDeferredExecutor(),
+            $authChallengeIssuer,
+        );
+
+        $createSubscription = new CreateSubscriptionUseCase(
+            $subscriptionActivator,
+            $this->subscriptionRegistry,
             $logger,
         );
 
@@ -167,13 +175,15 @@ final class MessageRouterTest extends TestCase
             $this->authenticationRegistry,
             new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $eventValidator,
-            new SubscriptionReevaluator($this->subscriptionRegistry, $createSubscription, $messenger),
+            new SubscriptionReevaluator($this->subscriptionRegistry, $subscriptionActivator),
+            $authChallengeIssuer,
             $logger,
         );
 
         $countSubscription = new CountSubscriptionUseCase(
             $this->eventStore,
             $admission,
+            $authChallengeIssuer,
             $logger,
         );
 
@@ -203,13 +213,13 @@ final class MessageRouterTest extends TestCase
     public function testRoutesEventMessage(): void
     {
         $keyPair = KeyPair::generate($this->signatureService());
-        $event = (new Rumour(
+        $event = new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
             new TagCollection(),
             EventContent::fromString('test'),
-        ))->sign($keyPair, $this->signatureService());
+        )->sign($keyPair, $this->signatureService());
 
         $this->deserialiser->method('deserialiseClientMessage')->willReturn(new EventMessage($event));
         $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
@@ -276,7 +286,7 @@ final class MessageRouterTest extends TestCase
         $client = $this->makeClient($connection);
         $challenge = $this->authenticationRegistry->getOrCreateChallenge($client->getId());
 
-        $event = (new Rumour(
+        $event = new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
@@ -285,7 +295,7 @@ final class MessageRouterTest extends TestCase
                 Tag::tryFromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
-        ))->sign($keyPair, $this->signatureService());
+        )->sign($keyPair, $this->signatureService());
 
         $this->deserialiser->method('deserialiseClientMessage')->willReturn(new AuthMessage($event));
 

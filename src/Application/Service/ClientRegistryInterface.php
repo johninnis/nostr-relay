@@ -7,9 +7,12 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
+use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 
 interface ClientRegistryInterface
 {
+    public function registerClient(ClientConnectionInterface $connection, ConnectionInfo $connectionInfo): RelayClient;
+
     public function getClient(ClientId $clientId): ?RelayClient;
 
     public function getClientCount(): int;

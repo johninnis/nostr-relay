@@ -36,6 +36,7 @@ final class InMemoryClientRegistry implements ClientRegistryInterface
     ) {
     }
 
+    #[Override]
     public function registerClient(ClientConnectionInterface $connection, ConnectionInfo $connectionInfo): RelayClient
     {
         if (count($this->clients) >= $this->maxConnections) {

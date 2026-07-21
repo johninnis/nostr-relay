@@ -7,9 +7,9 @@ namespace Innis\Nostr\Relay\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
 use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\AuthenticationRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
@@ -26,6 +26,7 @@ final class ProcessAuthUseCase
         private readonly AuthEventVerifier $verifier,
         private readonly EventValidatorInterface $eventValidator,
         private readonly SubscriptionReevaluator $subscriptionReevaluator,
+        private readonly AuthChallengeIssuer $authChallengeIssuer,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -41,7 +42,7 @@ final class ProcessAuthUseCase
             $challenge = $this->authRegistry->getChallenge($client->getId());
             if (null === $challenge) {
                 return [
-                    new AuthMessage($this->authRegistry->getOrCreateChallenge($client->getId())),
+                    $this->authChallengeIssuer->issue($client->getId()),
                     new OkMessage($event->getId(), false, RejectionReason::AuthRequired->format('challenge issued, please retry')),
                 ];
             }
@@ -52,14 +53,14 @@ final class ProcessAuthUseCase
             }
 
             $this->authRegistry->authenticate($client->getId(), $event->getPubkey());
-            $this->subscriptionReevaluator->reevaluate($client);
+            $reevaluationReplies = $this->subscriptionReevaluator->reevaluate($client);
 
             $this->logger->info('Client authenticated', [
                 'client_id' => (string) $client->getId(),
                 'pubkey' => $event->getPubkey()->toHex(),
             ]);
 
-            return [new OkMessage($event->getId(), true, '')];
+            return [...$reevaluationReplies, new OkMessage($event->getId(), true, '')];
         } catch (InvalidEventException $e) {
             $this->logger->warning('AUTH event validation failed', [
                 'client_id' => (string) $client->getId(),

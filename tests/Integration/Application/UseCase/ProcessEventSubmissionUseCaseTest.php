@@ -30,7 +30,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
-use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
@@ -41,13 +41,10 @@ use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
-use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
-use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
-use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
-use Override;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -60,6 +57,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     private ProcessEventSubmissionUseCase $useCase;
     private RelayClient $client;
     private SignatureServiceInterface $sigService;
+    private bool $rateLimited = false;
 
     private function signatureService(): SignatureServiceInterface
     {
@@ -70,6 +68,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->rateLimiter = $this->createStub(RateLimiterInterface::class);
+        $this->rateLimiter->method('tryConsume')->willReturnCallback(fn (): bool => !$this->rateLimited);
         $this->useCase = $this->makeUseCase();
         $this->client = $this->makeClient();
     }
@@ -118,10 +117,9 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
                 $this->policy,
                 $this->rateLimiter,
                 new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
-                new ClientAuthChallenger($authenticationRegistry, $messenger),
             ),
             $pipeline,
-            $authenticationRegistry,
+            new AuthChallengeIssuer($authenticationRegistry),
             $this->clientRegistry,
             $logger,
         );
@@ -139,26 +137,26 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $keyPair = KeyPair::generate($this->signatureService());
 
-        return (new Rumour(
+        return new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             $kind ?? EventKind::fromInt(EventKind::TEXT_NOTE),
             new TagCollection(),
             EventContent::fromString('hello world'),
-        ))->sign($keyPair, $this->signatureService());
+        )->sign($keyPair, $this->signatureService());
     }
 
     private function createSignedDeletionEvent(TagCollection $tags, ?KeyPair $keyPair = null): Event
     {
         $keyPair ??= KeyPair::generate($this->signatureService());
 
-        return (new Rumour(
+        return new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::EVENT_DELETION),
             $tags,
             EventContent::fromString('spam'),
-        ))->sign($keyPair, $this->signatureService());
+        )->sign($keyPair, $this->signatureService());
     }
 
     public function testSuccessfulEventStoreAndDistribute(): void
@@ -225,7 +223,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $event = $this->createSignedEvent();
 
         $this->policy->method('allowEventSubmission')
-            ->willThrowException(new PolicyViolationException('not allowed'));
+            ->willReturn(PolicyRejection::blocked('not allowed'));
 
         $replies = $this->useCase->execute($this->client, $event);
 
@@ -239,8 +237,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     {
         $event = $this->createSignedEvent();
 
-        $this->rateLimiter->method('checkLimit')
-            ->willThrowException(RateLimitException::forKey('127.0.0.1'));
+        $this->rateLimited = true;
 
         $replies = $this->useCase->execute($this->client, $event);
 
@@ -274,7 +271,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $event = $this->createSignedEvent();
 
         $this->policy->method('allowEventSubmission')
-            ->willThrowException(new AuthRequiredException('auth needed'));
+            ->willReturn(PolicyRejection::authRequired('auth needed'));
 
         $replies = $this->useCase->execute($this->client, $event);
 
@@ -285,39 +282,34 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->assertStringContainsString('auth-required', $replies[1]->getMessage());
     }
 
-    public function testOfferedAuthChallengeIsSentToTheAdmittedClient(): void
+    public function testOfferedAuthChallengeIsReturnedToTheAdmittedClient(): void
     {
         $event = $this->createSignedEvent();
-        $connection = new class implements ClientConnectionInterface {
-            /** @var list<string> */
-            public array $messages = [];
 
-            #[Override]
-            public function sendText(string $text): void
-            {
-                $this->messages[] = $text;
-            }
-        };
-        $client = $this->makeClient($connection);
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $useCase = $this->makeUseCase($eventStore);
 
         $this->policy->method('offersAuthChallenge')->willReturn(true);
 
-        $this->useCase->execute($client, $event);
+        $replies = $useCase->execute($this->makeClient(), $event);
 
-        // The challenge is offered only after allowEventSubmission admits the event, so its arrival proves admission (not rejection).
-        $this->assertStringContainsString('"AUTH"', implode('', $connection->messages));
+        // The challenge is offered only after allowEventSubmission admits the event, so its presence alongside an accepting OK proves admission (not rejection).
+        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
+        $this->assertInstanceOf(OkMessage::class, $replies[1]);
+        $this->assertTrue($replies[1]->isAccepted());
     }
 
     public function testDeletionEventTriggersDeleteByEventIds(): void
     {
         $keyPair = KeyPair::generate($this->signatureService());
-        $targetEvent = (new Rumour(
+        $targetEvent = new Rumour(
             $keyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
             new TagCollection(),
             EventContent::fromString('target'),
-        ))->sign($keyPair, $this->signatureService());
+        )->sign($keyPair, $this->signatureService());
 
         $tags = new TagCollection([
             Tag::event($targetEvent->getId()),
@@ -354,13 +346,13 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
     {
         $victimKeyPair = KeyPair::generate($this->signatureService());
-        $victimEvent = (new Rumour(
+        $victimEvent = new Rumour(
             $victimKeyPair->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
             new TagCollection(),
             EventContent::fromString('victim'),
-        ))->sign($victimKeyPair, $this->signatureService());
+        )->sign($victimKeyPair, $this->signatureService());
 
         $attackerKeyPair = KeyPair::generate($this->signatureService());
         $tags = new TagCollection([

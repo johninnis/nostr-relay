@@ -7,9 +7,8 @@ Accepted.
 ## Context
 
 A relay already offers a NIP-42 AUTH challenge lazily on the read path: a subscription whose filter
-exceeds guest scope is admitted, scoped down, and the client is sent a challenge so it can
-authenticate for full access. The challenge is a side effect of admission, sent by the admission
-service, never on connect.
+exceeds guest scope is admitted, scoped down, and the client is offered a challenge so it can
+authenticate for full access. The challenge is drawn by a scope-exceeding request, never on connect.
 
 The write path had no equivalent. Yet a host policy can have the same need there: it may want to
 *admit* an event and still invite the connection to authenticate — for example so a client that keeps
@@ -27,13 +26,17 @@ behaviour and must have one home.
   the read path's scope signal. `allowEventSubmission` still decides accept-or-reject; a policy that
   admits an event answers separately whether that acceptance should also draw a challenge. The default
   policy answers `false`.
-- `EventAdmission`, after `allowEventSubmission` admits the event, offers a challenge when the policy
-  says so. The event is admitted regardless — the challenge only invites an upgrade, so a client that
-  never authenticates keeps publishing.
-- The send itself moves into one collaborator, `ClientAuthChallenger`, used by both the subscription
-  and event admission services. Offering a challenge is "send an `AUTH` with a fresh-or-existing
-  challenge for this client", in exactly one place. It is not gated on an existing challenge: a
-  scope-exceeding or challenge-drawing request re-issues, because a client may have missed the first.
+- `EventAdmission`, after `allowEventSubmission` admits the event, reports whether the policy wants a
+  challenge as part of its returned `EventAdmitted` outcome. The event is admitted regardless — the
+  challenge only invites an upgrade, so a client that never authenticates keeps publishing.
+- Building the `AUTH` frame lives in one collaborator, `AuthChallengeIssuer`, which **returns** the
+  message rather than pushing it: `issue()` for a fresh-or-existing challenge, `issueIfUnchallenged()`
+  for the "only if not already challenged" case, and `scopeLimitOffer()` for the read-path `NOTICE` +
+  `AUTH` pair. Every caller — the event, auth and subscription use cases — appends its output to the
+  reply list the router sends, so the challenge travels the same single delivery path as every other
+  wire frame (ADR-0003), never a side-channel from admission. The offer is not gated on an existing
+  challenge: a scope-exceeding or challenge-drawing request re-issues, because a client may have missed
+  the first.
 
 ## Consequences
 
@@ -42,5 +45,6 @@ behaviour and must have one home.
 - The challenge is drawn only after `allowEventSubmission` has run — which is after signature
   validation and after the rate-limit check — so a policy only ever challenges a client whose event
   was already validated and admitted, and the cheap rate-limit shed still runs first.
-- There is one implementation of "offer a client an AUTH challenge". A future change to how a
-  challenge is issued or framed happens there, for both admission paths at once.
+- There is one implementation of "produce a client's AUTH challenge frame", `AuthChallengeIssuer`. A
+  future change to how a challenge is issued or framed happens there, for the event, auth and
+  subscription paths at once.

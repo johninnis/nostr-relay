@@ -8,7 +8,7 @@ use Rector\Php83\Rector\ClassMethod\AddOverrideAttributeToOverriddenMethodsRecto
 use Rector\Php84\Rector\MethodCall\NewMethodCallWithoutParenthesesRector;
 
 return RectorConfig::configure()
-    ->withPaths([__DIR__ . '/src'])
+    ->withPaths([__DIR__ . '/src', __DIR__ . '/tests', __DIR__ . '/examples', __DIR__ . '/tools'])
     ->withRules([
         AddTypeToConstRector::class,
         NewMethodCallWithoutParenthesesRector::class,

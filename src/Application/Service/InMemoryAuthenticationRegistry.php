@@ -51,14 +51,8 @@ final class InMemoryAuthenticationRegistry implements AuthenticationRegistryInte
         $key = (string) $clientId;
         unset($this->challenges[$key]);
 
-        if (!isset($this->authenticatedPubkeys[$key])) {
-            $this->authenticatedPubkeys[$key] = [];
-        }
-
-        foreach ($this->authenticatedPubkeys[$key] as $existing) {
-            if ($existing->equals($pubkey)) {
-                return;
-            }
+        if ($this->isAuthenticatedAs($clientId, $pubkey)) {
+            return;
         }
 
         $this->authenticatedPubkeys[$key][] = $pubkey;
@@ -77,13 +71,7 @@ final class InMemoryAuthenticationRegistry implements AuthenticationRegistryInte
 
     public function isAuthenticatedAs(ClientId $clientId, PublicKey $pubkey): bool
     {
-        foreach ($this->getAuthenticatedPubkeys($clientId) as $existing) {
-            if ($existing->equals($pubkey)) {
-                return true;
-            }
-        }
-
-        return false;
+        return $this->getAuthenticatedPubkeys($clientId)->contains($pubkey);
     }
 
     #[Override]

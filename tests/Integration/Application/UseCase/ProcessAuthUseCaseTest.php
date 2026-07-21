@@ -34,16 +34,16 @@ use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
-use Innis\Nostr\Relay\Application\Service\ClientAuthChallenger;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
+use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
-use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
@@ -111,17 +111,18 @@ final class ProcessAuthUseCaseTest extends TestCase
             new AuthEventVerifier($config, $this->policy, new SystemClock()),
             $this->eventValidator(),
             $this->buildReevaluator($this->policy, $this->createStub(RelayEventStoreInterface::class)),
+            new AuthChallengeIssuer($this->authenticationRegistry),
             new NullLogger(),
         );
     }
 
     private function buildReevaluator(RelayPolicyInterface $policy, RelayEventStoreInterface $eventStore): SubscriptionReevaluator
     {
+        $rateLimiter = $this->createStub(RateLimiterInterface::class);
+        $rateLimiter->method('tryConsume')->willReturn(true);
         $admission = new SubscriptionAdmission(
             $policy,
-            $this->createStub(RateLimiterInterface::class),
-            new ClientAuthChallenger($this->authenticationRegistry, $this->messenger),
-            $this->messenger,
+            $rateLimiter,
             $this->subscriptionRegistry,
         );
 
@@ -141,15 +142,15 @@ final class ProcessAuthUseCaseTest extends TestCase
             new NullLogger(),
         );
 
-        $createSubscription = new CreateSubscriptionUseCase(
+        $activator = new SubscriptionActivator(
             $admission,
             $this->subscriptionRegistry,
             $storedEventStreamer,
             $synchronousExecutor,
-            new NullLogger(),
+            new AuthChallengeIssuer($this->authenticationRegistry),
         );
 
-        return new SubscriptionReevaluator($this->subscriptionRegistry, $createSubscription, $this->messenger);
+        return new SubscriptionReevaluator($this->subscriptionRegistry, $activator);
     }
 
     public function testSuccessfulAuthentication(): void
@@ -200,6 +201,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
             $this->buildReevaluator($policy, $eventStore),
+            new AuthChallengeIssuer($this->authenticationRegistry),
             new NullLogger(),
         );
 
@@ -230,6 +232,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new AuthEventVerifier($config, $policy, new SystemClock()),
             $this->eventValidator(),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
+            new AuthChallengeIssuer($this->authenticationRegistry),
             new NullLogger(),
         );
 
@@ -344,6 +347,7 @@ final class ProcessAuthUseCaseTest extends TestCase
             new AuthEventVerifier($config, $policy, $clock),
             $this->eventValidator(),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
+            new AuthChallengeIssuer($this->authenticationRegistry),
             new NullLogger(),
         );
 
@@ -360,13 +364,13 @@ final class ProcessAuthUseCaseTest extends TestCase
     {
         $author = KeyPair::generate($this->signatureService());
 
-        return (new Rumour(
+        return new Rumour(
             $author->getPublicKey(),
             Timestamp::now(),
             EventKind::fromInt(EventKind::NOSTR_CONNECT),
             new TagCollection([Tag::tryFromArray(['p', $this->keyPair->getPublicKey()->toHex()])]),
             EventContent::fromString('encrypted-request'),
-        ))->sign($author, $this->signatureService());
+        )->sign($author, $this->signatureService());
     }
 
     private function createAuthEvent(string $challenge, string $relayUrl): Event
@@ -376,7 +380,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     private function createAuthEventWithTimestamp(string $challenge, string $relayUrl, int $timestamp): Event
     {
-        return (new Rumour(
+        return new Rumour(
             $this->keyPair->getPublicKey(),
             Timestamp::fromInt($timestamp),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
@@ -385,6 +389,6 @@ final class ProcessAuthUseCaseTest extends TestCase
                 Tag::tryFromArray(['challenge', $challenge]),
             ]),
             EventContent::fromString(''),
-        ))->sign($this->keyPair, $this->signatureService());
+        )->sign($this->keyPair, $this->signatureService());
     }
 }
