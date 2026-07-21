@@ -11,6 +11,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
+use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Psr\Log\LoggerInterface;
 
 final readonly class AcceptedEventPipeline
@@ -69,7 +70,7 @@ final readonly class AcceptedEventPipeline
     {
         $this->logger->debug('Event duplicate', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex()]);
 
-        return [new OkMessage($event->getId(), false, 'duplicate: event already exists')];
+        return [new OkMessage($event->getId(), false, RejectionReason::Duplicate->format('event already exists'))];
     }
 
     /**
@@ -83,6 +84,6 @@ final readonly class AcceptedEventPipeline
             'kind' => $event->getKind()->toInt(),
         ]);
 
-        return [new OkMessage($event->getId(), false, 'duplicate: newer version already exists')];
+        return [new OkMessage($event->getId(), false, RejectionReason::Duplicate->format('newer version already exists'))];
     }
 }

@@ -12,6 +12,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
@@ -37,9 +38,9 @@ final class CountSubscriptionUseCase
 
             return [new CountMessage($subscriptionId, $this->eventStore->countByFilters($scopedFilters->getFilters()))];
         } catch (PolicyViolationException $e) {
-            return [new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage())];
+            return [new ClosedMessage($subscriptionId, RejectionReason::Blocked->format($e->getMessage()))];
         } catch (RateLimitException) {
-            return [new ClosedMessage($subscriptionId, 'rate-limited: slow down')];
+            return [new ClosedMessage($subscriptionId, RejectionReason::RateLimited->format('slow down'))];
         } catch (Throwable $e) {
             $this->logger->error('Count subscription error', [
                 'client_id' => (string) $client->getId(),
@@ -47,7 +48,7 @@ final class CountSubscriptionUseCase
                 'error' => $e->getMessage(),
             ]);
 
-            return [new ClosedMessage($subscriptionId, 'error: could not count events')];
+            return [new ClosedMessage($subscriptionId, RejectionReason::Error->format('could not count events'))];
         }
     }
 }

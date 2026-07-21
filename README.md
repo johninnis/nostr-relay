@@ -19,15 +19,13 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **NIP-42 AUTH** - Challenge/response authentication; a challenge is issued only when a subscription exceeds guest scope (never on connect), and the client's live subscriptions are re-evaluated once it authenticates
 - **NIP-45 COUNT** - COUNT message support
 - **Ephemeral events** - Kinds 20000-29999 skip storage
-- **Custom HTTP handlers** - Inject handlers for additional HTTP endpoints (e.g. management APIs, landing pages)
+- **Host-owned HTTP server** - The relay is an `Amp\Http\Server\RequestHandler` you mount on your own `HttpServer`, so the host controls binding, middleware (CORS, forwarded headers, compression) and lifecycle, and serves its own routes on the same origin
 - **NIP-11 metadata** - Served from a single `Nip11InfoProviderInterface`: the built-in `StaticNip11InfoProvider` for a fixed document, or a custom implementation to compute it at runtime
 - **Built-in RelayPolicy** - Configurable tenant/guest permissions
 - **Real-time distribution** - Events broadcast to matching subscriptions
 - **Metrics** - `RelayInstance::getMetrics()` returns a `RelayMetrics` snapshot (active connections, events received/sent, subscriptions, start time) via the `MetricsCollectorInterface` port
 - **Rate limiting** - DDoS protection with configurable limits; tenants (and trusted clients via `isRateLimitExempt()`) bypass
 - **Idle timeout** - Connections with no inbound message for 5 minutes are closed, freeing the slot (see [ADR-0005](docs/adr/0005-idle-connections-closed-after-a-fixed-timeout.md))
-- **CORS support** - `OPTIONS` preflight handling and uniform CORS headers on every HTTP response for browser-based clients
-- **Trusted proxies** - `X-Forwarded-For` honoured when the client IP matches a trusted proxy
 - **PSR-3 logging** - Standard logging interface
 
 ---
@@ -58,7 +56,7 @@ composer require innis/nostr-relay
 The relay requires these interfaces from your host application:
 
 - **`RelayEventStoreInterface`** - Event persistence and queries
-- **`RelayConfigInterface`** - Server configuration (host, port, max connections, relay URL, trusted proxies)
+- **`RelayConfigInterface`** - The relay's own configuration: the relay URL (for NIP-42 AUTH verification) and the maximum concurrent connections. The listening address and trusted proxies are configured on the `HttpServer` the host owns, not here.
 - **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Use the built-in `StaticRateLimitPolicy` for fixed limits, or implement the interface to vary limits at runtime.
 - **`Nip11InfoProviderInterface`** - The single source of the relay's NIP-11 document. Wrap a fixed document in the built-in `StaticNip11InfoProvider`, or implement the interface to project metadata at runtime (e.g. reflecting live policy).
 
@@ -66,7 +64,6 @@ Access control can use the built-in `RelayPolicy` or a custom implementation of 
 
 Optional interfaces extend the relay's behaviour:
 
-- **`HttpRequestHandlerInterface`** - Handle additional HTTP requests (e.g. management API, landing page). Return a response or `null` to fall through to WebSocket.
 - **`ConnectionGateInterface`** - Decide whether an IP may connect, before the WebSocket session is established. Defaults to allowing every IP; implement it to enforce an allow-list or deny-list.
 - **`MetricsCollectorInterface`** - Collect relay metrics (connections, events, subscriptions). Defaults to the in-memory `InMemoryMetricsCollector` exposed via `RelayInstance::getMetrics()`; implement it to export to an external monitoring system.
 
@@ -123,22 +120,36 @@ $factory = new RelayServerFactory(
     authenticationRegistry: $authenticationRegistry,
     logger: $logger,
     nip11InfoProvider: $nip11InfoProvider,
-    // Optional: custom HTTP handler for additional endpoints
-    // httpHandler: new MyHttpHandler(),
-    // Optional: implement Nip11InfoProviderInterface instead for runtime-computed metadata
 );
+```
 
-$relay = $factory->create();
-$relay->start();
+The host owns the `HttpServer`, so it decides the listening address, middleware and
+lifecycle, and mounts the relay's request handler on it. Owning the server is what lets
+the host serve its own routes — a landing page, a management API, static files — on the
+same origin as the relay:
+
+```php
+use Amp\Http\Server\DefaultErrorHandler;
+use Amp\Http\Server\SocketHttpServer;
+use Amp\Socket\InternetAddress;
+
+use function Amp\trapSignal;
+
+$httpServer = SocketHttpServer::createForDirectAccess($logger);
+$httpServer->expose(new InternetAddress('127.0.0.1', 8080));
+
+$relay = $factory->create($httpServer);
+
+$httpServer->start($relay->getRequestHandler(), new DefaultErrorHandler());
 trapSignal([SIGINT, SIGTERM]); // start() is non-blocking; keep the event loop alive until interrupted
-$relay->stop();
+$httpServer->stop();
 ```
 
 See [`examples/relay.example.php`](examples/relay.example.php) for a complete working example with all interface implementations.
 
 ### 3. Configure Nginx
 
-The relay does not handle TLS. Use a reverse proxy for SSL. If the proxy sets `X-Forwarded-For`, return its address from `RelayConfigInterface::getTrustedProxies()` as an IPv4/IPv6 string with an optional CIDR mask (e.g. `'10.0.0.1'`, `'172.18.0.0/24'`, `'2001:db8::/32'`). Invalid entries cause the relay to refuse to start. If no proxy sits in front of the relay, return an empty array; honouring forwarded headers from an untrusted source lets any client spoof their IP.
+The relay does not handle TLS. Use a reverse proxy for SSL. If the proxy sets `X-Forwarded-For`, configure the trusted proxies on the `HttpServer` the host owns — amphp's `ForwardedMiddleware` honours the header only for a matching proxy address. The relay reads the client IP from the request the server hands it, so honouring forwarded headers from an untrusted source lets any client spoof their IP; only trust a proxy you control.
 
 ```nginx
 upstream nostr_relay {
@@ -227,8 +238,7 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 ```
 
 **Relay Handles:**
-- WebSocket server lifecycle
-- Connection management
+- WebSocket session handling (as a request handler mounted on the host's server)
 - Message parsing (EVENT, REQ, CLOSE, AUTH, COUNT)
 - NIP-42 authentication (challenge/response)
 - NIP-09 deletion (kind 5 event processing)
@@ -238,11 +248,12 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 - Rate limiting
 
 **Host Application Handles:**
+- The HTTP server: binding, middleware (CORS, forwarded headers, compression) and start/stop lifecycle
 - Event storage and queries
 - Access control policies (use built-in `RelayPolicy` or implement `RelayPolicyInterface` directly)
-- Server configuration (`RelayConfigInterface`)
+- Relay configuration (`RelayConfigInterface`)
 - NIP-11 metadata (`Nip11InfoProviderInterface` — built-in `StaticNip11InfoProvider`, or implement for runtime-computed metadata)
-- Custom HTTP endpoints (optional `HttpRequestHandlerInterface`)
+- Any additional routes served on the same origin (landing page, management API, static files)
 
 ---
 

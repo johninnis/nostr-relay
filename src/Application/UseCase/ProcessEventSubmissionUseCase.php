@@ -14,6 +14,7 @@ use Innis\Nostr\Relay\Application\Service\AuthChallengeInterface;
 use Innis\Nostr\Relay\Application\Service\ClientRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Innis\Nostr\Relay\Domain\Exception\AuthRequiredException;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
@@ -57,7 +58,7 @@ final class ProcessEventSubmissionUseCase
         } catch (InvalidEventException $e) {
             $this->logger->warning('Event invalid', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
 
-            return [new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage())];
+            return [new OkMessage($event->getId(), false, RejectionReason::Invalid->format($e->getMessage()))];
         } catch (AuthRequiredException) {
             $this->logger->debug('Event auth-required', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
 
@@ -65,7 +66,7 @@ final class ProcessEventSubmissionUseCase
             if (null === $this->authChallenge->getChallenge($client->getId())) {
                 $replies[] = new AuthMessage($this->authChallenge->getOrCreateChallenge($client->getId()));
             }
-            $replies[] = new OkMessage($event->getId(), false, 'auth-required: authentication required');
+            $replies[] = new OkMessage($event->getId(), false, RejectionReason::AuthRequired->format('authentication required'));
 
             return $replies;
         } catch (PolicyViolationException $e) {
@@ -76,15 +77,15 @@ final class ProcessEventSubmissionUseCase
                 'reason' => $e->getMessage(),
             ]);
 
-            return [new OkMessage($event->getId(), false, 'blocked: '.$e->getMessage())];
+            return [new OkMessage($event->getId(), false, RejectionReason::Blocked->format($e->getMessage()))];
         } catch (RateLimitException) {
             $this->logger->warning('Event rate-limited', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex()]);
 
-            return [new OkMessage($event->getId(), false, 'rate-limited: slow down')];
+            return [new OkMessage($event->getId(), false, RejectionReason::RateLimited->format('slow down'))];
         } catch (Throwable $e) {
             $this->logger->error('Event processing error', ['event_id' => $eventId, 'pubkey' => $event->getPubkey()->toHex(), 'error' => $e->getMessage()]);
 
-            return [new OkMessage($event->getId(), false, 'error: could not process event')];
+            return [new OkMessage($event->getId(), false, RejectionReason::Error->format('could not process event'))];
         }
     }
 }

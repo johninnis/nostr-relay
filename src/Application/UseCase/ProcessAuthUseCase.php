@@ -14,6 +14,7 @@ use Innis\Nostr\Relay\Application\Service\AuthenticationRegistryInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -41,13 +42,13 @@ final class ProcessAuthUseCase
             if (null === $challenge) {
                 return [
                     new AuthMessage($this->authRegistry->getOrCreateChallenge($client->getId())),
-                    new OkMessage($event->getId(), false, 'auth-required: challenge issued, please retry'),
+                    new OkMessage($event->getId(), false, RejectionReason::AuthRequired->format('challenge issued, please retry')),
                 ];
             }
 
             $rejection = $this->verifier->verify($event, $challenge);
             if (null !== $rejection) {
-                return [new OkMessage($event->getId(), false, $rejection->value)];
+                return [new OkMessage($event->getId(), false, $rejection->toWireReason())];
             }
 
             $this->authRegistry->authenticate($client->getId(), $event->getPubkey());
@@ -65,14 +66,14 @@ final class ProcessAuthUseCase
                 'error' => $e->getMessage(),
             ]);
 
-            return [new OkMessage($event->getId(), false, 'invalid: '.$e->getMessage())];
+            return [new OkMessage($event->getId(), false, RejectionReason::Invalid->format($e->getMessage()))];
         } catch (Throwable $e) {
             $this->logger->error('AUTH processing error', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),
             ]);
 
-            return [new OkMessage($event->getId(), false, 'error: could not process authentication')];
+            return [new OkMessage($event->getId(), false, RejectionReason::Error->format('could not process authentication'))];
         }
     }
 }

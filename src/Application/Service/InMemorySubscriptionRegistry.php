@@ -70,14 +70,10 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
             return;
         }
 
-        $subscription = $this->subscriptions[$key];
         $clientIdStr = (string) $clientId;
 
-        $this->removeFromKindIndex($subscription, $key);
+        $this->forget($key);
         $this->removeFromClientIndex($clientIdStr, $key);
-
-        unset($this->subscriptions[$key], $this->clientIdByKey[$key], $this->originalFiltersByKey[$key]);
-        $this->metrics->decrementSubscriptions();
 
         $this->logger->debug('Subscription closed', [
             'subscription_id' => (string) $subscriptionId,
@@ -89,15 +85,9 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
     public function removeAllForClient(ClientId $clientId): void
     {
         $clientIdStr = (string) $clientId;
-        $keys = array_keys($this->subscriptionsByClient[$clientIdStr] ?? []);
 
-        foreach ($keys as $key) {
-            $key = (string) $key;
-            if (isset($this->subscriptions[$key])) {
-                $this->removeFromKindIndex($this->subscriptions[$key], $key);
-                unset($this->subscriptions[$key], $this->clientIdByKey[$key], $this->originalFiltersByKey[$key]);
-                $this->metrics->decrementSubscriptions();
-            }
+        foreach (array_keys($this->subscriptionsByClient[$clientIdStr] ?? []) as $key) {
+            $this->forget((string) $key);
         }
 
         unset($this->subscriptionsByClient[$clientIdStr]);
@@ -165,6 +155,17 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
         }
 
         return new SubscriptionCollection($subscriptions);
+    }
+
+    private function forget(string $key): void
+    {
+        if (!isset($this->subscriptions[$key])) {
+            return;
+        }
+
+        $this->removeFromKindIndex($this->subscriptions[$key], $key);
+        unset($this->subscriptions[$key], $this->clientIdByKey[$key], $this->originalFiltersByKey[$key]);
+        $this->metrics->decrementSubscriptions();
     }
 
     private function compositeKey(ClientId $clientId, SubscriptionId $subscriptionId): string

@@ -13,6 +13,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -62,7 +63,7 @@ final readonly class StoredEventStreamer
             ]);
 
             try {
-                $this->messenger->send($client, new NoticeMessage('error: failed to fetch events'));
+                $this->messenger->send($client, new NoticeMessage(RejectionReason::Error->format('failed to fetch events')));
             } catch (ConnectionException) {
             }
         }

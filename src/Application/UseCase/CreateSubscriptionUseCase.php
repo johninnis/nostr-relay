@@ -15,6 +15,7 @@ use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionRegistryInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Innis\Nostr\Relay\Domain\Exception\PolicyViolationException;
 use Innis\Nostr\Relay\Domain\Exception\RateLimitException;
 use Psr\Log\LoggerInterface;
@@ -56,9 +57,9 @@ final class CreateSubscriptionUseCase
                 'filters' => $filters->toJsonArray(),
             ]);
 
-            return [new ClosedMessage($subscriptionId, 'blocked: '.$e->getMessage())];
+            return [new ClosedMessage($subscriptionId, RejectionReason::Blocked->format($e->getMessage()))];
         } catch (RateLimitException) {
-            return [new ClosedMessage($subscriptionId, 'rate-limited: slow down')];
+            return [new ClosedMessage($subscriptionId, RejectionReason::RateLimited->format('slow down'))];
         } catch (Throwable $e) {
             $this->subscriptionRegistry->removeSubscription($client->getId(), $subscriptionId);
             $this->logger->error('Subscription creation error', [
@@ -67,7 +68,7 @@ final class CreateSubscriptionUseCase
                 'error' => $e->getMessage(),
             ]);
 
-            return [new ClosedMessage($subscriptionId, 'error: invalid subscription')];
+            return [new ClosedMessage($subscriptionId, RejectionReason::Error->format('invalid subscription'))];
         }
     }
 }

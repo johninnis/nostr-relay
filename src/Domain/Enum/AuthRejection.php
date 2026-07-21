@@ -4,10 +4,20 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\Enum;
 
-enum AuthRejection: string
+enum AuthRejection
 {
-    case InvalidChallenge = 'auth-required: invalid challenge';
-    case InvalidRelayUrl = 'auth-required: invalid relay URL';
-    case TimestampOutOfRange = 'auth-required: timestamp out of range';
-    case Restricted = 'restricted: authentication is limited to relay tenants';
+    case InvalidChallenge;
+    case InvalidRelayUrl;
+    case TimestampOutOfRange;
+    case Restricted;
+
+    public function toWireReason(): string
+    {
+        return match ($this) {
+            self::InvalidChallenge => RejectionReason::AuthRequired->format('invalid challenge'),
+            self::InvalidRelayUrl => RejectionReason::AuthRequired->format('invalid relay URL'),
+            self::TimestampOutOfRange => RejectionReason::AuthRequired->format('timestamp out of range'),
+            self::Restricted => RejectionReason::Restricted->format('authentication is limited to relay tenants'),
+        };
+    }
 }
