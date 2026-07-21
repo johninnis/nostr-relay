@@ -31,7 +31,7 @@ behaviour and must have one home.
   challenge only invites an upgrade, so a client that never authenticates keeps publishing.
 - Building the `AUTH` frame lives in one collaborator, `AuthChallengeIssuer`, which **returns** the
   message rather than pushing it: `issue()` for a fresh-or-existing challenge, `issueIfUnchallenged()`
-  for the "only if not already challenged" case, and `scopeLimitOffer()` for the read-path `NOTICE` +
+  for the "only if not already challenged" case, and `offerForScope()` for the read-path `NOTICE` +
   `AUTH` pair. Every caller — the event, auth and subscription use cases — appends its output to the
   reply list the router sends, so the challenge travels the same single delivery path as every other
   wire frame (ADR-0003), never a side-channel from admission. The offer is not gated on an existing

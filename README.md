@@ -60,7 +60,7 @@ The relay requires these interfaces from your host application:
 - **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Use the built-in `StaticRateLimitPolicy` for fixed limits, or implement the interface to vary limits at runtime.
 - **`Nip11InfoProviderInterface`** - The single source of the relay's NIP-11 document. Wrap a fixed document in the built-in `StaticNip11InfoProvider`, or implement the interface to project metadata at runtime (e.g. reflecting live policy).
 
-Access control can use the built-in `RelayPolicy` or a custom implementation of `RelayPolicyInterface`.
+Access control can use the built-in `RelayPolicy` or a custom implementation of `RelayPolicyInterface`. See [Implementing `RelayPolicyInterface`](#implementing-relaypolicyinterface) for how a policy signals a rejection.
 
 Optional interfaces extend the relay's behaviour:
 
@@ -191,6 +191,37 @@ Optional keys with sensible defaults:
 - `max_filters` - Maximum filters per subscription
 - `max_event_size` - Maximum event payload size in bytes
 - `max_query_limit` - Maximum limit value in REQ filters
+
+### Implementing `RelayPolicyInterface`
+
+A policy answers "may this client do this?" by **returning** an outcome — it never throws to reject. `allowEventSubmission()` and `allowSubscription()` both return `?PolicyRejection`:
+
+```php
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
+
+public function allowEventSubmission(RelayClient $client, Event $event): ?PolicyRejection
+{
+    if ($this->isSpam($event)) {
+        return PolicyRejection::blocked('event rejected by content filter');
+    }
+
+    if (!$this->isAuthenticated($client)) {
+        return PolicyRejection::authRequired('authentication required to publish this event kind');
+    }
+
+    return null;
+}
+```
+
+- Return `null` to admit.
+- Return `PolicyRejection::blocked($reason)` for a definitive refusal.
+- Return `PolicyRejection::authRequired($reason)` when authenticating could change the answer. The relay additionally sends the client an `AUTH` challenge alongside the refusal, so it can authenticate and retry.
+
+The relay frames the rejection as the wire reply that matches the client's message: `OK` for an `EVENT`, `CLOSED` for a `REQ` or `COUNT`. You do not construct wire messages yourself.
+
+Rejections are returned rather than thrown so the analyser forces every caller to handle them — see [ADR-0003](docs/adr/0003-anticipated-outcomes-returned-faults-thrown.md). Genuine faults are still exceptions: a structurally invalid or badly-signed event raises `InvalidEventException` from the core validator, which the relay catches and reports as `invalid:`.
+
+`offersAuthChallenge()` is separate from rejection: it lets a policy *admit* an event and still invite the client to authenticate (see [ADR-0011](docs/adr/0011-an-accepted-write-may-draw-a-lazy-auth-challenge.md)). The built-in policy returns `false`.
 
 ### Rate-Limit Exemption
 
