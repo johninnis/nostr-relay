@@ -40,21 +40,6 @@ final class ConnectionException extends RelayException
         );
     }
 
-    public static function bindFailed(string $host, int $port, ?Throwable $previous = null): self
-    {
-        return new self(
-            message: "Failed to bind to {$host}:{$port}".($previous ? ' - '.$previous->getMessage() : ''),
-            previous: $previous,
-        );
-    }
-
-    public static function invalidPort(int $port): self
-    {
-        return new self(
-            message: "Invalid port {$port}: must be between 0 and 65535",
-        );
-    }
-
     public static function peerDisconnected(?Throwable $previous = null): self
     {
         return new self(

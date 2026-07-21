@@ -13,7 +13,7 @@ A handful of units in this relay exceed three arguments without being sprawl, be
 - **Use-case orchestrators** (`ProcessAuthUseCase`, `ProcessEventSubmissionUseCase`, `CreateSubscriptionUseCase`) run one linear flow that admits a request, hands off to a pipeline or registry, frames the wire reply, and records telemetry. Each collaborator is used once, for a different concern; there is no cohesive value the arguments form, and no sub-responsibility to extract that would not just relocate the same collaborators.
 - **A message dispatch table** (`ClientMessageDispatcher`) holds one use case per protocol verb plus the deserialiser and a logger. The breadth *is* the protocol.
 - **The composition root** (`RelayServerFactory`) assembles the object graph. Wiring N objects is the definition of a composition root, not a smell.
-- **Assembled aggregates and framework adapters** (`RelayInstance`, `AmphpRelayServer`, `ClientConnectionHandler`) hold the parts they expose or the framework objects they wire.
+- **Assembled aggregates and framework adapters** (`RelayInstance`, `RelayRequestHandler`, `ClientConnectionHandler`) hold the parts they expose or the framework objects they wire.
 - **Small registries and services** (`InMemoryClientRegistry`, `EventDistributor`, `ClientDisconnectionHandler`, `AcceptedEventPipeline`) coordinate three ports plus a cross-cutting logger, or three collaborators plus a scalar bound.
 - **A `Throwable` subclass** (`ConnectionException`) mirrors the native `(message, code, previous)` constructor and adds one context field; the shape is fixed by the language, not chosen.
 

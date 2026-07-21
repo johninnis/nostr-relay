@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
-use Amp\Socket\SocketAddress;
+use Amp\Http\Server\RequestHandler;
 use Innis\Nostr\Core\Domain\Collection\SubscriptionCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -18,9 +18,9 @@ use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
 
 final class RelayInstance
 {
-    // Deliberate: assembled relay aggregate of the server and the registries it exposes — see ADR-0010
+    // Deliberate: assembled relay aggregate of the request handler and the registries it exposes — see ADR-0010
     public function __construct(
-        private readonly AmphpRelayServer $server,
+        private readonly RequestHandler $requestHandler,
         private readonly EventDistributor $distributor,
         private readonly InMemorySubscriptionRegistry $subscriptionRegistry,
         private readonly InMemoryClientRegistry $clientRegistry,
@@ -28,19 +28,9 @@ final class RelayInstance
     ) {
     }
 
-    public function start(): void
+    public function getRequestHandler(): RequestHandler
     {
-        $this->server->start();
-    }
-
-    public function stop(): void
-    {
-        $this->server->stop();
-    }
-
-    public function getListeningAddress(): ?SocketAddress
-    {
-        return $this->server->getListeningAddress();
+        return $this->requestHandler;
     }
 
     public function distributeEvent(Event $event): void

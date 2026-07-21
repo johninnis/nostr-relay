@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use Amp\Http\Server\DefaultErrorHandler;
+use Amp\Http\Server\SocketHttpServer;
+use Amp\Socket\InternetAddress;
 use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
 use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
@@ -106,17 +109,8 @@ final class InMemoryEventStore implements RelayEventStoreInterface
 
 final class ExampleRelayConfig implements RelayConfigInterface
 {
-    #[Override]
-    public function getHost(): string
-    {
-        return '127.0.0.1';
-    }
-
-    #[Override]
-    public function getPort(): int
-    {
-        return 8080;
-    }
+    public const string HOST = '127.0.0.1';
+    public const int PORT = 8080;
 
     #[Override]
     public function getMaxConnections(): int
@@ -129,15 +123,6 @@ final class ExampleRelayConfig implements RelayConfigInterface
     {
         return RelayUrl::tryFromString('ws://127.0.0.1:8080')
             ?? throw new RuntimeException('invalid relay URL');
-    }
-
-    /**
-     * @return list<non-empty-string>
-     */
-    #[Override]
-    public function getTrustedProxies(): array
-    {
-        return [];
     }
 }
 
@@ -199,6 +184,9 @@ $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->g
     'version' => '1.0.0',
 ]));
 
+$httpServer = SocketHttpServer::createForDirectAccess($logger);
+$httpServer->expose(new InternetAddress(ExampleRelayConfig::HOST, ExampleRelayConfig::PORT));
+
 $relay = new RelayServerFactory(
     eventStore: new InMemoryEventStore(),
     policy: $policy,
@@ -207,14 +195,13 @@ $relay = new RelayServerFactory(
     authenticationRegistry: $authenticationRegistry,
     logger: $logger,
     nip11InfoProvider: $nip11InfoProvider,
-)->create();
+)->create($httpServer);
 
-$relay->start();
+$httpServer->start($relay->getRequestHandler(), new DefaultErrorHandler());
 
 $logger->info('Relay started; press Ctrl-C to stop', [
-    'listening_on' => (string) ($relay->getListeningAddress() ?? throw new RuntimeException('relay is not listening')),
     'owner_pubkey' => $ownerPubkeyHex,
 ]);
 
 trapSignal([SIGINT, SIGTERM]);
-$relay->stop();
+$httpServer->stop();

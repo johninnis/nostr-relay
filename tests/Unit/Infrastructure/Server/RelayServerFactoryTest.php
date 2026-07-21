@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\Server;
 
+use Amp\Http\Server\HttpServer;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
@@ -43,7 +44,7 @@ final class RelayServerFactoryTest extends TestCase
             metricsCollector: $collector,
         );
 
-        $relay = $factory->create();
+        $relay = $factory->create($this->createStub(HttpServer::class));
 
         $this->assertSame($snapshot, $relay->getMetrics());
     }

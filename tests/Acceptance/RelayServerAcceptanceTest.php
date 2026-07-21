@@ -6,6 +6,9 @@ namespace Innis\Nostr\Relay\Tests\Acceptance;
 
 use Amp\Http\Client\HttpClientBuilder;
 use Amp\Http\Client\Request;
+use Amp\Http\Server\DefaultErrorHandler;
+use Amp\Http\Server\SocketHttpServer;
+use Amp\Socket\InternetAddress;
 use Amp\TimeoutCancellation;
 use Amp\Websocket\Client\WebsocketConnection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
@@ -33,7 +36,6 @@ use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use Innis\Nostr\Relay\Infrastructure\Http\StaticNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
-use Innis\Nostr\Relay\Infrastructure\Server\RelayInstance;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
 use Innis\Nostr\Relay\Tests\Support\InMemoryEventStore;
 use PHPUnit\Framework\TestCase;
@@ -44,13 +46,13 @@ use function Amp\Websocket\Client\connect;
 
 final class RelayServerAcceptanceTest extends TestCase
 {
-    private ?RelayInstance $relay = null;
+    private ?SocketHttpServer $httpServer = null;
     private ?SignatureServiceInterface $signer = null;
 
     protected function tearDown(): void
     {
-        $this->relay?->stop();
-        $this->relay = null;
+        $this->httpServer?->stop();
+        $this->httpServer = null;
     }
 
     public function testSignedEventIsAcceptedAndStreamedBackToASubscriber(): void
@@ -103,15 +105,12 @@ final class RelayServerAcceptanceTest extends TestCase
         $relayUrl = RelayUrl::tryFromString('ws://127.0.0.1:8080') ?? throw new RuntimeException('bad relay url');
 
         $config = $this->createStub(RelayConfigInterface::class);
-        $config->method('getHost')->willReturn('127.0.0.1');
-        $config->method('getPort')->willReturn(0);
         $config->method('getMaxConnections')->willReturn(64);
         $config->method('getRelayUrl')->willReturn($relayUrl);
-        $config->method('getTrustedProxies')->willReturn([]);
 
         $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
-        $relay = new RelayServerFactory(
+        $factory = new RelayServerFactory(
             eventStore: new InMemoryEventStore(),
             policy: new RelayPolicy($authenticationRegistry, new NullLogger(), RelayPolicyConfig::tryFromArray([]) ?? self::fail('config did not parse')),
             config: $config,
@@ -122,12 +121,18 @@ final class RelayServerAcceptanceTest extends TestCase
                 'name' => 'Acceptance Relay',
                 'supported_nips' => [1, 11],
             ])),
-        )->create();
+        );
 
-        $relay->start();
-        $this->relay = $relay;
+        $httpServer = SocketHttpServer::createForDirectAccess(new NullLogger());
+        $httpServer->expose(new InternetAddress('127.0.0.1', 0));
 
-        return (string) ($relay->getListeningAddress() ?? throw new RuntimeException('relay is not listening'));
+        $relay = $factory->create($httpServer);
+        $httpServer->start($relay->getRequestHandler(), new DefaultErrorHandler());
+        $this->httpServer = $httpServer;
+
+        $address = $httpServer->getServers()[0] ?? throw new RuntimeException('relay is not listening');
+
+        return (string) $address->getAddress();
     }
 
     private function nextFrame(WebsocketConnection $connection): string

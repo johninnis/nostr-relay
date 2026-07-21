@@ -4,16 +4,13 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Http;
 
-use Innis\Nostr\Relay\Application\DTO\HttpRequestContext;
-use Innis\Nostr\Relay\Application\DTO\HttpResponsePayload;
-use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
+use Amp\Http\HttpStatus;
+use Amp\Http\Server\Request;
+use Amp\Http\Server\Response;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
-use Override;
 
-final readonly class Nip11HttpHandler implements HttpRequestHandlerInterface
+final readonly class Nip11HttpHandler
 {
-    private const int HTTP_OK = 200;
-
     private const string CONTENT_TYPE = 'application/nostr+json';
 
     private const int ENCODING_FLAGS = JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
@@ -23,24 +20,55 @@ final readonly class Nip11HttpHandler implements HttpRequestHandlerInterface
     ) {
     }
 
-    #[Override]
-    public function handleHttpRequest(HttpRequestContext $request): ?HttpResponsePayload
+    public function handleRequest(Request $request): ?Response
     {
-        if (!$this->negotiatesRelayInformation($request)) {
+        if (!self::negotiatesRelayInformation($request)) {
             return null;
         }
 
-        return new HttpResponsePayload(
-            self::HTTP_OK,
+        return new Response(
+            HttpStatus::OK,
             ['content-type' => self::CONTENT_TYPE],
             json_encode($this->infoProvider->getNip11Info()->toArray(), self::ENCODING_FLAGS),
         );
     }
 
-    private function negotiatesRelayInformation(HttpRequestContext $request): bool
+    private static function negotiatesRelayInformation(Request $request): bool
     {
         return 'GET' === $request->getMethod()
-            && '/' === $request->getPath()
-            && str_contains($request->getHeader('accept') ?? '', self::CONTENT_TYPE);
+            && '/' === $request->getUri()->getPath()
+            && self::acceptsRelayInformation($request->getHeader('accept') ?? '');
+    }
+
+    private static function acceptsRelayInformation(string $accept): bool
+    {
+        return array_any(
+            explode(',', $accept),
+            static fn (string $mediaRange): bool => self::selectsRelayInformation($mediaRange),
+        );
+    }
+
+    private static function selectsRelayInformation(string $mediaRange): bool
+    {
+        $parameters = explode(';', $mediaRange);
+
+        return self::CONTENT_TYPE === strtolower(trim($parameters[0]))
+            && 0.0 < self::qualityOf(array_slice($parameters, 1));
+    }
+
+    /**
+     * @param list<string> $parameters
+     */
+    private static function qualityOf(array $parameters): float
+    {
+        foreach ($parameters as $parameter) {
+            [$name, $value] = array_pad(explode('=', $parameter, 2), 2, '');
+
+            if ('q' === strtolower(trim($name))) {
+                return (float) trim($value);
+            }
+        }
+
+        return 1.0;
     }
 }

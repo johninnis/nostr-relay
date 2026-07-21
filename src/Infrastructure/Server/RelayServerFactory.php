@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\Server;
 
-use Amp\Http\Server\ErrorHandler;
+use Amp\Http\Server\HttpServer;
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\JsonMessageDeserialiser;
@@ -14,7 +14,6 @@ use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
 use Innis\Nostr\Relay\Application\Port\ConnectionGateInterface;
-use Innis\Nostr\Relay\Application\Port\HttpRequestHandlerInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimitPolicyInterface;
@@ -45,7 +44,6 @@ use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
-use Innis\Nostr\Relay\Infrastructure\Http\ChainedHttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Http\Nip11HttpHandler;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\TokenBucketRateLimiter;
@@ -65,10 +63,8 @@ final class RelayServerFactory
         private readonly AuthenticationRegistryInterface $authenticationRegistry,
         private readonly LoggerInterface $logger,
         private readonly Nip11InfoProviderInterface $nip11InfoProvider,
-        private readonly ?HttpRequestHandlerInterface $httpHandler = null,
         ?SignatureServiceInterface $signatureService = null,
         private readonly ?ConnectionGateInterface $connectionGate = null,
-        private readonly ?ErrorHandler $errorHandler = null,
         private readonly ?MetricsCollectorInterface $metricsCollector = null,
         ?RandomBytesGeneratorInterface $randomBytes = null,
     ) {
@@ -76,7 +72,7 @@ final class RelayServerFactory
         $this->randomBytes = $randomBytes ?? new NativeRandomBytesGenerator();
     }
 
-    public function create(): RelayInstance
+    public function create(HttpServer $httpServer): RelayInstance
     {
         $metrics = $this->metricsCollector ?? new InMemoryMetricsCollector();
 
@@ -228,29 +224,19 @@ final class RelayServerFactory
             $this->connectionGate ?? new AllowAllConnectionGate(),
         );
 
-        $server = new AmphpRelayServer(
-            $this->config,
+        $requestHandler = new RelayRequestHandler(
+            $httpServer,
             $connectionHandler,
-            $this->httpHandlerChain(),
+            new Nip11HttpHandler($this->nip11InfoProvider),
             $this->logger,
-            $this->errorHandler,
         );
 
         return new RelayInstance(
-            $server,
+            $requestHandler,
             $eventDistributor,
             $subscriptionRegistry,
             $clientRegistry,
             $metrics
         );
-    }
-
-    private function httpHandlerChain(): ChainedHttpHandler
-    {
-        $nip11Handler = new Nip11HttpHandler($this->nip11InfoProvider);
-
-        return null === $this->httpHandler
-            ? new ChainedHttpHandler($nip11Handler)
-            : new ChainedHttpHandler($nip11Handler, $this->httpHandler);
     }
 }
