@@ -5,24 +5,17 @@ declare(strict_types=1);
 use Amp\Http\Server\DefaultErrorHandler;
 use Amp\Http\Server\SocketHttpServer;
 use Amp\Socket\InternetAddress;
-use Innis\Nostr\Core\Domain\Collection\EventCollection;
-use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
-use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
-use Innis\Nostr\Core\Domain\Collection\FilterCollection;
-use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
-use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
-use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use Innis\Nostr\Relay\Infrastructure\EventStore\InMemoryEventStore;
 use Innis\Nostr\Relay\Infrastructure\Http\StaticNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
@@ -32,81 +25,8 @@ use function Amp\trapSignal;
 
 require __DIR__.'/../vendor/autoload.php';
 
-/**
- * A non-persistent, in-memory event store. It is enough to run and exercise the relay
- * locally; swap in a durable RelayEventStoreInterface (SQL, etc.) for any real deployment.
- */
-final class InMemoryEventStore implements RelayEventStoreInterface
-{
-    /** @var array<string, Event> */
-    private array $events = [];
-
-    #[Override]
-    public function store(Event $event): EventStoreOutcome
-    {
-        $id = $event->getId()->toHex();
-
-        if (isset($this->events[$id])) {
-            return EventStoreOutcome::Duplicate;
-        }
-
-        $this->events[$id] = $event;
-
-        return EventStoreOutcome::Stored;
-    }
-
-    #[Override]
-    public function findByFilters(FilterCollection $filters, int $limit = 100): EventCollection
-    {
-        $matched = [];
-
-        foreach ($this->events as $event) {
-            if (count($matched) >= $limit) {
-                break;
-            }
-
-            foreach ($filters as $filter) {
-                if ($filter->matches($event)) {
-                    $matched[] = $event;
-
-                    break;
-                }
-            }
-        }
-
-        return new EventCollection($matched);
-    }
-
-    #[Override]
-    public function countByFilters(FilterCollection $filters): int
-    {
-        return $this->findByFilters($filters, PHP_INT_MAX)->count();
-    }
-
-    #[Override]
-    public function deleteByEventIds(EventIdCollection $eventIds, PublicKey $author): int
-    {
-        $deleted = 0;
-
-        foreach ($eventIds as $eventId) {
-            $id = $eventId->toHex();
-
-            if (isset($this->events[$id]) && $this->events[$id]->getPubkey()->equals($author)) {
-                unset($this->events[$id]);
-                ++$deleted;
-            }
-        }
-
-        return $deleted;
-    }
-
-    #[Override]
-    public function deleteByCoordinates(EventCoordinateCollection $coordinates, PublicKey $author): int
-    {
-        return 0;
-    }
-}
-
+// Deliberate: the relay's own configuration is what a host supplies, so an example has to declare
+// one somewhere; this is the composition root of a runnable script and the class is example-only.
 final class ExampleRelayConfig implements RelayConfigInterface
 {
     public const string HOST = '127.0.0.1';

@@ -55,7 +55,7 @@ composer require innis/nostr-relay
 
 The relay requires these interfaces from your host application:
 
-- **`RelayEventStoreInterface`** - Event persistence and queries
+- **`RelayEventStoreInterface`** - Event persistence and queries. Use the built-in `InMemoryEventStore` to run a relay locally or to give a test a real store; it keeps everything in process memory and matches linearly, so a deployment supplies a durable implementation.
 - **`RelayConfigInterface`** - The relay's own configuration: the relay URL (for NIP-42 AUTH verification) and the maximum concurrent connections. The listening address and trusted proxies are configured on the `HttpServer` the host owns, not here.
 - **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Use the built-in `StaticRateLimitPolicy` for fixed limits, or implement the interface to vary limits at runtime.
 - **`Nip11InfoProviderInterface`** - The single source of the relay's NIP-11 document. Wrap a fixed document in the built-in `StaticNip11InfoProvider`, or implement the interface to project metadata at runtime (e.g. reflecting live policy).
@@ -76,6 +76,7 @@ use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use Innis\Nostr\Relay\Infrastructure\EventStore\InMemoryEventStore;
 use Innis\Nostr\Relay\Infrastructure\Http\StaticNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
@@ -113,7 +114,7 @@ $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->g
 ]));
 
 $factory = new RelayServerFactory(
-    eventStore: new MyEventStore(),
+    eventStore: new InMemoryEventStore(), // swap for a durable store in a deployment
     policy: $policy,
     config: $config,
     rateLimitPolicy: $rateLimitPolicy,
@@ -145,7 +146,7 @@ trapSignal([SIGINT, SIGTERM]); // start() is non-blocking; keep the event loop a
 $httpServer->stop();
 ```
 
-See [`examples/relay.example.php`](examples/relay.example.php) for a complete working example with all interface implementations.
+See [`examples/relay.example.php`](examples/relay.example.php) for a complete runnable relay: tenant/guest policy, rate limiting, NIP-11 metadata and a stderr logger, on the built-in `InMemoryEventStore`.
 
 ### 3. Configure Nginx
 
@@ -294,7 +295,9 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 composer test
 ```
 
-Runs the full test suite and PHPStan level 9 static analysis.
+Runs the Unit, Integration and Acceptance suites, then the soak harness (`tools/soak-harness.php`), then
+PHPStan level 9 static analysis. `composer test-unit` runs the Unit suite alone; `composer soak` the
+harness alone.
 
 Manual testing with [websocat](https://github.com/vi/websocat):
 
