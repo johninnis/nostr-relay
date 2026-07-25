@@ -3,6 +3,9 @@
 /var/
 
 /phpunit.xml
+/phpstan.neon
+/.php-cs-fixer.php
+/rector.php
 .php-cs-fixer.cache
 .phpunit.result.cache
 .phpunit.cache
