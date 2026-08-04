@@ -9,13 +9,20 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    # composer.json declares php ^8.4, so 8.5 is a supported runtime; testing only the
+    # floor would leave the upper half of that range unverified by anything.
+    strategy:
+      fail-fast: false
+      matrix:
+        php-version: ['8.4', '8.5']
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up PHP
         uses: shivammathur/setup-php@v2
         with:
-          php-version: '8.4'
+          php-version: ${{ matrix.php-version }}
           extensions: intl, mbstring, sodium, ffi, gmp
           coverage: none
           tools: composer:v2
@@ -27,7 +34,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: vendor
-          key: composer-${{ hashFiles('composer.json') }}
+          key: composer-php${{ matrix.php-version }}-${{ hashFiles('composer.json', 'composer.lock') }}
           restore-keys: composer-
 
       - name: Install dependencies
