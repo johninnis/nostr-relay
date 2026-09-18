@@ -236,6 +236,8 @@ Unauthenticated clients are treated as guests. Guest permissions are defined und
 - `kinds` (int array) - Event kinds the guest may read
 - `from` (optional, `'tenants'`) - Restrict results to events authored by tenants
 
+Guests may read every kind **only when `guest.read` is left out altogether**. Once the section is present, guests read exactly the kinds its rules list and nothing else — so an empty section, or rules listing no valid kinds, means guests read nothing (see [ADR-0012](docs/adr/0012-unrestricted-guest-reads-are-null-not-an-empty-kind-set.md)).
+
 **`guest.write`**: array of rules controlling what events guests can publish. Each rule has:
 - `kinds` (int array) - Event kinds the guest may publish
 - `tagged_to_tenant` (optional, `true`) - Require the event to tag a tenant pubkey

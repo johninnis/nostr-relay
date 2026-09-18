@@ -75,7 +75,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeNotBeyondScopeWhenAuthorsWithinTenants(): void
     {
-        $rules = self::rules([self::TENANT], []);
+        $rules = self::rules([self::TENANT], null);
 
         self::assertFalse($rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::TENANT]))]), true)->isBeyondScope());
         self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]), true)->isBeyondScope());
@@ -83,7 +83,7 @@ final class GuestFilterRulesTest extends TestCase
 
     public function testScopeBeyondScopeWhenAuthorsExceedTenants(): void
     {
-        $rules = self::rules([self::TENANT], []);
+        $rules = self::rules([self::TENANT], null);
 
         self::assertTrue($rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::TENANT, self::OTHER]))]), true)->isBeyondScope());
     }
@@ -103,11 +103,53 @@ final class GuestFilterRulesTest extends TestCase
         self::assertTrue($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 4]))]), false)->isBeyondScope());
     }
 
-    public function testScopeNotBeyondScopeWhenNoReadableKindsConfigured(): void
+    public function testScopeNotBeyondScopeWhenReadableKindsAreUnrestricted(): void
+    {
+        $rules = self::rules([self::TENANT], null);
+
+        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([9999]))]), false)->isBeyondScope());
+    }
+
+    public function testEmptyReadableKindsNarrowEveryRequestedKindToNothing(): void
     {
         $rules = self::rules([self::TENANT], []);
 
-        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([9999]))]), false)->isBeyondScope());
+        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1059]))]), false);
+
+        self::assertTrue($scoped->isBeyondScope());
+        self::assertSame([], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
+    }
+
+    public function testEmptyReadableKindsConstrainAKindlessFilterToNothing(): void
+    {
+        $rules = self::rules([self::TENANT], []);
+
+        $filter = $rules->scope(new FilterCollection([new Filter()]), false)->getFilters()->toArray()[0];
+
+        self::assertTrue($filter->hasKinds());
+        self::assertSame([], $filter->getKinds()?->toInts());
+    }
+
+    public function testEmptyReadableKindsAllowNoEvent(): void
+    {
+        $rules = self::rules([self::TENANT], []);
+
+        self::assertFalse($rules->allowsEvent(self::event(self::TENANT, 1), false));
+    }
+
+    public function testEmptyReadableKindsStillReadTheGlobalKinds(): void
+    {
+        $rules = self::rules([self::TENANT], [], [24133]);
+
+        self::assertTrue($rules->allowsEvent(self::event(self::OTHER, 24133), true));
+        self::assertFalse($rules->allowsEvent(self::event(self::TENANT, 1), true));
+    }
+
+    public function testUnrestrictedReadableKindsAllowAnyKind(): void
+    {
+        $rules = self::rules([self::TENANT], null);
+
+        self::assertTrue($rules->allowsEvent(self::event(self::OTHER, 9999), false));
     }
 
     public function testScopeConstrainsFiltersWithinScope(): void
@@ -264,18 +306,18 @@ final class GuestFilterRulesTest extends TestCase
     }
 
     /**
-     * @param list<string> $tenantHexes
-     * @param list<int>    $kindInts
-     * @param list<int>    $globalKindInts
+     * @param list<string>   $tenantHexes
+     * @param list<int>|null $kindInts
+     * @param list<int>      $globalKindInts
      */
-    private static function rules(array $tenantHexes, array $kindInts, array $globalKindInts = []): GuestFilterRules
+    private static function rules(array $tenantHexes, ?array $kindInts, array $globalKindInts = []): GuestFilterRules
     {
         return new GuestFilterRules(
             new PublicKeyCollection(array_map(
                 static fn (string $hex): PublicKey => PublicKey::tryFromHex($hex) ?? throw new RuntimeException('Invalid test pubkey'),
                 $tenantHexes,
             )),
-            new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $kindInts)),
+            null === $kindInts ? null : EventKindCollection::fromInts($kindInts),
             new EventKindCollection(array_map(static fn (int $kind): EventKind => EventKind::fromInt($kind), $globalKindInts)),
         );
     }

@@ -34,4 +34,44 @@ final class RelayPolicyConfigTest extends TestCase
         $this->assertNotNull($config);
         $this->assertCount(1, $config->getTenants());
     }
+
+    public function testReadableKindsAreUnrestrictedOnlyWhenThereIsNoReadSection(): void
+    {
+        $config = RelayPolicyConfig::tryFromArray(['guest' => ['write' => [['kinds' => [1]]]]]);
+
+        $this->assertNotNull($config);
+        $this->assertNull($config->getGuest()->getReadableKinds());
+    }
+
+    public function testAReadSectionListingNoKindsReadsNothing(): void
+    {
+        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => []]]]]);
+
+        $this->assertNotNull($config);
+        $this->assertSame([], $config->getGuest()->getReadableKinds()?->toInts());
+    }
+
+    public function testAnEmptyReadSectionReadsNothing(): void
+    {
+        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => []]]);
+
+        $this->assertNotNull($config);
+        $this->assertSame([], $config->getGuest()->getReadableKinds()?->toInts());
+    }
+
+    public function testReadableKindsAreTheKindsTheReadRulesList(): void
+    {
+        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => [1]], ['kinds' => [7]]]]]);
+
+        $this->assertNotNull($config);
+        $this->assertSame([1, 7], $config->getGuest()->getReadableKinds()?->toInts());
+    }
+
+    public function testReadRulesListingOnlyMalformedKindsReadNothing(): void
+    {
+        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => ['one']]]]]);
+
+        $this->assertNotNull($config);
+        $this->assertSame([], $config->getGuest()->getReadableKinds()?->toInts());
+    }
 }

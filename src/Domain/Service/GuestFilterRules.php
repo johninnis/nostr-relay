@@ -15,16 +15,15 @@ use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
 {
-    private EventKindCollection $readableKindsWithGlobal;
+    private ?EventKindCollection $readableKindsWithGlobal;
 
+    // Deliberate: null readable kinds are unrestricted, an empty collection reads nothing — see ADR-0012
     public function __construct(
         private PublicKeyCollection $tenants,
-        private EventKindCollection $readableKinds,
+        ?EventKindCollection $readableKinds,
         private EventKindCollection $globalKinds,
     ) {
-        $this->readableKindsWithGlobal = $readableKinds->isEmpty()
-            ? $readableKinds
-            : EventKindCollection::fromInts([...$readableKinds->toInts(), ...$globalKinds->toInts()]);
+        $this->readableKindsWithGlobal = $readableKinds?->merge($globalKinds->diff($readableKinds));
     }
 
     public function scope(FilterCollection $filters, bool $fromTenantsOnly): ScopedFilters
@@ -75,7 +74,7 @@ final readonly class GuestFilterRules
 
     private function isReadableKind(EventKind $kind): bool
     {
-        return $this->readableKindsWithGlobal->isEmpty() || $this->readableKindsWithGlobal->contains($kind);
+        return null === $this->readableKindsWithGlobal || $this->readableKindsWithGlobal->contains($kind);
     }
 
     private function isBeyondScope(Filter $filter, bool $fromTenantsOnly): bool
@@ -118,7 +117,7 @@ final readonly class GuestFilterRules
 
     private function constrainKindsToReadable(Filter $filter): Filter
     {
-        if ($this->readableKindsWithGlobal->isEmpty()) {
+        if (null === $this->readableKindsWithGlobal) {
             return $filter;
         }
 
@@ -140,7 +139,7 @@ final readonly class GuestFilterRules
 
     private function kindsWithinReadable(Filter $filter): bool
     {
-        if ($this->readableKindsWithGlobal->isEmpty()) {
+        if (null === $this->readableKindsWithGlobal) {
             return true;
         }
 

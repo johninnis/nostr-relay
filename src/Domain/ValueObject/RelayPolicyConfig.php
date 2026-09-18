@@ -43,10 +43,7 @@ final readonly class RelayPolicyConfig
             $tenants,
             self::intOr($config['max_event_size'] ?? null, self::DEFAULT_MAX_EVENT_SIZE),
             new GuestPolicy(
-                EventKindCollection::fromInts(array_merge(...array_map(
-                    static fn (array $rule): array => self::asList($rule['kinds'] ?? null),
-                    $readRules,
-                ))),
+                self::resolveReadableKinds($guest['read'] ?? null),
                 array_any($readRules, static fn (array $rule): bool => 'tenants' === ($rule['from'] ?? null)),
                 self::resolveWriteRules($guest['write'] ?? null),
             ),
@@ -97,6 +94,19 @@ final readonly class RelayPolicyConfig
         }
 
         return new PublicKeyCollection($pubkeys);
+    }
+
+    // Deliberate: only an absent read section is unrestricted, a present one reads exactly what it lists — see ADR-0012
+    private static function resolveReadableKinds(mixed $readSection): ?EventKindCollection
+    {
+        if (null === $readSection) {
+            return null;
+        }
+
+        return EventKindCollection::fromInts(array_merge(...array_map(
+            static fn (array $rule): array => self::asList($rule['kinds'] ?? null),
+            self::listOfArrays($readSection),
+        )));
     }
 
     private static function resolveWriteRules(mixed $rules): GuestWriteRuleCollection

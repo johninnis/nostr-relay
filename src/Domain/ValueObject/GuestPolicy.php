@@ -10,13 +10,13 @@ use Innis\Nostr\Relay\Domain\Collection\GuestWriteRuleCollection;
 final readonly class GuestPolicy
 {
     public function __construct(
-        private EventKindCollection $readableKinds,
+        private ?EventKindCollection $readableKinds,
         private bool $fromTenantsOnly,
         private GuestWriteRuleCollection $writeRules,
     ) {
     }
 
-    public function getReadableKinds(): EventKindCollection
+    public function getReadableKinds(): ?EventKindCollection
     {
         return $this->readableKinds;
     }
