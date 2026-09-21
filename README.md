@@ -124,10 +124,7 @@ $factory = new RelayServerFactory(
 );
 ```
 
-The host owns the `HttpServer`, so it decides the listening address, middleware and
-lifecycle, and mounts the relay's request handler on it. Owning the server is what lets
-the host serve its own routes — a landing page, a management API, static files — on the
-same origin as the relay:
+The host owns the `HttpServer`, so it decides the listening address, middleware and lifecycle, and mounts the relay's request handler on it. Owning the server is what lets the host serve its own routes — a landing page, a management API, static files — on the same origin as the relay:
 
 ```php
 use Amp\Http\Server\DefaultErrorHandler;
@@ -297,9 +294,7 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 composer test
 ```
 
-Runs the Unit, Integration and Acceptance suites, then the soak harness (`tools/soak-harness.php`), then
-PHPStan level 9 static analysis. `composer test-unit` runs the Unit suite alone; `composer soak` the
-harness alone.
+Runs the Unit, Integration and Acceptance suites, then the soak harness (`tools/soak-harness.php`), then PHPStan level 9 static analysis. `composer test-unit` runs the Unit suite alone; `composer soak` the harness alone.
 
 Manual testing with [websocat](https://github.com/vi/websocat):
 
