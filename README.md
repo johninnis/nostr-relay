@@ -16,7 +16,8 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **NIP-01 compliant** - EVENT, REQ, CLOSE message handling
 - **NIP-09 deletion** - Kind 5 event processing
 - **NIP-11 support** - Relay information document
-- **NIP-42 AUTH** - Challenge/response authentication; a challenge is issued only when a subscription exceeds guest scope (never on connect), and the client's live subscriptions are re-evaluated once it authenticates
+- **NIP-40 expiration** - An already-expired event is refused, and an event that expires while stored is withheld from REQ results
+- **NIP-42 AUTH** - Challenge/response authentication over nostr-core's `Nip42Validator`; a challenge is issued only when a subscription exceeds guest scope (never on connect), and the client's live subscriptions are re-evaluated once it authenticates
 - **NIP-45 COUNT** - COUNT message support
 - **Ephemeral events** - Kinds 20000-29999 skip storage
 - **Host-owned HTTP server** - The relay is an `Amp\Http\Server\RequestHandler` you mount on your own `HttpServer`, so the host controls binding, middleware (CORS, forwarded headers, compression) and lifecycle, and serves its own routes on the same origin
@@ -55,7 +56,7 @@ composer require innis/nostr-relay
 
 The relay requires these interfaces from your host application:
 
-- **`RelayEventStoreInterface`** - Event persistence and queries. Use the built-in `InMemoryEventStore` to run a relay locally or to give a test a real store; it keeps everything in process memory and matches linearly, so a deployment supplies a durable implementation.
+- **`RelayEventStoreInterface`** - Event persistence and queries. Use the built-in `InMemoryEventStore` to run a relay locally or to give a test a real store; it keeps everything in process memory and matches linearly, so a deployment supplies a durable implementation. It implements the replaceable and addressable rules, so storing a newer version of such an event removes the one it supersedes and storing an older one is refused as `Superseded`. `countByFilters` returns nostr-core's `EventCount`: a store that stops counting at a ceiling reports the count as approximate, and the relay marks the NIP-45 reply accordingly (see [ADR-0013](docs/adr/0013-a-store-may-count-approximately-and-the-reply-says-so.md)).
 - **`RelayConfigInterface`** - The relay's own configuration: the relay URL (for NIP-42 AUTH verification) and the maximum concurrent connections. The listening address and trusted proxies are configured on the `HttpServer` the host owns, not here.
 - **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Use the built-in `StaticRateLimitPolicy` for fixed limits, or implement the interface to vary limits at runtime.
 - **`Nip11InfoProviderInterface`** - The single source of the relay's NIP-11 document. Wrap a fixed document in the built-in `StaticNip11InfoProvider`, or implement the interface to project metadata at runtime (e.g. reflecting live policy).
@@ -110,7 +111,7 @@ $config = new MyRelayConfig();
 $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->getRelayUrl(), [
     'name' => 'My Nostr Relay',
     'pubkey' => 'your-hex-pubkey',
-    'supported_nips' => [1, 9, 11, 42, 45],
+    'supported_nips' => [1, 9, 11, 40, 42, 45],
 ]));
 
 $factory = new RelayServerFactory(
@@ -179,7 +180,7 @@ The built-in `RelayPolicy` accepts a configuration array that controls access fo
 
 ### Tenants
 
-`tenants`: array of hex pubkeys or npub strings identifying relay owners. Tenants authenticate via NIP-42 and bypass all guest restrictions. If the array is empty or omitted, the relay operates as an open relay (all writes and reads allowed).
+`tenants`: array of hex pubkeys or npub strings identifying relay owners. Tenants authenticate via NIP-42 and bypass all guest restrictions, along with the rate limits and the subscription and filter caps. `max_query_limit` is the exception: every filter is clamped to it whoever asks, so a tenant reading more than the ceiling pages through it with `until` (see [ADR-0019](docs/adr/0019-resource-limits-apply-to-every-client-and-the-read-ceiling-to-every-client-including-a-tenant.md)). If the array is empty or omitted, the relay operates as an open relay (all writes and reads allowed).
 
 ### Limits
 
@@ -188,7 +189,7 @@ Optional keys with sensible defaults:
 - `max_subscriptions` - Maximum concurrent subscriptions per client. Also gates `COUNT` requests: a `COUNT` from a client already at the cap is rejected with `blocked: too many subscriptions` (see [ADR-0006](docs/adr/0006-count-and-req-share-one-subscription-cap.md)).
 - `max_filters` - Maximum filters per subscription
 - `max_event_size` - Maximum event payload size in bytes
-- `max_query_limit` - Maximum limit value in REQ filters
+- `max_query_limit` - The ceiling on how many stored events one filter may return. Every filter is clamped to it, and a filter stating no limit of its own is given it, so a client asking for more receives the ceiling rather than a refusal (see [ADR-0017](docs/adr/0017-a-filter-that-states-no-limit-is-given-the-ceiling.md)). Publish it as `max_limit` in your relay-information document.
 
 ### Implementing `RelayPolicyInterface`
 
@@ -214,16 +215,29 @@ public function allowEventSubmission(RelayClient $client, Event $event): ?Policy
 - Return `null` to admit.
 - Return `PolicyRejection::blocked($reason)` for a definitive refusal.
 - Return `PolicyRejection::authRequired($reason)` when authenticating could change the answer. The relay additionally sends the client an `AUTH` challenge alongside the refusal, so it can authenticate and retry.
+- Return `PolicyRejection::rateLimited($reason)` when the client is asking too often, `PolicyRejection::invalid($reason)` when the event cannot be accepted on its own terms, and `PolicyRejection::restricted($reason)` when this relay is not open to the client at all.
+
+The port has seven methods, and every one of them is yours to answer:
+
+| Method | Answers |
+|---|---|
+| `allowEventSubmission()` | may this client publish this event |
+| `allowSubscription()` | may this client open this subscription |
+| `filterForClient()` | what this client may read, as a `ScopedFilters` narrowing of the filters it asked for |
+| `canClientReceiveEvent()` | may this client be sent this event, checked per event on delivery |
+| `allowsAuthentication()` | may this key authenticate here, returning `?PolicyRejection` so the refusal carries your words rather than the library's |
+| `isRateLimitExempt()` | is this client outside the rate limits and subscription caps |
+| `offersAuthChallenge()` | should this admitted event still draw an `AUTH` challenge |
 
 The relay frames the rejection as the wire reply that matches the client's message: `OK` for an `EVENT`, `CLOSED` for a `REQ` or `COUNT`. You do not construct wire messages yourself.
 
-Rejections are returned rather than thrown so the analyser forces every caller to handle them — see [ADR-0003](docs/adr/0003-anticipated-outcomes-returned-faults-thrown.md). Genuine faults are still exceptions: a structurally invalid or badly-signed event raises `InvalidEventException` from the core validator, which the relay catches and reports as `invalid:`.
+Rejections are returned rather than thrown so the analyser forces every caller to handle them — see [ADR-0015](docs/adr/0015-anticipated-outcomes-are-returned-and-framed-by-the-use-case.md). Genuine faults are still exceptions: a structurally invalid or badly-signed event raises `InvalidEventException` from the core validator, which the relay catches and reports as `invalid:`.
 
 `offersAuthChallenge()` is separate from rejection: it lets a policy *admit* an event and still invite the client to authenticate (see [ADR-0011](docs/adr/0011-an-accepted-write-may-draw-a-lazy-auth-challenge.md)). The built-in policy returns `false`.
 
 ### Rate-Limit Exemption
 
-`RelayPolicyInterface::isRateLimitExempt()` lets the policy opt specific clients out of rate limits and subscription caps. The built-in `RelayPolicy` exempts authenticated tenants (and everyone on an open relay). Implement `RelayPolicyInterface` directly to exempt other trusted clients — for example, internal services or IPs behind a trusted proxy.
+`RelayPolicyInterface::isRateLimitExempt()` lets the policy opt specific clients out of rate limits and subscription caps. The built-in `RelayPolicy` exempts authenticated tenants only; rate limits apply to every untrusted client, including on an open relay (see [ADR-0019](docs/adr/0019-resource-limits-apply-to-every-client-and-the-read-ceiling-to-every-client-including-a-tenant.md)). Implement `RelayPolicyInterface` directly to exempt other trusted clients — for example, internal services or IPs behind a trusted proxy.
 
 ### Guest Rules
 
@@ -245,7 +259,7 @@ If no config is passed, the relay is fully open with no restrictions.
 
 The relay does **not** challenge on connect. It issues an `AUTH` challenge only when a subscription requests something outside the guest's scope — when the requested kinds aren't guest-readable, when the requested authors aren't tenants (under `from = 'tenants'`), or when the filter reads a **tenant's mailbox** (a `#p` tag referencing a tenant). The challenge is an offer: a client that authenticates gains full scope, while a client that ignores it still receives the guest-scoped results. The connection is never blocked for not authenticating. (Why a scope-exceeding request rather than every connection: see [ADR-0004](docs/adr/0004-auth-challenge-only-on-scope-exceeding-request.md).)
 
-When a client authenticates, its already-open subscriptions are re-evaluated against its new scope: each is re-admitted with its original filters and the now-visible stored events are streamed, so a subscription opened as a guest widens automatically without the client having to re-subscribe (see [ADR-0007](docs/adr/0007-authentication-restreams-already-open-subscriptions.md)).
+When a client authenticates, its already-open subscriptions are re-evaluated against its new scope: each is re-admitted with its original filters and the now-visible stored events are streamed, so a subscription opened as a guest widens automatically without the client having to re-subscribe (see [ADR-0016](docs/adr/0016-authentication-restreams-open-subscriptions-as-a-readmission.md)).
 
 ---
 

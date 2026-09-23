@@ -161,12 +161,34 @@ final class RelayPolicyTest extends TestCase
         $this->assertFalse($policy->canClientReceiveEvent($this->guestClient(), $event));
     }
 
+    public function testAFilterWithNoStatedLimitIsGivenTheConfiguredCeiling(): void
+    {
+        $policy = $this->policyWithGuestRules(['max_query_limit' => 7]);
+
+        $scoped = $policy->filterForClient($this->tenantClient(), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]));
+
+        $this->assertSame([7], array_map(static fn (Filter $filter): ?int => $filter->getLimit(), $scoped->getFilters()->toArray()));
+    }
+
+    public function testATenantsOversizedLimitIsClampedToTheCeiling(): void
+    {
+        $policy = $this->policyWithGuestRules(['max_query_limit' => 7]);
+
+        $scoped = $policy->filterForClient($this->tenantClient(), new FilterCollection([Filter::tryFromArray(['kinds' => [1], 'limit' => 500])]));
+
+        $this->assertSame([7], array_map(static fn (Filter $filter): ?int => $filter->getLimit(), $scoped->getFilters()->toArray()));
+    }
+
     public function testAllowsAuthenticationOnlyForTenantPubkeys(): void
     {
         $policy = $this->policyWithGuestRules();
 
-        $this->assertTrue($policy->allowsAuthentication($this->publicKey(self::TENANT_HEX)));
-        $this->assertFalse($policy->allowsAuthentication($this->publicKey(self::STRANGER_HEX)));
+        $this->assertNull($policy->allowsAuthentication($this->publicKey(self::TENANT_HEX)));
+
+        $refusal = $policy->allowsAuthentication($this->publicKey(self::STRANGER_HEX));
+
+        $this->assertNotNull($refusal);
+        $this->assertSame('restricted: authentication is limited to relay tenants', $refusal->toWireReason());
     }
 
     public function testRateLimitExemptionTracksTenancy(): void

@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\Service;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 
 final class SubscriptionLimitsTest extends TestCase
@@ -38,13 +39,36 @@ final class SubscriptionLimitsTest extends TestCase
         $this->assertStringContainsString('too many filters (max 1)', $rejection->toWireReason());
     }
 
-    public function testRejectsWhenFilterLimitTooHigh(): void
+    public function testAFilterLimitAboveTheCeilingIsClampedRatherThanRefused(): void
     {
-        $limits = new SubscriptionLimits(20, 5, 100);
+        $limits = new SubscriptionLimits(10, 5, 100);
 
-        $rejection = $limits->enforce(0, new FilterCollection([new Filter(limit: 101)]));
+        $bounded = $limits->bound(new FilterCollection([Filter::tryFromArray(['kinds' => [1], 'limit' => 5000])]));
 
-        $this->assertNotNull($rejection);
-        $this->assertStringContainsString('filter limit too high (max 100)', $rejection->toWireReason());
+        $this->assertNull($limits->enforce(0, $bounded));
+        $this->assertSame([100], array_map(static fn (Filter $filter): ?int => $filter->getLimit(), $bounded->toArray()));
+    }
+
+    public function testACeilingAFilterCouldNotCarryIsRefusedAtConstruction(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SubscriptionLimits(10, 5, Filter::MAX_LIMIT + 1);
+    }
+
+    public function testACeilingOfZeroIsRefusedAtConstruction(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        new SubscriptionLimits(10, 5, 0);
+    }
+
+    public function testAFilterStatingNoLimitIsGivenTheCeiling(): void
+    {
+        $limits = new SubscriptionLimits(10, 5, 100);
+
+        $bounded = $limits->bound(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]));
+
+        $this->assertSame([100], array_map(static fn (Filter $filter): ?int => $filter->getLimit(), $bounded->toArray()));
     }
 }

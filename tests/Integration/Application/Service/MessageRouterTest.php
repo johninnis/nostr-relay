@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Integration\Application\Service;
 
+use Innis\Nostr\Core\Application\Service\Nip42Validator;
 use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
@@ -13,6 +14,7 @@ use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\EventCount;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
@@ -91,7 +93,7 @@ final class MessageRouterTest extends TestCase
         $this->deserialiser = $this->createStub(MessageDeserialiserInterface::class);
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
-        $this->policy->method('allowsAuthentication')->willReturn(true);
+        $this->policy->method('allowsAuthentication')->willReturn(null);
         $rateLimiter = $this->createStub(RateLimiterInterface::class);
         $rateLimiter->method('tryConsume')->willReturn(true);
         $metrics = $this->createStub(MetricsCollectorInterface::class);
@@ -124,7 +126,7 @@ final class MessageRouterTest extends TestCase
 
         $admission = new SubscriptionAdmission($this->policy, $rateLimitGate, $this->subscriptionRegistry);
 
-        $eventAdmission = new EventAdmission($this->policy, $rateLimitGate, $eventValidator);
+        $eventAdmission = new EventAdmission($this->policy, $rateLimitGate, $eventValidator, new SystemClock());
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
             $this->clientRegistry,
@@ -152,6 +154,7 @@ final class MessageRouterTest extends TestCase
             $this->policy,
             $messenger,
             $this->subscriptionRegistry,
+            new SystemClock(),
             $logger,
         );
 
@@ -175,7 +178,7 @@ final class MessageRouterTest extends TestCase
 
         $processAuth = new ProcessAuthUseCase(
             $this->authenticationRegistry,
-            new AuthEventVerifier($config, $this->policy, new SystemClock()),
+            new AuthEventVerifier($config, $this->policy, new Nip42Validator(new SystemClock())),
             $eventValidator,
             new SubscriptionReevaluator($this->subscriptionRegistry, $subscriptionActivator),
             $authChallengeIssuer,
@@ -294,7 +297,7 @@ final class MessageRouterTest extends TestCase
             EventKind::fromInt(EventKind::CLIENT_AUTH),
             new TagCollection([
                 Tag::tryFromArray(['relay', 'wss://relay.example.com']),
-                Tag::tryFromArray(['challenge', $challenge]),
+                Tag::tryFromArray(['challenge', (string) $challenge]),
             ]),
             EventContent::fromString(''),
         )->sign($keyPair, $this->signatureService());
@@ -313,14 +316,14 @@ final class MessageRouterTest extends TestCase
 
         $this->deserialiser->method('deserialiseClientMessage')->willReturn(new CountMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('countByFilters')->willReturn(42);
+        $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(42));
 
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
                 $message = RelayCountMessage::tryFromJson($json);
 
-                return null !== $message && 'count-1' === (string) $message->getSubscriptionId() && 42 === $message->getCount();
+                return null !== $message && 'count-1' === (string) $message->getSubscriptionId() && 42 === $message->getCount()->toInt();
             }));
         $client = $this->makeClient($connection);
 

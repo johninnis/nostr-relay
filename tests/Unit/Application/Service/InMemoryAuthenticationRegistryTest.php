@@ -23,12 +23,11 @@ final class InMemoryAuthenticationRegistryTest extends TestCase
         $this->clientId = ClientId::fromString('client-1');
     }
 
-    public function testGenerateChallengeReturnsNonEmptyString(): void
+    public function testAChallengeIsSixteenRandomBytesInHex(): void
     {
         $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->clientId);
 
-        $this->assertNotEmpty($challenge);
-        $this->assertSame(32, strlen($challenge));
+        $this->assertSame(32, strlen((string) $challenge));
     }
 
     public function testChallengeIsDerivedFromTheInjectedRandomBytesGenerator(): void
@@ -39,7 +38,7 @@ final class InMemoryAuthenticationRegistryTest extends TestCase
 
         $challenge = $authenticationRegistry->getOrCreateChallenge($this->clientId);
 
-        $this->assertSame(str_repeat('01', 16), $challenge);
+        $this->assertSame(str_repeat('01', 16), (string) $challenge);
     }
 
     public function testGetChallengeReturnsStoredChallenge(): void

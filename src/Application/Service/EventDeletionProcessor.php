@@ -90,11 +90,11 @@ final readonly class EventDeletionProcessor
         }
 
         $filters = array_map(
-            static fn (array $chunk) => new Filter(ids: new EventIdCollection($chunk)),
+            static fn (array $chunk) => new Filter(ids: new EventIdCollection($chunk), limit: count($chunk)),
             array_chunk($eventIds, Filter::MAX_VALUES_PER_FIELD)
         );
 
-        $storedEvents = $this->eventStore->findByFilters(new FilterCollection($filters), count($eventIds));
+        $storedEvents = $this->eventStore->findByFilters(new FilterCollection($filters));
 
         $verified = [];
         foreach ($storedEvents as $storedEvent) {

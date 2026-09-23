@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Challenge;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Override;
 
@@ -16,7 +17,7 @@ final class InMemoryAuthenticationRegistry implements AuthenticationRegistryInte
 
     /** @var array<string, list<PublicKey>> */
     private array $authenticatedPubkeys = [];
-    /** @var array<string, string> */
+    /** @var array<string, Challenge> */
     private array $challenges = [];
 
     public function __construct(
@@ -25,7 +26,7 @@ final class InMemoryAuthenticationRegistry implements AuthenticationRegistryInte
     }
 
     #[Override]
-    public function getOrCreateChallenge(ClientId $clientId): string
+    public function getOrCreateChallenge(ClientId $clientId): Challenge
     {
         $key = (string) $clientId;
 
@@ -33,14 +34,14 @@ final class InMemoryAuthenticationRegistry implements AuthenticationRegistryInte
             return $this->challenges[$key];
         }
 
-        $challenge = bin2hex($this->randomBytes->bytes(self::CHALLENGE_BYTES));
+        $challenge = Challenge::fromString(bin2hex($this->randomBytes->bytes(self::CHALLENGE_BYTES)));
         $this->challenges[$key] = $challenge;
 
         return $challenge;
     }
 
     #[Override]
-    public function getChallenge(ClientId $clientId): ?string
+    public function getChallenge(ClientId $clientId): ?Challenge
     {
         return $this->challenges[(string) $clientId] ?? null;
     }

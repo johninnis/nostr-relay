@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class RelayPolicyConfigTest extends TestCase
@@ -73,5 +75,21 @@ final class RelayPolicyConfigTest extends TestCase
 
         $this->assertNotNull($config);
         $this->assertSame([], $config->getGuest()->getReadableKinds()?->toInts());
+    }
+
+    #[DataProvider('unusableQueryLimits')]
+    public function testAQueryLimitTheRelayCannotApplyIsRefusedRatherThanThrown(int $limit): void
+    {
+        $this->assertNull(RelayPolicyConfig::tryFromArray(['max_query_limit' => $limit]));
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function unusableQueryLimits(): iterable
+    {
+        yield 'zero serves nothing' => [0];
+        yield 'negative' => [-5];
+        yield 'above what a filter carries' => [Filter::MAX_LIMIT + 1];
     }
 }

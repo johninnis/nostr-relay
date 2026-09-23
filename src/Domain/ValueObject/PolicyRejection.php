@@ -4,39 +4,44 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Domain\ValueObject;
 
-use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 
 final readonly class PolicyRejection
 {
     private function __construct(
-        private RejectionReason $reason,
+        private ReasonPrefix $reason,
         private string $message,
     ) {
     }
 
     public static function blocked(string $message): self
     {
-        return new self(RejectionReason::Blocked, $message);
+        return new self(ReasonPrefix::Blocked, $message);
     }
 
     public static function authRequired(string $message): self
     {
-        return new self(RejectionReason::AuthRequired, $message);
+        return new self(ReasonPrefix::AuthRequired, $message);
     }
 
     public static function rateLimited(string $message): self
     {
-        return new self(RejectionReason::RateLimited, $message);
+        return new self(ReasonPrefix::RateLimited, $message);
     }
 
-    public function getReason(): RejectionReason
+    public static function invalid(string $message): self
     {
-        return $this->reason;
+        return new self(ReasonPrefix::Invalid, $message);
+    }
+
+    public static function restricted(string $message): self
+    {
+        return new self(ReasonPrefix::Restricted, $message);
     }
 
     public function isAuthRequired(): bool
     {
-        return RejectionReason::AuthRequired === $this->reason;
+        return ReasonPrefix::AuthRequired === $this->reason;
     }
 
     public function toWireReason(): string

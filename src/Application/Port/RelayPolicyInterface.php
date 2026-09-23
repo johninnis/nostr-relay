@@ -19,7 +19,7 @@ interface RelayPolicyInterface
 
     public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): ?PolicyRejection;
 
-    public function allowsAuthentication(PublicKey $pubkey): bool;
+    public function allowsAuthentication(PublicKey $pubkey): ?PolicyRejection;
 
     public function filterForClient(RelayClient $client, FilterCollection $filters): ScopedFilters;
 

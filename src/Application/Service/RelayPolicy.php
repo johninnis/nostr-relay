@@ -79,7 +79,7 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): ?PolicyRejection
     {
-        // Deliberate: resource caps protect the store and apply to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0009
+        // Deliberate: resource caps protect the store and apply to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0019
         if ($this->isTenant($client)) {
             return null;
         }
@@ -90,11 +90,14 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function filterForClient(RelayClient $client, FilterCollection $filters): ScopedFilters
     {
+        // Deliberate: bounded before the openness and tenant checks, so the read ceiling is the one resource limit a tenant does not escape — see ADR-0019
+        $bounded = $this->subscriptionLimits->bound($filters);
+
         if ($this->isOpenRelay() || $this->isTenant($client)) {
-            return ScopedFilters::unchanged($filters);
+            return ScopedFilters::unchanged($bounded);
         }
 
-        return $this->guestFilterRules->scope($filters, $this->guestReadFromTenants);
+        return $this->guestFilterRules->scope($bounded, $this->guestReadFromTenants);
     }
 
     #[Override]
@@ -110,7 +113,7 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function isRateLimitExempt(RelayClient $client): bool
     {
-        // Deliberate: rate limiting protects the host and applies to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0009
+        // Deliberate: rate limiting protects the host and applies to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0019
         return $this->isTenant($client);
     }
 
@@ -121,9 +124,11 @@ final class RelayPolicy implements RelayPolicyInterface
     }
 
     #[Override]
-    public function allowsAuthentication(PublicKey $pubkey): bool
+    public function allowsAuthentication(PublicKey $pubkey): ?PolicyRejection
     {
-        return $this->isOpenRelay() || $this->isTenantPubkey($pubkey);
+        return $this->isOpenRelay() || $this->isTenantPubkey($pubkey)
+            ? null
+            : PolicyRejection::restricted('authentication is limited to relay tenants');
     }
 
     private function isOpenRelay(): bool

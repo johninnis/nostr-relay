@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
@@ -13,7 +14,6 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Psr\Log\LoggerInterface;
 use Throwable;
@@ -34,7 +34,7 @@ final class CountSubscriptionUseCase
      */
     public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): array
     {
-        // Deliberate: rejections are framed as this message's wire reply here (CLOSED), not centralised in the router — see ADR-0003
+        // Deliberate: rejections are framed as this message's wire reply here (CLOSED), not centralised in the router — see ADR-0015
         try {
             $admission = $this->admission->admit($client, $filters);
 
@@ -54,7 +54,7 @@ final class CountSubscriptionUseCase
                 'error' => $e->getMessage(),
             ]);
 
-            return [new ClosedMessage($subscriptionId, RejectionReason::Error->format('could not count events'))];
+            return [new ClosedMessage($subscriptionId, ReasonPrefix::Error->format('could not count events'))];
         }
     }
 }

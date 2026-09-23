@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -27,7 +27,7 @@ final readonly class CreateSubscriptionUseCase
      */
     public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): array
     {
-        // Deliberate: rejections are framed as this message's wire reply here (CLOSED), not centralised in the router — see ADR-0003
+        // Deliberate: rejections are framed as this message's wire reply here (CLOSED), not centralised in the router — see ADR-0015
         try {
             return $this->activator->activate($client, $subscriptionId, $filters);
         } catch (Throwable $e) {
@@ -37,7 +37,7 @@ final readonly class CreateSubscriptionUseCase
                 'error' => $e->getMessage(),
             ]);
 
-            return [new ClosedMessage($subscriptionId, RejectionReason::Error->format('invalid subscription'))];
+            return [new ClosedMessage($subscriptionId, ReasonPrefix::Error->format('invalid subscription'))];
         }
     }
 }

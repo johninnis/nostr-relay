@@ -22,19 +22,28 @@ final readonly class SubscriptionAdmission
     public function admit(RelayClient $client, FilterCollection $filters): PolicyRejection|ScopedFilters
     {
         $rateLimit = $this->rateLimitGate->admit($client);
+
         if (null !== $rateLimit) {
             return $rateLimit;
         }
 
-        $rejection = $this->policy->allowSubscription(
-            $client,
-            $filters,
-            $this->subscriptionLookup->getSubscriptionCountForClient($client->getId()),
-        );
-        if (null !== $rejection) {
-            return $rejection;
-        }
+        return $this->scopeFor($client, $filters, $this->heldCount($client));
+    }
 
-        return $this->policy->filterForClient($client, $filters);
+    // Deliberate: no rate-limit token, and the client's own subscription discounted from the cap, because a re-evaluation replaces one it already holds rather than asking for another — see ADR-0016
+    public function readmit(RelayClient $client, FilterCollection $filters): PolicyRejection|ScopedFilters
+    {
+        return $this->scopeFor($client, $filters, max(0, $this->heldCount($client) - 1));
+    }
+
+    private function scopeFor(RelayClient $client, FilterCollection $filters, int $heldCount): PolicyRejection|ScopedFilters
+    {
+        return $this->policy->allowSubscription($client, $filters, $heldCount)
+            ?? $this->policy->filterForClient($client, $filters);
+    }
+
+    private function heldCount(RelayClient $client): int
+    {
+        return $this->subscriptionLookup->getSubscriptionCountForClient($client->getId());
     }
 }

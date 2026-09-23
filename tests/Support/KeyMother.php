@@ -31,14 +31,15 @@ final class KeyMother
         return self::keyPair(self::BOB_PRIVATE_KEY_HEX, self::BOB_PUBLIC_KEY_HEX);
     }
 
+    // Deliberate: parsed from the constant, never derived, so a unit test needing a key does no crypto — KeyMotherTest asserts the constant is the one the private key derives
     public static function alicePublicKey(): PublicKey
     {
-        return self::alice()->getPublicKey();
+        return PublicKey::tryFromHex(self::ALICE_PUBLIC_KEY_HEX) ?? throw new RuntimeException('Invalid test public key');
     }
 
     public static function bobPublicKey(): PublicKey
     {
-        return self::bob()->getPublicKey();
+        return PublicKey::tryFromHex(self::BOB_PUBLIC_KEY_HEX) ?? throw new RuntimeException('Invalid test public key');
     }
 
     // Deliberate: derives rather than asserting the pair, so the fixture's public-key constant is checked against its private key instead of being taken on trust — KeyPair's constructor is private so a pair cannot disagree with itself

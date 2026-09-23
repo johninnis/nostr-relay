@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
+use Innis\Nostr\Core\Application\Port\ClockInterface;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EoseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
@@ -13,20 +15,19 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Enum\RejectionReason;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
 final readonly class StoredEventStreamer
 {
-    private const int MAX_STORED_EVENTS = 1000;
-
+    // Deliberate: a coordinating unit, and the clock is among its collaborators because expiry is judged against injected time, never the wall clock — see ADR-0010 and ADR-0014
     public function __construct(
         private RelayEventStoreInterface $eventStore,
         private RelayPolicyInterface $policy,
         private ClientMessengerInterface $messenger,
         private SubscriptionRegistryInterface $subscriptionRegistry,
+        private ClockInterface $clock,
         private LoggerInterface $logger,
     ) {
     }
@@ -34,10 +35,12 @@ final readonly class StoredEventStreamer
     public function stream(RelayClient $client, Subscription $subscription, FilterCollection $filters): void
     {
         try {
-            $events = $this->eventStore->findByFilters($filters, self::MAX_STORED_EVENTS);
+            $events = $this->eventStore->findByFilters($filters);
+            $now = $this->clock->now();
 
             foreach ($events as $event) {
-                if ($this->policy->canClientReceiveEvent($client, $event)) {
+                // Deliberate: an event that expired while stored is withheld, not purged — see ADR-0014
+                if (!$event->isExpiredAt($now) && $this->policy->canClientReceiveEvent($client, $event)) {
                     $this->messenger->send($client, new EventMessage($subscription->getId(), $event));
                 }
             }
@@ -63,7 +66,7 @@ final readonly class StoredEventStreamer
             ]);
 
             try {
-                $this->messenger->send($client, new NoticeMessage(RejectionReason::Error->format('failed to fetch events')));
+                $this->messenger->send($client, new NoticeMessage(ReasonPrefix::Error->format('failed to fetch events')));
             } catch (ConnectionException) {
             }
         }

@@ -26,17 +26,36 @@ final class ScopedFiltersTest extends TestCase
     {
         $filters = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]);
 
-        $scoped = ScopedFilters::scoped($filters, true);
+        $scoped = ScopedFilters::scoped($filters, $filters, true);
 
         $this->assertSame($filters, $scoped->getFilters());
         $this->assertTrue($scoped->isBeyondScope());
+    }
+
+    public function testTheRequestedFiltersSurviveScopingAndAreNotTheGrantedOnes(): void
+    {
+        $requested = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 4]))]);
+        $granted = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]);
+
+        $scoped = ScopedFilters::scoped($requested, $granted, true);
+
+        $this->assertSame([1, 4], $scoped->getRequestedFilters()->toArray()[0]->getKinds()?->toInts());
+    }
+
+    public function testScopedCanDropAllFiltersWhileStillCarryingWhatWasAsked(): void
+    {
+        $requested = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([4]))]);
+
+        $scoped = ScopedFilters::scoped($requested, new FilterCollection(), true);
+
+        $this->assertCount(1, $scoped->getRequestedFilters());
     }
 
     public function testScopedCanDropAllFiltersWhileFlaggingBeyondScope(): void
     {
         $filters = new FilterCollection();
 
-        $scoped = ScopedFilters::scoped($filters, true);
+        $scoped = ScopedFilters::scoped($filters, $filters, true);
 
         $this->assertSame($filters, $scoped->getFilters());
         $this->assertTrue($scoped->isBeyondScope());

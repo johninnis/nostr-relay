@@ -24,6 +24,7 @@ final readonly class EventDistributor
     ) {
     }
 
+    // Deliberate: no expiry check here — admission is the only way an event reaches this, and it refuses one that has already expired — see ADR-0014
     public function distributeToSubscribers(Event $event): void
     {
         $subscriptionsWithClients = $this->subscriptionLookup->getSubscriptionsForEvent(

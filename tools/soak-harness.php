@@ -38,6 +38,7 @@ use Innis\Nostr\Core\Domain\Factory\RumourFactory;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Challenge;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
@@ -60,10 +61,10 @@ use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
+use Innis\Nostr\Relay\Infrastructure\EventStore\InMemoryEventStore;
 use Innis\Nostr\Relay\Infrastructure\Http\StaticNip11InfoProvider;
 use Innis\Nostr\Relay\Infrastructure\RateLimiting\StaticRateLimitPolicy;
 use Innis\Nostr\Relay\Infrastructure\Server\RelayServerFactory;
-use Innis\Nostr\Relay\Tests\Support\InMemoryEventStore;
 use Innis\Nostr\Relay\Tests\Support\RecordingClientConnection;
 use Psr\Log\NullLogger;
 
@@ -137,7 +138,7 @@ for ($i = 0; $i < 8; ++$i) {
 /** @var list<string> $authFrames */
 $authFrames = [];
 for ($i = 0; $i < 4; ++$i) {
-    $authEvent = RumourFactory::createAuth($keyPair->getPublicKey(), $relayUrl, 'challenge-'.$i)->sign($keyPair, $signer);
+    $authEvent = RumourFactory::createAuth($keyPair->getPublicKey(), $relayUrl, Challenge::fromString('challenge-'.$i))->sign($keyPair, $signer);
     $authFrames[] = new AuthMessage($authEvent)->toJson();
 }
 

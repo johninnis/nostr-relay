@@ -23,7 +23,7 @@ jobs:
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php-version }}
-          extensions: intl, mbstring, sodium, ffi, gmp
+          extensions: intl, mbstring, sodium, ffi, gmp, openssl
           coverage: none
           tools: composer:v2
 

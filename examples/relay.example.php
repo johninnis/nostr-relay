@@ -83,6 +83,7 @@ $policyConfig = RelayPolicyConfig::tryFromArray([
             ['kinds' => [7, 9735]],
         ],
     ],
+    'max_query_limit' => 500,
 ]) ?? throw new RuntimeException('Invalid relay policy configuration');
 
 $policy = new RelayPolicy($authenticationRegistry, $logger, $policyConfig);
@@ -99,9 +100,14 @@ $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->g
     'description' => 'A runnable innis/nostr-relay example',
     'pubkey' => $ownerPubkeyHex,
     'contact' => 'admin@example.com',
-    'supported_nips' => [1, 9, 11, 42, 45],
+    'supported_nips' => [1, 9, 11, 40, 42, 45],
     'software' => 'innis/nostr-relay',
     'version' => '1.0.0',
+    'limitation' => [
+        'max_limit' => 500,
+        'max_subscriptions' => 20,
+        'max_filters' => 10,
+    ],
 ]));
 
 $httpServer = SocketHttpServer::createForDirectAccess($logger);

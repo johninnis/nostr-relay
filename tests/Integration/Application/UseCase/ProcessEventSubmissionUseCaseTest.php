@@ -23,6 +23,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
+use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -118,6 +119,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
                 $this->policy,
                 new RateLimitGate($this->rateLimiter, $this->policy),
                 new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
+                new SystemClock(),
             ),
             $pipeline,
             new AuthChallengeIssuer($authenticationRegistry),
@@ -232,6 +234,28 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->assertInstanceOf(OkMessage::class, $replies[0]);
         $this->assertFalse($replies[0]->isAccepted());
         $this->assertStringContainsString('blocked', $replies[0]->getMessage());
+    }
+
+    public function testAnAlreadyExpiredEventIsRefusedAsInvalid(): void
+    {
+        $keyPair = KeyPair::generate($this->signatureService());
+        $event = new Rumour(
+            $keyPair->getPublicKey(),
+            Timestamp::now(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
+            new TagCollection([Tag::tryFromArray(['expiration', '1'])]),
+            EventContent::fromString('too late'),
+        )->sign($keyPair, $this->signatureService());
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('store');
+        $useCase = $this->makeUseCase($eventStore);
+
+        $replies = $useCase->execute($this->makeClient(), $event);
+
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(OkMessage::class, $replies[0]);
+        $this->assertFalse($replies[0]->isAccepted());
+        $this->assertSame('invalid: event has expired', $replies[0]->getMessage());
     }
 
     public function testRateLimitReturnsRateLimitedMessage(): void

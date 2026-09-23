@@ -29,7 +29,7 @@ final readonly class SubscriptionReevaluator
                 continue;
             }
 
-            $replies = [...$replies, ...$this->activator->activate($client, $subscription->getId(), $originalFilters)];
+            $replies = [...$replies, ...$this->activator->reactivate($client, $subscription->getId(), $originalFilters)];
         }
 
         return $replies;

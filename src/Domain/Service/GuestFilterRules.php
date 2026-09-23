@@ -37,7 +37,7 @@ final readonly class GuestFilterRules
             $scoped[] = $this->constrain($filter, $tenantScoped);
         }
 
-        return ScopedFilters::scoped(new FilterCollection($scoped), $beyondScope);
+        return ScopedFilters::scoped($filters, new FilterCollection($scoped), $beyondScope);
     }
 
     public function allowsEvent(Event $event, bool $fromTenantsOnly): bool

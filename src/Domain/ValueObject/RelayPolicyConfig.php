@@ -38,6 +38,11 @@ final readonly class RelayPolicyConfig
 
         $guest = self::asArray($config['guest'] ?? null);
         $readRules = self::listOfArrays($guest['read'] ?? null);
+        $queryLimit = self::intOr($config['max_query_limit'] ?? null, self::DEFAULT_MAX_QUERY_LIMIT);
+
+        if (!SubscriptionLimits::isQueryLimitInRange($queryLimit)) {
+            return null;
+        }
 
         return new self(
             $tenants,
@@ -50,7 +55,7 @@ final readonly class RelayPolicyConfig
             new SubscriptionLimits(
                 self::intOr($config['max_subscriptions'] ?? null, self::DEFAULT_MAX_SUBSCRIPTIONS),
                 self::intOr($config['max_filters'] ?? null, self::DEFAULT_MAX_FILTERS),
-                self::intOr($config['max_query_limit'] ?? null, self::DEFAULT_MAX_QUERY_LIMIT),
+                $queryLimit,
             ),
         );
     }

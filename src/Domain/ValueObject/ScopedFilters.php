@@ -9,6 +9,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 final readonly class ScopedFilters
 {
     private function __construct(
+        private FilterCollection $requested,
         private FilterCollection $filters,
         private bool $beyondScope,
     ) {
@@ -16,12 +17,18 @@ final readonly class ScopedFilters
 
     public static function unchanged(FilterCollection $filters): self
     {
-        return new self($filters, false);
+        return new self($filters, $filters, false);
     }
 
-    public static function scoped(FilterCollection $filters, bool $beyondScope): self
+    public static function scoped(FilterCollection $requested, FilterCollection $filters, bool $beyondScope): self
     {
-        return new self($filters, $beyondScope);
+        return new self($requested, $filters, $beyondScope);
+    }
+
+    // Deliberate: the filters the client asked for travel with the ones it was granted, because a re-evaluation can only widen from the original and the granted set is a lossy projection — see ADR-0016
+    public function getRequestedFilters(): FilterCollection
+    {
+        return $this->requested;
     }
 
     public function getFilters(): FilterCollection

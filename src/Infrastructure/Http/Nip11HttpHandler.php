@@ -7,12 +7,11 @@ namespace Innis\Nostr\Relay\Infrastructure\Http;
 use Amp\Http\HttpStatus;
 use Amp\Http\Server\Request;
 use Amp\Http\Server\Response;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 
 final readonly class Nip11HttpHandler
 {
-    private const string CONTENT_TYPE = 'application/nostr+json';
-
     private const int ENCODING_FLAGS = JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
 
     public function __construct(
@@ -28,7 +27,7 @@ final readonly class Nip11HttpHandler
 
         return new Response(
             HttpStatus::OK,
-            ['content-type' => self::CONTENT_TYPE],
+            ['content-type' => Nip11Info::MEDIA_TYPE],
             json_encode($this->infoProvider->getNip11Info()->toArray(), self::ENCODING_FLAGS),
         );
     }
@@ -52,7 +51,7 @@ final readonly class Nip11HttpHandler
     {
         $parameters = explode(';', $mediaRange);
 
-        return self::CONTENT_TYPE === strtolower(trim($parameters[0]))
+        return Nip11Info::MEDIA_TYPE === strtolower(trim($parameters[0]))
             && 0.0 < self::qualityOf(array_slice($parameters, 1));
     }
 

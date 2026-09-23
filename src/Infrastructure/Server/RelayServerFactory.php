@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Infrastructure\Server;
 
 use Amp\Http\Server\HttpServer;
 use Innis\Nostr\Core\Application\Port\RandomBytesGeneratorInterface;
+use Innis\Nostr\Core\Application\Service\Nip42Validator;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\JsonMessageDeserialiser;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
@@ -109,6 +110,7 @@ final class RelayServerFactory
             $this->logger
         );
 
+        $clock = new SystemClock();
         $monotonicClock = new SystemMonotonicClock();
         $eventRateLimitGate = new RateLimitGate(new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Events, $monotonicClock), $this->policy);
         $subscriptionRateLimitGate = new RateLimitGate(new TokenBucketRateLimiter($this->rateLimitPolicy, RateLimitMetric::Subscriptions, $monotonicClock), $this->policy);
@@ -118,7 +120,7 @@ final class RelayServerFactory
             new NipComplianceValidator($this->signatureService)
         );
 
-        $deferredExecutor = new AmphpDeferredExecutor();
+        $deferredExecutor = new AmphpDeferredExecutor($this->logger);
 
         $authChallengeIssuer = new AuthChallengeIssuer($this->authenticationRegistry);
 
@@ -133,7 +135,8 @@ final class RelayServerFactory
         $eventAdmission = new EventAdmission(
             $this->policy,
             $eventRateLimitGate,
-            $eventValidator
+            $eventValidator,
+            $clock
         );
 
         $acceptedEventPublisher = new AcceptedEventPublisher(
@@ -162,6 +165,7 @@ final class RelayServerFactory
             $this->policy,
             $clientMessenger,
             $subscriptionRegistry,
+            $clock,
             $this->logger
         );
 
@@ -188,7 +192,7 @@ final class RelayServerFactory
             $subscriptionActivator
         );
 
-        $authEventVerifier = new AuthEventVerifier($this->config, $this->policy, new SystemClock());
+        $authEventVerifier = new AuthEventVerifier($this->config, $this->policy, new Nip42Validator($clock));
 
         $processAuthUseCase = new ProcessAuthUseCase(
             $this->authenticationRegistry,

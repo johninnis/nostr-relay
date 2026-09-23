@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\EventCount;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
@@ -82,14 +83,30 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $filters = new FilterCollection([new Filter()]);
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('countByFilters')->willReturn(42);
+        $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(42));
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
         $this->assertCount(1, $replies);
         $this->assertInstanceOf(CountMessage::class, $replies[0]);
         $this->assertSame('count-1', (string) $replies[0]->getSubscriptionId());
-        $this->assertSame(42, $replies[0]->getCount());
+        $this->assertSame(42, $replies[0]->getCount()->toInt());
+        $this->assertFalse($replies[0]->getCount()->isApproximate());
+    }
+
+    public function testAnApproximateCountIsMarkedOnTheWire(): void
+    {
+        $subId = SubscriptionIdMother::from('count-1');
+        $filters = new FilterCollection([new Filter()]);
+
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
+        $this->eventStore->method('countByFilters')->willReturn(EventCount::approximate(1000));
+
+        $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
+
+        $this->assertInstanceOf(CountMessage::class, $replies[0]);
+        $this->assertSame(1000, $replies[0]->getCount()->toInt());
+        $this->assertTrue($replies[0]->getCount()->isApproximate());
     }
 
     public function testBeyondScopeSendsNoticeAndChallengeThenReturnsCount(): void
@@ -97,16 +114,16 @@ final class CountSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('count-1');
 
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
-        $this->eventStore->method('countByFilters')->willReturn(7);
+        $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(7));
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, new FilterCollection([new Filter()]));
 
         $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
         $this->assertInstanceOf(AuthMessage::class, $replies[1]);
         $this->assertInstanceOf(CountMessage::class, $replies[2]);
-        $this->assertSame(7, $replies[2]->getCount());
+        $this->assertSame(7, $replies[2]->getCount()->toInt());
     }
 
     public function testPolicyViolationReturnsClosedMessage(): void

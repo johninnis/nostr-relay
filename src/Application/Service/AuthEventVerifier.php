@@ -4,42 +4,33 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Application\Port\ClockInterface;
+use Innis\Nostr\Core\Application\Service\Nip42ValidatorInterface;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Challenge;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Domain\Enum\AuthRejection;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 
 final readonly class AuthEventVerifier
 {
-    private const int TIMESTAMP_TOLERANCE_SECONDS = 600;
-
     public function __construct(
         private RelayConfigInterface $config,
         private RelayPolicyInterface $policy,
-        private ClockInterface $clock,
+        private Nip42ValidatorInterface $validator,
     ) {
     }
 
-    public function verify(Event $event, string $challenge): ?AuthRejection
+    // Deliberate: answers from the event alone, so it can be asked before the signature is verified and a frame that names no live challenge costs nothing — see ADR-0018
+    public function verifyClaim(Event $event, Challenge $challenge): ?PolicyRejection
     {
-        if ($event->getTags()->getFirstValueByType(TagType::fromString(TagType::CHALLENGE)) !== $challenge) {
-            return AuthRejection::InvalidChallenge;
-        }
+        $failure = $this->validator->validate($event, $challenge, $this->config->getRelayUrl());
 
-        if ($event->getTags()->getFirstValueByType(TagType::fromString(TagType::RELAY)) !== (string) $this->config->getRelayUrl()) {
-            return AuthRejection::InvalidRelayUrl;
-        }
+        return null === $failure ? null : PolicyRejection::authRequired($failure->message());
+    }
 
-        if ($this->clock->now()->differenceInSeconds($event->getCreatedAt()) > self::TIMESTAMP_TOLERANCE_SECONDS) {
-            return AuthRejection::TimestampOutOfRange;
-        }
-
-        if (!$this->policy->allowsAuthentication($event->getPubkey())) {
-            return AuthRejection::Restricted;
-        }
-
-        return null;
+    // Deliberate: asked only once the signature has verified, so a refusal cannot tell an unauthenticated sender whose keys this relay trusts — see ADR-0018
+    public function verifyIdentity(Event $event): ?PolicyRejection
+    {
+        return $this->policy->allowsAuthentication($event->getPubkey());
     }
 }

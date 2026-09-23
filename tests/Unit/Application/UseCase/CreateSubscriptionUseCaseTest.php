@@ -14,6 +14,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
+use Innis\Nostr\Core\Infrastructure\Time\SystemClock;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
@@ -66,7 +67,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $messenger = new ClientMessenger($this->clientRegistry);
         $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $admission = new SubscriptionAdmission($this->policy, new RateLimitGate($this->rateLimiter, $this->policy), $this->subscriptionRegistry);
-        $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionRegistry, $logger);
+        $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionRegistry, new SystemClock(), $logger);
         $activator = new SubscriptionActivator(
             $admission,
             $this->subscriptionRegistry,
@@ -110,7 +111,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
 
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
@@ -125,7 +126,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
 
         $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
@@ -140,7 +141,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     {
         $subId = SubscriptionIdMother::from('sub-1');
 
-        $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), true));
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), new FilterCollection(), true));
         $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
 
         $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))]));
