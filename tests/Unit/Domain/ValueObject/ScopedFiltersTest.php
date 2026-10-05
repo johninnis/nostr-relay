@@ -14,7 +14,7 @@ final class ScopedFiltersTest extends TestCase
 {
     public function testUnchangedIsNotBeyondScope(): void
     {
-        $filters = new FilterCollection([new Filter()]);
+        $filters = new FilterCollection([Filter::from()]);
 
         $scoped = ScopedFilters::unchanged($filters);
 
@@ -24,7 +24,7 @@ final class ScopedFiltersTest extends TestCase
 
     public function testScopedCarriesFiltersAndBeyondScopeFlag(): void
     {
-        $filters = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]);
+        $filters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1]))]);
 
         $scoped = ScopedFilters::scoped($filters, $filters, true);
 
@@ -34,8 +34,8 @@ final class ScopedFiltersTest extends TestCase
 
     public function testTheRequestedFiltersSurviveScopingAndAreNotTheGrantedOnes(): void
     {
-        $requested = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 4]))]);
-        $granted = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]);
+        $requested = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1, 4]))]);
+        $granted = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1]))]);
 
         $scoped = ScopedFilters::scoped($requested, $granted, true);
 
@@ -44,7 +44,7 @@ final class ScopedFiltersTest extends TestCase
 
     public function testScopedCanDropAllFiltersWhileStillCarryingWhatWasAsked(): void
     {
-        $requested = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([4]))]);
+        $requested = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([4]))]);
 
         $scoped = ScopedFilters::scoped($requested, new FilterCollection(), true);
 

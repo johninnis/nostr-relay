@@ -8,12 +8,11 @@ use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
 use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\Service\TagReferenceExtractor;
+use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
-use Innis\Nostr\Core\Domain\ValueObject\Reference\EventReference;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Psr\Log\LoggerInterface;
 
@@ -27,15 +26,11 @@ final readonly class EventDeletionProcessor
 
     public function process(Event $event): void
     {
-        $references = TagReferenceExtractor::extract($event->getTags());
         $author = $event->getPubkey();
         $deletedCount = 0;
 
-        $requestedEventIds = array_map(
-            static fn (EventReference $ref) => $ref->getEventId(),
-            $references->getEvents()->toArray()
-        );
-        $requestedCoordinates = $references->getAddressable()->toArray();
+        $requestedEventIds = $event->getTags()->getEventIds()->toArray();
+        $requestedCoordinates = $event->getTags()->getCoordinates()->toArray();
         $requestedCount = count($requestedEventIds) + count($requestedCoordinates);
 
         $verifiedEventIds = $this->verifyOwnedEventIds($requestedEventIds, $author);
@@ -59,7 +54,7 @@ final readonly class EventDeletionProcessor
         }
 
         if (!empty($verifiedCoordinates)) {
-            $deletedCount += $this->eventStore->deleteByCoordinates(new EventCoordinateCollection($verifiedCoordinates), $author);
+            $deletedCount += $this->eventStore->deleteByCoordinates(new EventCoordinateCollection($verifiedCoordinates), $author, $event->getCreatedAt());
         }
 
         if ($deletedCount > 0) {
@@ -89,17 +84,16 @@ final readonly class EventDeletionProcessor
             return [];
         }
 
-        $filters = array_map(
-            static fn (array $chunk) => new Filter(ids: new EventIdCollection($chunk), limit: count($chunk)),
-            array_chunk($eventIds, Filter::MAX_VALUES_PER_FIELD)
-        );
-
-        $storedEvents = $this->eventStore->findByFilters(new FilterCollection($filters));
+        $storedEvents = $this->eventStore->findByFilters(new FilterCollection([
+            Filter::from(ids: new EventIdCollection($eventIds)),
+        ]));
 
         $verified = [];
         foreach ($storedEvents as $storedEvent) {
-            if ($storedEvent->getPubkey()->equals($author)) {
-                $verified[] = $storedEvent->getId();
+            $header = $storedEvent->getHeader();
+
+            if ($header->getPubkey()->equals($author) && !$header->getKind()->is(EventKind::EVENT_DELETION)) {
+                $verified[] = $header->getId();
             }
         }
 

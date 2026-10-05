@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\Server;
 
 use Amp\Http\Server\HttpServer;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
+use Innis\Nostr\Core\Domain\ValueObject\EventLimits;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
@@ -31,18 +32,21 @@ final class RelayServerFactoryTest extends TestCase
 
         $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getMaxConnections')->willReturn(1000);
+        $config->method('getEventLimits')->willReturn(new EventLimits());
 
         $factory = new RelayServerFactory(
             eventStore: $this->createStub(RelayEventStoreInterface::class),
             policy: $this->createStub(RelayPolicyInterface::class),
             config: $config,
-            rateLimitPolicy: $this->createStub(RateLimitPolicyInterface::class),
-            authenticationRegistry: new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
-            logger: new NullLogger(),
-            nip11InfoProvider: $this->createStub(Nip11InfoProviderInterface::class),
-            signatureService: $this->createStub(SignatureServiceInterface::class),
-            metricsCollector: $collector,
         );
+
+        $factory = $factory
+            ->withRateLimitPolicy($this->createStub(RateLimitPolicyInterface::class))
+            ->withAuthenticationRegistry(new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()))
+            ->withLogger(new NullLogger())
+            ->withNip11InfoProvider($this->createStub(Nip11InfoProviderInterface::class))
+            ->withSignatureService($this->createStub(SignatureServiceInterface::class))
+            ->withMetricsCollector($collector);
 
         $relay = $factory->create($this->createStub(HttpServer::class));
 

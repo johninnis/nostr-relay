@@ -195,8 +195,10 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
         $keys = [];
 
         foreach ($subscription->getFilters() as $filter) {
-            if ($filter->hasKinds()) {
-                foreach ($filter->getKinds()?->toInts() ?? [] as $kindInt) {
+            $kinds = $filter->getKinds();
+
+            if (null !== $kinds) {
+                foreach ($kinds->toInts() as $kindInt) {
                     $keys[$kindInt] = $kindInt;
                 }
             } else {

@@ -4,34 +4,28 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CloseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
-use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
-use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use InvalidArgumentException;
 use Psr\Log\LoggerInterface;
+use Throwable;
 
 final readonly class ClientMessageDispatcher
 {
-    // Deliberate: dispatch table holds one use case per protocol verb plus the deserialiser and logger — the breadth is the protocol — see ADR-0010
     public function __construct(
-        private MessageDeserialiserInterface $deserialiser,
+        private ClientVerbHandlers $verbHandlers,
+        private ClientRegistryInterface $clientRegistry,
         private LoggerInterface $logger,
-        private ProcessEventSubmissionUseCase $processEvent,
-        private CreateSubscriptionUseCase $createSubscription,
-        private CloseSubscriptionUseCase $closeSubscription,
-        private ProcessAuthUseCase $processAuth,
-        private CountSubscriptionUseCase $countSubscription,
     ) {
     }
 
@@ -41,7 +35,7 @@ final readonly class ClientMessageDispatcher
     public function dispatch(RelayClient $client, string $rawMessage): array
     {
         try {
-            $message = $this->deserialiser->deserialiseClientMessage($rawMessage);
+            $message = ClientMessage::tryFromJson($rawMessage);
         } catch (InvalidArgumentException $e) {
             return $this->rejectInvalid($client, $rawMessage, $e->getMessage());
         }
@@ -50,13 +44,42 @@ final readonly class ClientMessageDispatcher
             return $this->rejectInvalid($client, $rawMessage, 'unparseable message');
         }
 
+        if ($message instanceof EventMessage) {
+            $this->clientRegistry->recordEventReceived($client->getId());
+        }
+
+        $handler = $this->verbHandlers->handlerFor($message);
+
+        if (null === $handler) {
+            return [NoticeMessage::fromString('Unknown message type')];
+        }
+
+        // Deliberate: the one fault boundary for client messages — use cases frame anticipated rejections, never faults — see ADR-0030
+        try {
+            return $handler->handle($client, $message);
+        } catch (Throwable $e) {
+            $this->logger->error('Client message processing failed', [
+                'client_id' => (string) $client->getId(),
+                'message_type' => $message::class,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->faultReplies($message);
+        }
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function faultReplies(ClientMessage $message): array
+    {
         return match (true) {
-            $message instanceof EventMessage => $this->processEvent->execute($client, $message->getEvent()),
-            $message instanceof ReqMessage => $this->createSubscription->execute($client, $message->getSubscriptionId(), $message->getFilters()),
-            $message instanceof CloseMessage => $this->closeSubscription->execute($client, $message->getSubscriptionId()),
-            $message instanceof AuthMessage => $this->processAuth->execute($client, $message->getEvent()),
-            $message instanceof CountMessage => $this->countSubscription->execute($client, $message->getSubscriptionId(), $message->getFilters()),
-            default => [new NoticeMessage('Unknown message type')],
+            $message instanceof EventMessage => [OkMessage::refused($message->getEvent()->getId(), ReasonPrefix::Error, 'could not process event')],
+            $message instanceof AuthMessage => [OkMessage::refused($message->getEvent()->getId(), ReasonPrefix::Error, 'could not process authentication')],
+            $message instanceof ReqMessage => [ClosedMessage::closed($message->getSubscriptionId(), ReasonPrefix::Error, 'could not process subscription')],
+            $message instanceof CountMessage => [ClosedMessage::closed($message->getSubscriptionId(), ReasonPrefix::Error, 'could not count events')],
+            $message instanceof CloseMessage => [],
+            default => [],
         };
     }
 
@@ -71,6 +94,6 @@ final readonly class ClientMessageDispatcher
             'message' => mb_substr($rawMessage, 0, 200),
         ]);
 
-        return [new NoticeMessage('Invalid message')];
+        return [NoticeMessage::fromString('Invalid message')];
     }
 }

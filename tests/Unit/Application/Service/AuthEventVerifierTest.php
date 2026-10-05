@@ -11,9 +11,9 @@ use Innis\Nostr\Core\Domain\Failure\Nip42ValidationFailure;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Challenge;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayChallenge;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
-use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
@@ -65,7 +65,7 @@ final class AuthEventVerifierTest extends TestCase
 
     public function testTheConfiguredRelayUrlAndChallengeReachTheValidator(): void
     {
-        $relayUrl = RelayUrl::tryFromString('wss://relay.example.com');
+        $relayUrl = RelayUrl::fromString('wss://relay.example.com');
         $event = $this->authEvent();
 
         $config = $this->createStub(RelayConfigInterface::class);
@@ -73,7 +73,7 @@ final class AuthEventVerifierTest extends TestCase
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('allowsAuthentication')->willReturn(null);
         $validator = $this->createMock(Nip42ValidatorInterface::class);
-        $validator->expects($this->once())->method('validate')->with($event, self::challenge(), $relayUrl)->willReturn(null);
+        $validator->expects($this->once())->method('validate')->with($event, new RelayChallenge($relayUrl, self::challenge()))->willReturn(null);
 
         $this->assertNull(new AuthEventVerifier($config, $policy, $validator)->verifyClaim($event, self::challenge()));
     }
@@ -97,12 +97,11 @@ final class AuthEventVerifierTest extends TestCase
 
     private function authEvent(): Event
     {
-        return EventMother::fromRumour(new Rumour(
+        return EventMother::fromRumour(Rumour::draft(
             KeyMother::alicePublicKey(),
-            Timestamp::now(),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
-            new TagCollection([]),
             EventContent::fromString(''),
+            new TagCollection([]),
         ));
     }
 }

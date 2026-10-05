@@ -7,28 +7,49 @@ namespace Innis\Nostr\Relay\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
-use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\AuthMessage as ClientAuthMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage as RelayAuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
-use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
-use Innis\Nostr\Relay\Application\Service\AuthenticationRegistryInterface;
-use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
+use Innis\Nostr\Relay\Application\Service\ClientVerbHandlerInterface;
+use Innis\Nostr\Relay\Application\Service\EventValidityGate;
+use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Psr\Log\LoggerInterface;
-use Throwable;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
+use InvalidArgumentException;
+use Override;
 
-final class ProcessAuthUseCase
+final readonly class ProcessAuthUseCase implements ClientVerbHandlerInterface
 {
-    // Deliberate: NIP-42 auth orchestration coordinates distinct collaborators — see ADR-0010
+    // Deliberate: the signature is verified after the handshake's cheap checks and before the identity question — see ADR-0018
     public function __construct(
-        private readonly AuthenticationRegistryInterface $authRegistry,
-        private readonly AuthEventVerifier $verifier,
-        private readonly EventValidatorInterface $eventValidator,
-        private readonly SubscriptionReevaluator $subscriptionReevaluator,
-        private readonly AuthChallengeIssuer $authChallengeIssuer,
-        private readonly LoggerInterface $logger,
+        private Nip42Handshake $handshake,
+        private EventValidityGate $validityGate,
+        private SubscriptionReevaluator $subscriptionReevaluator,
     ) {
+    }
+
+    /**
+     * @return class-string<ClientMessage>
+     */
+    #[Override]
+    public function handledMessageType(): string
+    {
+        return ClientAuthMessage::class;
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    #[Override]
+    public function handle(RelayClient $client, ClientMessage $message): array
+    {
+        return match (true) {
+            $message instanceof ClientAuthMessage => $this->execute($client, $message->getEvent()),
+            default => throw new InvalidArgumentException('ProcessAuthUseCase cannot handle '.$message::class),
+        };
     }
 
     /**
@@ -36,53 +57,31 @@ final class ProcessAuthUseCase
      */
     public function execute(RelayClient $client, Event $event): array
     {
-        try {
-            $challenge = $this->authRegistry->getChallenge($client->getId());
-            if (null === $challenge) {
-                return [
-                    $this->authChallengeIssuer->issue($client->getId()),
-                    new OkMessage($event->getId(), false, ReasonPrefix::AuthRequired->format('challenge issued, please retry')),
-                ];
-            }
+        $claim = $this->handshake->verifyClaim($client, $event);
 
-            $claim = $this->verifier->verifyClaim($event, $challenge);
-
-            if (null !== $claim) {
-                return [new OkMessage($event->getId(), false, $claim->toWireReason())];
-            }
-
-            // Deliberate: the signature is verified here, after the cheap checks and before the policy is asked — see ADR-0018
-            $this->eventValidator->validateEvent($event);
-
-            $identity = $this->verifier->verifyIdentity($event);
-
-            if (null !== $identity) {
-                return [new OkMessage($event->getId(), false, $identity->toWireReason())];
-            }
-
-            $this->authRegistry->authenticate($client->getId(), $event->getPubkey());
-            $reevaluationReplies = $this->subscriptionReevaluator->reevaluate($client);
-
-            $this->logger->info('Client authenticated', [
-                'client_id' => (string) $client->getId(),
-                'pubkey' => $event->getPubkey()->toHex(),
-            ]);
-
-            return [...$reevaluationReplies, new OkMessage($event->getId(), true, '')];
-        } catch (InvalidEventException $e) {
-            $this->logger->warning('AUTH event validation failed', [
-                'client_id' => (string) $client->getId(),
-                'error' => $e->getMessage(),
-            ]);
-
-            return [new OkMessage($event->getId(), false, ReasonPrefix::Invalid->format($e->getMessage()))];
-        } catch (Throwable $e) {
-            $this->logger->error('AUTH processing error', [
-                'client_id' => (string) $client->getId(),
-                'error' => $e->getMessage(),
-            ]);
-
-            return [new OkMessage($event->getId(), false, ReasonPrefix::Error->format('could not process authentication'))];
+        if ($claim instanceof RelayAuthMessage) {
+            return [
+                $claim,
+                OkMessage::refused($event->getId(), ReasonPrefix::AuthRequired, 'challenge issued, please retry'),
+            ];
         }
+
+        if ($claim instanceof PolicyRejection) {
+            return [$claim->toOkMessage($event->getId())];
+        }
+
+        try {
+            $this->validityGate->admit($event);
+        } catch (InvalidEventException $e) {
+            return [OkMessage::refused($event->getId(), ReasonPrefix::Invalid, $e->getMessage())];
+        }
+
+        $authentication = $this->handshake->authenticate($client, $event);
+
+        if ($authentication instanceof PolicyRejection) {
+            return [$authentication->toOkMessage($event->getId())];
+        }
+
+        return [...$this->subscriptionReevaluator->reevaluate($client), OkMessage::accepted($event->getId())];
     }
 }

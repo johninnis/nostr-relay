@@ -7,27 +7,47 @@ namespace Innis\Nostr\Relay\Application\UseCase;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\Exception\InvalidEventException;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
-use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
-use Innis\Nostr\Relay\Application\Service\ClientRegistryInterface;
+use Innis\Nostr\Relay\Application\Service\ClientVerbHandlerInterface;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
+use Innis\Nostr\Relay\Domain\ValueObject\PublishingAnswer;
+use InvalidArgumentException;
+use Override;
 use Psr\Log\LoggerInterface;
-use Throwable;
 
-final class ProcessEventSubmissionUseCase
+final class ProcessEventSubmissionUseCase implements ClientVerbHandlerInterface
 {
-    // Deliberate: submission handler coordinates admission, pipeline, challenge, registry and logging — see ADR-0010
     public function __construct(
         private readonly EventAdmission $admission,
         private readonly AcceptedEventPipeline $pipeline,
-        private readonly AuthChallengeIssuer $authChallengeIssuer,
-        private readonly ClientRegistryInterface $registry,
         private readonly LoggerInterface $logger,
     ) {
+    }
+
+    /**
+     * @return class-string<ClientMessage>
+     */
+    #[Override]
+    public function handledMessageType(): string
+    {
+        return EventMessage::class;
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    #[Override]
+    public function handle(RelayClient $client, ClientMessage $message): array
+    {
+        return match (true) {
+            $message instanceof EventMessage => $this->execute($client, $message->getEvent()),
+            default => throw new InvalidArgumentException('ProcessEventSubmissionUseCase cannot handle '.$message::class),
+        };
     }
 
     /**
@@ -35,8 +55,6 @@ final class ProcessEventSubmissionUseCase
      */
     public function execute(RelayClient $client, Event $event): array
     {
-        $this->registry->recordEventReceived($client->getId());
-
         $this->logger->debug('Event received', [
             'event_id' => $event->getId()->toHex(),
             'kind' => $event->getKind()->toInt(),
@@ -46,46 +64,42 @@ final class ProcessEventSubmissionUseCase
 
         // Deliberate: rejections are framed as this message's wire reply here (OK), not centralised in the router — see ADR-0015
         try {
-            $outcome = $this->admission->admit($client, $event);
+            $answer = $this->admission->admit($client, $event);
+            $rejection = $answer->getRejection();
 
-            if ($outcome instanceof PolicyRejection) {
-                return $this->rejectionReplies($client, $event, $outcome);
+            if (null !== $rejection) {
+                return $this->rejectionReplies($client, $event, $answer);
             }
 
             $replies = $this->pipeline->accept($client, $event);
 
-            if ($outcome->isChallengeOffered()) {
-                array_unshift($replies, $this->authChallengeIssuer->issue($client->getId()));
+            if (null !== $answer->getChallenge()) {
+                array_unshift($replies, $answer->getChallenge());
             }
 
             return $replies;
         } catch (InvalidEventException $e) {
             $this->logger->warning('Event invalid', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
 
-            return [new OkMessage($event->getId(), false, ReasonPrefix::Invalid->format($e->getMessage()))];
-        } catch (Throwable $e) {
-            $this->logger->error('Event processing error', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex(), 'error' => $e->getMessage()]);
-
-            return [new OkMessage($event->getId(), false, ReasonPrefix::Error->format('could not process event'))];
+            return [OkMessage::refused($event->getId(), ReasonPrefix::Invalid, $e->getMessage())];
         }
     }
 
     /**
      * @return list<RelayMessage>
      */
-    private function rejectionReplies(RelayClient $client, Event $event, PolicyRejection $rejection): array
+    private function rejectionReplies(RelayClient $client, Event $event, PublishingAnswer $answer): array
     {
+        $rejection = $answer->getRejection() ?? throw new InvalidArgumentException('A rejected answer carries a rejection');
+        $challenge = $answer->getChallenge();
+
         if ($rejection->isAuthRequired()) {
             $this->logger->debug('Event auth-required', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex()]);
 
-            $replies = [];
-            $challenge = $this->authChallengeIssuer->issueIfUnchallenged($client->getId());
-            if (null !== $challenge) {
-                $replies[] = $challenge;
-            }
-            $replies[] = new OkMessage($event->getId(), false, $rejection->toWireReason());
-
-            return $replies;
+            return [
+                ...(null === $challenge ? [] : [$challenge]),
+                $rejection->toOkMessage($event->getId()),
+            ];
         }
 
         $this->logger->warning('Event rejected', [
@@ -95,6 +109,6 @@ final class ProcessEventSubmissionUseCase
             'reason' => $rejection->toWireReason(),
         ]);
 
-        return [new OkMessage($event->getId(), false, $rejection->toWireReason())];
+        return [$rejection->toOkMessage($event->getId())];
     }
 }

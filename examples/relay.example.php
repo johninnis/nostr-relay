@@ -5,6 +5,7 @@ declare(strict_types=1);
 use Amp\Http\Server\DefaultErrorHandler;
 use Amp\Http\Server\SocketHttpServer;
 use Amp\Socket\InternetAddress;
+use Innis\Nostr\Core\Domain\ValueObject\EventLimits;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
@@ -41,8 +42,13 @@ final class ExampleRelayConfig implements RelayConfigInterface
     #[Override]
     public function getRelayUrl(): RelayUrl
     {
-        return RelayUrl::tryFromString('ws://127.0.0.1:8080')
-            ?? throw new RuntimeException('invalid relay URL');
+        return RelayUrl::fromString('ws://127.0.0.1:8080');
+    }
+
+    #[Override]
+    public function getEventLimits(): EventLimits
+    {
+        return new EventLimits();
     }
 }
 
@@ -117,11 +123,12 @@ $relay = new RelayServerFactory(
     eventStore: new InMemoryEventStore(),
     policy: $policy,
     config: $config,
-    rateLimitPolicy: $rateLimitPolicy,
-    authenticationRegistry: $authenticationRegistry,
-    logger: $logger,
-    nip11InfoProvider: $nip11InfoProvider,
-)->create($httpServer);
+)
+    ->withRateLimitPolicy($rateLimitPolicy)
+    ->withAuthenticationRegistry($authenticationRegistry)
+    ->withLogger($logger)
+    ->withNip11InfoProvider($nip11InfoProvider)
+    ->create($httpServer);
 
 $httpServer->start($relay->getRequestHandler(), new DefaultErrorHandler());
 

@@ -20,6 +20,7 @@ use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\EventHeader;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
@@ -44,6 +45,15 @@ final class RelayPolicyTest extends TestCase
         $policy = $this->policyWithGuestRules(['max_subscriptions' => 2]);
 
         $this->assertNull($policy->allowSubscription($this->tenantClient(), new FilterCollection(), 99));
+    }
+
+    public function testAFilterHoldingTooManyValuesIsRefusedForATenantToo(): void
+    {
+        $policy = $this->policyWithGuestRules(['max_filter_values' => 1]);
+        $filters = new FilterCollection([Filter::tryFromArray(['kinds' => [1, 7]]) ?? self::fail('filter did not parse')]);
+
+        $this->assertSame('blocked: too many values in one filter (max 1)', $policy->allowSubscription($this->tenantClient(), $filters, 0)?->toWireReason());
+        $this->assertSame('blocked: too many values in one filter (max 1)', $policy->allowSubscription($this->guestClient(), $filters, 0)?->toWireReason());
     }
 
     public function testOpenRelayStillEnforcesSubscriptionCap(): void
@@ -71,16 +81,6 @@ final class RelayPolicyTest extends TestCase
 
         $this->assertNotNull($rejection);
         $this->assertStringContainsString('too many subscriptions (max 2)', $rejection->toWireReason());
-    }
-
-    public function testRejectsOversizedEvent(): void
-    {
-        $policy = $this->policyWithGuestRules(['max_event_size' => 4]);
-
-        $rejection = $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::TEXT_NOTE, 'too long content'));
-
-        $this->assertNotNull($rejection);
-        $this->assertStringContainsString('event too large', $rejection->toWireReason());
     }
 
     public function testGuestMayPublishConfiguredWriteKind(): void
@@ -150,7 +150,7 @@ final class RelayPolicyTest extends TestCase
         $policy = $this->policyWithGuestRules();
         $event = $this->event(EventKind::TEXT_NOTE, 'x', author: self::TENANT_HEX);
 
-        $this->assertTrue($policy->canClientReceiveEvent($this->guestClient(), $event));
+        $this->assertTrue($policy->canClientReceiveEvent($this->guestClient(), EventHeader::of($event)));
     }
 
     public function testGuestMayNotReceiveReadableEventAuthoredByStranger(): void
@@ -158,7 +158,7 @@ final class RelayPolicyTest extends TestCase
         $policy = $this->policyWithGuestRules();
         $event = $this->event(EventKind::TEXT_NOTE, 'x', author: self::STRANGER_HEX);
 
-        $this->assertFalse($policy->canClientReceiveEvent($this->guestClient(), $event));
+        $this->assertFalse($policy->canClientReceiveEvent($this->guestClient(), EventHeader::of($event)));
     }
 
     public function testAFilterWithNoStatedLimitIsGivenTheConfiguredCeiling(): void
@@ -245,12 +245,11 @@ final class RelayPolicyTest extends TestCase
 
     private function event(int $kind, string $content, ?TagCollection $tags = null, string $author = self::STRANGER_HEX): Event
     {
-        return EventMother::fromRumour(new Rumour(
+        return EventMother::fromRumour(Rumour::draft(
             $this->publicKey($author),
-            Timestamp::now(),
             EventKind::fromInt($kind),
-            $tags ?? new TagCollection(),
             EventContent::fromString($content),
+            $tags ?? new TagCollection(),
         ));
     }
 

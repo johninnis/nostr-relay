@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
+use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -19,14 +20,6 @@ final class RelayPolicyConfigTest extends TestCase
     public function testReturnsNullWhenTenantIsNotAString(): void
     {
         $this->assertNull(RelayPolicyConfig::tryFromArray(['tenants' => [123]]));
-    }
-
-    public function testDefaultsWhenMaxEventSizeIsMalformed(): void
-    {
-        $config = RelayPolicyConfig::tryFromArray(['max_event_size' => 'huge']);
-
-        $this->assertNotNull($config);
-        $this->assertSame(65536, $config->getMaxEventSize());
     }
 
     public function testParsesValidHexTenantKey(): void
@@ -90,6 +83,32 @@ final class RelayPolicyConfigTest extends TestCase
     {
         yield 'zero serves nothing' => [0];
         yield 'negative' => [-5];
-        yield 'above what a filter carries' => [Filter::MAX_LIMIT + 1];
+    }
+
+    public function testAQueryLimitAboveFiveThousandIsTheRelaysToChoose(): void
+    {
+        $this->assertNotNull(RelayPolicyConfig::tryFromArray(['max_query_limit' => 10_000]));
+    }
+
+    #[DataProvider('unusableFilterValueLimits')]
+    public function testAFilterValueLimitTheRelayCannotApplyIsRefusedRatherThanThrown(int $limit): void
+    {
+        $this->assertNull(RelayPolicyConfig::tryFromArray(['max_filter_values' => $limit]));
+    }
+
+    /**
+     * @return iterable<string, array{int}>
+     */
+    public static function unusableFilterValueLimits(): iterable
+    {
+        yield 'zero serves nothing' => [0];
+        yield 'negative' => [-5];
+    }
+
+    public function testTheFilterValueLimitIsTaken(): void
+    {
+        $limits = RelayPolicyConfig::tryFromArray(['max_filter_values' => 1])?->getSubscriptionLimits();
+
+        $this->assertNotNull($limits?->refuseOversizedFilters(new FilterCollection([Filter::tryFromArray(['kinds' => [1, 2]]) ?? self::fail('filter did not parse')])));
     }
 }

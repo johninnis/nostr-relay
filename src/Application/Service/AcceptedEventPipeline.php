@@ -12,7 +12,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
-use Psr\Log\LoggerInterface;
 
 final readonly class AcceptedEventPipeline
 {
@@ -20,7 +19,6 @@ final readonly class AcceptedEventPipeline
         private RelayEventStoreInterface $eventStore,
         private AcceptedEventPublisher $publisher,
         private EventDeletionProcessor $deletionProcessor,
-        private LoggerInterface $logger,
     ) {
     }
 
@@ -31,15 +29,14 @@ final readonly class AcceptedEventPipeline
     {
         if (EventKindCategory::Ephemeral === $event->getKind()->category()) {
             $this->publisher->publish($client, $event);
-            $this->logger->debug('Event accepted (ephemeral)', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex()]);
 
-            return [new OkMessage($event->getId(), true, '')];
+            return [OkMessage::accepted($event->getId())];
         }
 
         return match ($this->eventStore->store($event)) {
             EventStoreOutcome::Stored => $this->onStored($client, $event),
-            EventStoreOutcome::Duplicate => $this->onDuplicate($event),
-            EventStoreOutcome::Superseded => $this->onSuperseded($event),
+            EventStoreOutcome::Duplicate => [OkMessage::refused($event->getId(), ReasonPrefix::Duplicate, 'event already exists')],
+            EventStoreOutcome::Superseded => [OkMessage::refused($event->getId(), ReasonPrefix::Duplicate, 'newer version already exists')],
         };
     }
 
@@ -54,36 +51,6 @@ final readonly class AcceptedEventPipeline
 
         $this->publisher->publish($client, $event);
 
-        $this->logger->debug('Event stored', [
-            'event_id' => $event->getId()->toHex(),
-            'pubkey' => $event->getPubkey()->toHex(),
-            'kind' => $event->getKind()->toInt(),
-        ]);
-
-        return [new OkMessage($event->getId(), true, '')];
-    }
-
-    /**
-     * @return list<RelayMessage>
-     */
-    private function onDuplicate(Event $event): array
-    {
-        $this->logger->debug('Event duplicate', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex()]);
-
-        return [new OkMessage($event->getId(), false, ReasonPrefix::Duplicate->format('event already exists'))];
-    }
-
-    /**
-     * @return list<RelayMessage>
-     */
-    private function onSuperseded(Event $event): array
-    {
-        $this->logger->debug('Event superseded', [
-            'event_id' => $event->getId()->toHex(),
-            'pubkey' => $event->getPubkey()->toHex(),
-            'kind' => $event->getKind()->toInt(),
-        ]);
-
-        return [new OkMessage($event->getId(), false, ReasonPrefix::Duplicate->format('newer version already exists'))];
+        return [OkMessage::accepted($event->getId())];
     }
 }

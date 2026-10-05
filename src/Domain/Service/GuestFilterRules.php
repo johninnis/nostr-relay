@@ -7,10 +7,10 @@ namespace Innis\Nostr\Relay\Domain\Service;
 use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
-use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
+use Innis\Nostr\Relay\Domain\ValueObject\EventHeader;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class GuestFilterRules
@@ -40,18 +40,18 @@ final readonly class GuestFilterRules
         return ScopedFilters::scoped($filters, new FilterCollection($scoped), $beyondScope);
     }
 
-    public function allowsEvent(Event $event, bool $fromTenantsOnly): bool
+    public function allowsEvent(EventHeader $header, bool $fromTenantsOnly): bool
     {
-        if (!$this->isReadableKind($event->getKind())) {
+        if (!$this->isReadableKind($header->getKind())) {
             return false;
         }
 
-        if ($this->globalKinds->contains($event->getKind())) {
+        if ($this->globalKinds->contains($header->getKind())) {
             return true;
         }
 
         if ($fromTenantsOnly) {
-            return $this->tenants->contains($event->getPubkey());
+            return $this->tenants->contains($header->getPubkey());
         }
 
         return true;

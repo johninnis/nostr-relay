@@ -32,6 +32,14 @@ final class Nip11HttpHandlerTest extends TestCase
         $this->assertStringContainsString('Test Relay', buffer($response->getBody()));
     }
 
+    public function testServesAnEmptyDocumentAsAJsonObject(): void
+    {
+        $response = $this->handler([])->handleRequest($this->request());
+
+        $this->assertNotNull($response);
+        $this->assertSame('{}', buffer($response->getBody()));
+    }
+
     public function testIgnoresARequestWithoutTheNostrAcceptHeader(): void
     {
         $this->assertNull($this->handler()->handleRequest($this->request(headers: ['accept' => 'text/html'])));
@@ -97,15 +105,15 @@ final class Nip11HttpHandlerTest extends TestCase
         return new Request($this->createStub(Client::class), $method, Http::new($path), $headers);
     }
 
-    private function handler(): Nip11HttpHandler
+    /**
+     * @param array<string, mixed> $document
+     */
+    private function handler(array $document = ['name' => 'Test Relay', 'supported_nips' => [1, 11]]): Nip11HttpHandler
     {
         $relayUrl = RelayUrl::tryFromString('ws://127.0.0.1:8080') ?? self::fail('relay url did not parse');
 
         $provider = $this->createStub(Nip11InfoProviderInterface::class);
-        $provider->method('getNip11Info')->willReturn(Nip11Info::fromArray($relayUrl, [
-            'name' => 'Test Relay',
-            'supported_nips' => [1, 11],
-        ]));
+        $provider->method('getNip11Info')->willReturn(Nip11Info::fromArray($relayUrl, $document));
 
         return new Nip11HttpHandler($provider);
     }

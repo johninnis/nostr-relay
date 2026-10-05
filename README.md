@@ -17,8 +17,9 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **NIP-09 deletion** - Kind 5 event processing
 - **NIP-11 support** - Relay information document
 - **NIP-40 expiration** - An already-expired event is refused, and an event that expires while stored is withheld from REQ results
-- **NIP-42 AUTH** - Challenge/response authentication over nostr-core's `Nip42Validator`; a challenge is issued only when a subscription exceeds guest scope (never on connect), and the client's live subscriptions are re-evaluated once it authenticates
+- **NIP-42 AUTH** - Challenge/response authentication over nostr-core's `Nip42Validator`; a challenge is issued only when a subscription exceeds guest scope or a request is refused as `auth-required` (never on connect), and the client's live subscriptions are re-evaluated once it authenticates
 - **NIP-45 COUNT** - COUNT message support
+- **NIP-70 protected events** - An event tagged `["-"]` is admitted only from a connection authenticated as its author, whatever the policy; an unauthenticated connection is answered `auth-required` and offered a challenge (see [ADR-0023](docs/adr/0023-a-protected-event-is-admitted-only-from-its-authenticated-author-whatever-the-policy.md))
 - **Ephemeral events** - Kinds 20000-29999 skip storage
 - **Host-owned HTTP server** - The relay is an `Amp\Http\Server\RequestHandler` you mount on your own `HttpServer`, so the host controls binding, middleware (CORS, forwarded headers, compression) and lifecycle, and serves its own routes on the same origin
 - **NIP-11 metadata** - Served from a single `Nip11InfoProviderInterface`: the built-in `StaticNip11InfoProvider` for a fixed document, or a custom implementation to compute it at runtime
@@ -54,18 +55,18 @@ composer require innis/nostr-relay
 
 ### 1. Implement Required Interfaces
 
-The relay requires these interfaces from your host application:
+The relay requires three interfaces from your host application — the store, the policy and the relay config. Everything else has a built-in default and is wired with a named `with*()` call on the factory:
 
-- **`RelayEventStoreInterface`** - Event persistence and queries. Use the built-in `InMemoryEventStore` to run a relay locally or to give a test a real store; it keeps everything in process memory and matches linearly, so a deployment supplies a durable implementation. It implements the replaceable and addressable rules, so storing a newer version of such an event removes the one it supersedes and storing an older one is refused as `Superseded`. `countByFilters` returns nostr-core's `EventCount`: a store that stops counting at a ceiling reports the count as approximate, and the relay marks the NIP-45 reply accordingly (see [ADR-0013](docs/adr/0013-a-store-may-count-approximately-and-the-reply-says-so.md)).
-- **`RelayConfigInterface`** - The relay's own configuration: the relay URL (for NIP-42 AUTH verification) and the maximum concurrent connections. The listening address and trusted proxies are configured on the `HttpServer` the host owns, not here.
-- **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Use the built-in `StaticRateLimitPolicy` for fixed limits, or implement the interface to vary limits at runtime.
-- **`Nip11InfoProviderInterface`** - The single source of the relay's NIP-11 document. Wrap a fixed document in the built-in `StaticNip11InfoProvider`, or implement the interface to project metadata at runtime (e.g. reflecting live policy).
-
+- **`RelayEventStoreInterface`** - Event persistence and queries. Use the built-in `InMemoryEventStore` to run a relay locally or to give a test a real store; it keeps everything in process memory and matches linearly, so a deployment supplies a durable implementation. It implements the replaceable and addressable rules, so storing a newer version of such an event removes the one it supersedes and storing an older one is refused as `Superseded`. `findByFilters` returns a `StoredEventCollection`: each `StoredEvent` carries the event's `EventHeader` (id, author, kind, read from your indexed columns), its earliest stated expiry, and the bytes you stored. Store `EncodedEvent::of($event)->toJson()` when `store()` is called, and hand those bytes back with `EncodedEvent::fromOwnStore()`; the relay streams them without parsing them, so nothing but that encoding may ever reach your store (see [ADR-0021](docs/adr/0021-stored-events-are-streamed-as-the-bytes-the-relay-wrote-trusted-by-provenance.md)). `countByFilters` returns nostr-core's `EventCount`: a store that stops counting at a ceiling reports the count as approximate, and the relay marks the NIP-45 reply accordingly (see [ADR-0013](docs/adr/0013-a-store-may-count-approximately-and-the-reply-says-so.md)). `deleteByCoordinates` carries the deletion's `created_at`: delete a coordinate target only when the stored event is at or before it, so a version published after the retraction survives (see [ADR-0028](docs/adr/0028-a-deletion-deletes-only-its-authors-earlier-events-and-never-a-deletion.md)).
+- **`RelayConfigInterface`** - The relay's own configuration: the relay URL (for NIP-42 AUTH verification), the maximum concurrent connections, and the `EventLimits` every submitted event is validated against (the longest content, the most tags and the `created_at` window; `new EventLimits()` gives innis/nostr-core's defaults). An event outside them is refused `invalid:`, a tenant's included; publish the same numbers as `max_content_length`, `max_event_tags`, `created_at_lower_limit` and `created_at_upper_limit` in your relay-information document (see [ADR-0025](docs/adr/0025-the-event-limits-are-the-relays-configuration-applied-by-the-event-validator.md)). The listening address and trusted proxies are configured on the `HttpServer` the host owns, not here.
 Access control can use the built-in `RelayPolicy` or a custom implementation of `RelayPolicyInterface`. See [Implementing `RelayPolicyInterface`](#implementing-relaypolicyinterface) for how a policy signals a rejection.
 
-Optional interfaces extend the relay's behaviour:
+Optional interfaces extend the relay's behaviour, each wired with the matching `with*()` call:
 
-- **`ConnectionGateInterface`** - Decide whether an IP may connect, before the WebSocket session is established. Defaults to allowing every IP; implement it to enforce an allow-list or deny-list.
+- **`RateLimitPolicyInterface`** - Per-minute rate-limit budgets keyed by `RateLimitMetric` (events, subscriptions). Defaults to the built-in `StaticRateLimitPolicy` (60 events, 20 subscriptions per minute); implement the interface to vary limits at runtime.
+- **`Nip11InfoProviderInterface`** - The single source of the relay's NIP-11 document. Defaults to the built-in `StaticNip11InfoProvider` serving an empty document for the configured relay URL; wrap a fixed document in it, or implement the interface to project metadata at runtime (e.g. reflecting live policy).
+- **`AuthenticationRegistryInterface`** - Challenge state and authenticated sessions. Defaults to the in-memory registry; implement it to share auth state across processes.
+- **`ConnectionGateInterface`** - Decide whether an IP may connect, before the WebSocket session is established. Defaults to allowing every IP under the configured connection cap; implement it to enforce an allow-list or deny-list.
 - **`MetricsCollectorInterface`** - Collect relay metrics (connections, events, subscriptions). Defaults to the in-memory `InMemoryMetricsCollector` exposed via `RelayInstance::getMetrics()`; implement it to export to an external monitoring system.
 
 ### 2. Create and Start the Relay
@@ -111,18 +112,18 @@ $config = new MyRelayConfig();
 $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->getRelayUrl(), [
     'name' => 'My Nostr Relay',
     'pubkey' => 'your-hex-pubkey',
-    'supported_nips' => [1, 9, 11, 40, 42, 45],
+    'supported_nips' => [1, 9, 11, 40, 42, 45, 70],
 ]));
 
-$factory = new RelayServerFactory(
+$factory = (new RelayServerFactory(
     eventStore: new InMemoryEventStore(), // swap for a durable store in a deployment
     policy: $policy,
     config: $config,
-    rateLimitPolicy: $rateLimitPolicy,
-    authenticationRegistry: $authenticationRegistry,
-    logger: $logger,
-    nip11InfoProvider: $nip11InfoProvider,
-);
+))
+    ->withRateLimitPolicy($rateLimitPolicy)
+    ->withAuthenticationRegistry($authenticationRegistry)
+    ->withNip11InfoProvider($nip11InfoProvider)
+    ->withLogger($logger);
 ```
 
 The host owns the `HttpServer`, so it decides the listening address, middleware and lifecycle, and mounts the relay's request handler on it. Owning the server is what lets the host serve its own routes — a landing page, a management API, static files — on the same origin as the relay:
@@ -180,7 +181,7 @@ The built-in `RelayPolicy` accepts a configuration array that controls access fo
 
 ### Tenants
 
-`tenants`: array of hex pubkeys or npub strings identifying relay owners. Tenants authenticate via NIP-42 and bypass all guest restrictions, along with the rate limits and the subscription and filter caps. `max_query_limit` is the exception: every filter is clamped to it whoever asks, so a tenant reading more than the ceiling pages through it with `until` (see [ADR-0019](docs/adr/0019-resource-limits-apply-to-every-client-and-the-read-ceiling-to-every-client-including-a-tenant.md)). If the array is empty or omitted, the relay operates as an open relay (all writes and reads allowed).
+`tenants`: array of hex pubkeys or npub strings identifying relay owners. Tenants authenticate via NIP-42 and bypass all guest restrictions, along with the rate limits and the subscription and filter caps. `max_query_limit` and `max_filter_values` are the exceptions: every filter is clamped to the first and refused above the second whoever asks, so a tenant reading more than the ceiling pages through it with `until` (see [ADR-0027](docs/adr/0027-resource-limits-apply-to-every-client-and-the-read-ceiling-to-every-client.md)). If the array is empty or omitted, the relay operates as an open relay (all writes and reads allowed).
 
 ### Limits
 
@@ -188,8 +189,8 @@ Optional keys with sensible defaults:
 
 - `max_subscriptions` - Maximum concurrent subscriptions per client. Also gates `COUNT` requests: a `COUNT` from a client already at the cap is rejected with `blocked: too many subscriptions` (see [ADR-0006](docs/adr/0006-count-and-req-share-one-subscription-cap.md)).
 - `max_filters` - Maximum filters per subscription
-- `max_event_size` - Maximum event payload size in bytes
-- `max_query_limit` - The ceiling on how many stored events one filter may return. Every filter is clamped to it, and a filter stating no limit of its own is given it, so a client asking for more receives the ceiling rather than a refusal (see [ADR-0017](docs/adr/0017-a-filter-that-states-no-limit-is-given-the-ceiling.md)). Publish it as `max_limit` in your relay-information document.
+- `max_query_limit` - The ceiling on how many stored events one filter may return. Every filter is clamped to it, and a filter stating no limit of its own is given it, so a client asking for more receives the ceiling rather than a refusal (see [ADR-0024](docs/adr/0024-a-relay-sets-its-own-read-ceiling-and-per-filter-value-ceiling-and-the-value-ceiling.md)). Any value from 1 is accepted; the relay, not the filter library, sets the ceiling. Publish it as `max_limit` in your relay-information document.
+- `max_filter_values` - The most values one filter may hold, counted across its `ids`, `authors`, `kinds` and tag conditions (default 5000). A filter above it is refused with `blocked: too many values in one filter (max N)`, for a tenant as well as a guest, because it bounds what one store query binds; set it below your store's parameter limit (see [ADR-0024](docs/adr/0024-a-relay-sets-its-own-read-ceiling-and-per-filter-value-ceiling-and-the-value-ceiling.md)). NIP-11 has no field for it.
 
 ### Implementing `RelayPolicyInterface`
 
@@ -224,7 +225,7 @@ The port has seven methods, and every one of them is yours to answer:
 | `allowEventSubmission()` | may this client publish this event |
 | `allowSubscription()` | may this client open this subscription |
 | `filterForClient()` | what this client may read, as a `ScopedFilters` narrowing of the filters it asked for |
-| `canClientReceiveEvent()` | may this client be sent this event, checked per event on delivery |
+| `canClientReceiveEvent()` | may this client be sent this event, checked per event on delivery against its `EventHeader` (id, author, kind) — see [ADR-0022](docs/adr/0022-the-receive-check-sees-an-events-header-not-the-event.md) |
 | `allowsAuthentication()` | may this key authenticate here, returning `?PolicyRejection` so the refusal carries your words rather than the library's |
 | `isRateLimitExempt()` | is this client outside the rate limits and subscription caps |
 | `offersAuthChallenge()` | should this admitted event still draw an `AUTH` challenge |
@@ -237,7 +238,7 @@ Rejections are returned rather than thrown so the analyser forces every caller t
 
 ### Rate-Limit Exemption
 
-`RelayPolicyInterface::isRateLimitExempt()` lets the policy opt specific clients out of rate limits and subscription caps. The built-in `RelayPolicy` exempts authenticated tenants only; rate limits apply to every untrusted client, including on an open relay (see [ADR-0019](docs/adr/0019-resource-limits-apply-to-every-client-and-the-read-ceiling-to-every-client-including-a-tenant.md)). Implement `RelayPolicyInterface` directly to exempt other trusted clients — for example, internal services or IPs behind a trusted proxy.
+`RelayPolicyInterface::isRateLimitExempt()` lets the policy opt specific clients out of rate limits and subscription caps. The built-in `RelayPolicy` exempts authenticated tenants only; rate limits apply to every untrusted client, including on an open relay (see [ADR-0027](docs/adr/0027-resource-limits-apply-to-every-client-and-the-read-ceiling-to-every-client.md)). Implement `RelayPolicyInterface` directly to exempt other trusted clients — for example, internal services or IPs behind a trusted proxy.
 
 ### Guest Rules
 
@@ -287,6 +288,7 @@ When a client authenticates, its already-open subscriptions are re-evaluated aga
 - Message parsing (EVENT, REQ, CLOSE, AUTH, COUNT)
 - NIP-42 authentication (challenge/response)
 - NIP-09 deletion (kind 5 event processing)
+- NIP-70 protected events (admitted only from their authenticated author)
 - Ephemeral event handling (kinds 20000-29999)
 - Subscription management and limits
 - Filter matching and event distribution
@@ -328,6 +330,7 @@ The relay is designed for concurrent connection handling. Concrete throughput, l
 - AMPHP fibres for concurrent clients
 - Subscriptions pre-indexed by event kind, so event distribution looks up only the subscriptions whose filters declare a matching kind (plus kind-agnostic filters) rather than scanning every subscription
 - Per-event filter matching delegated to nostr-core's `Filter`
+- Stored events streamed as the bytes the store holds, never parsed and re-encoded, and a live event encoded once however many subscribers receive it (`tools/stream-benchmark.php` measures both)
 - Non-blocking I/O throughout
 
 ---

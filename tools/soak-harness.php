@@ -20,7 +20,6 @@ declare(strict_types=1);
  *     defect and fails the run;
  *   - no client ever receives an "Internal server error" NOTICE (the router's last-resort
  *     backstop firing means a non-transport throwable escaped a use case);
- *   - the registered client count never exceeds the configured max connections;
  *   - after teardown the client registry, subscription registry and metrics counters all
  *     return to zero (no client, subscription or kind-index leak);
  *   - resident memory does not trend upward across the run (no unbounded retention).
@@ -37,6 +36,7 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Factory\RumourFactory;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\EventLimits;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Challenge;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
@@ -46,6 +46,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\CountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage as ClientEventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayChallenge;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
@@ -79,8 +80,7 @@ mt_srand($seed);
 $signer = Secp256k1Signer::create();
 $keyPair = KeyPair::generate($signer);
 
-$relayUrl = RelayUrl::tryFromString('wss://soak.relay.test')
-    ?? throw new RuntimeException('bad relay url');
+$relayUrl = RelayUrl::fromString('wss://soak.relay.test');
 
 $config = new class($relayUrl, $maxConnections) implements RelayConfigInterface {
     public function __construct(
@@ -100,6 +100,12 @@ $config = new class($relayUrl, $maxConnections) implements RelayConfigInterface 
     {
         return $this->relayUrl;
     }
+
+    #[Override]
+    public function getEventLimits(): EventLimits
+    {
+        return new EventLimits();
+    }
 };
 
 $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
@@ -108,22 +114,23 @@ $factory = new RelayServerFactory(
     eventStore: new InMemoryEventStore(),
     policy: new RelayPolicy($authenticationRegistry, new NullLogger(), RelayPolicyConfig::tryFromArray([]) ?? throw new RuntimeException('bad policy config')),
     config: $config,
-    rateLimitPolicy: new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 100000, subscriptionsPerMinute: 100000)),
-    authenticationRegistry: $authenticationRegistry,
-    logger: new NullLogger(),
-    nip11InfoProvider: new StaticNip11InfoProvider(Nip11Info::fromArray($relayUrl, ['name' => 'Soak Relay', 'supported_nips' => [1, 11]])),
 );
+
+$factory = $factory
+    ->withRateLimitPolicy(new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 100000, subscriptionsPerMinute: 100000)))
+    ->withAuthenticationRegistry($authenticationRegistry)
+    ->withLogger(new NullLogger())
+    ->withNip11InfoProvider(new StaticNip11InfoProvider(Nip11Info::fromArray($relayUrl, ['name' => 'Soak Relay', 'supported_nips' => [1, 11]])));
 
 $relay = $factory->create(SocketHttpServer::createForDirectAccess(new NullLogger()));
 $coordinator = $relay->getSessionCoordinator();
 
 $signedTextNote = static function (string $content) use ($keyPair, $signer): Event {
-    return new Rumour(
+    return Rumour::draft(
         $keyPair->getPublicKey(),
-        Timestamp::now(),
         EventKind::fromInt(EventKind::TEXT_NOTE),
-        new TagCollection(),
         EventContent::fromString($content),
+        new TagCollection(),
     )->sign($keyPair, $signer);
 };
 
@@ -138,11 +145,11 @@ for ($i = 0; $i < 8; ++$i) {
 /** @var list<string> $authFrames */
 $authFrames = [];
 for ($i = 0; $i < 4; ++$i) {
-    $authEvent = RumourFactory::createAuth($keyPair->getPublicKey(), $relayUrl, Challenge::fromString('challenge-'.$i))->sign($keyPair, $signer);
-    $authFrames[] = new AuthMessage($authEvent)->toJson();
+    $authEvent = new RumourFactory($keyPair->getPublicKey())->createAuth(new RelayChallenge($relayUrl, Challenge::fromString('challenge-'.$i)))->sign($keyPair, $signer);
+    $authFrames[] = AuthMessage::fromEvent($authEvent)->toJson();
 }
 
-$allFilters = new FilterCollection([new Filter()]);
+$allFilters = new FilterCollection([Filter::from()]);
 
 /**
  * A client-supplied frame, drawn adversarially. A subscription id is threaded in so some
@@ -156,9 +163,9 @@ $hostileFrame = static function (string $subscriptionId) use ($validEventFrames,
     ];
 
     if (null !== $subId) {
-        $legitimate[] = new ReqMessage($subId, $allFilters)->toJson();
+        $legitimate[] = ReqMessage::from($subId, $allFilters)->toJson();
         $legitimate[] = new CloseMessage($subId)->toJson();
-        $legitimate[] = new CountMessage($subId, $allFilters)->toJson();
+        $legitimate[] = CountMessage::from($subId, $allFilters)->toJson();
     }
 
     $menu = [
@@ -210,7 +217,6 @@ $opCounts = [];
 /** @var list<int> $memorySamples */
 $memorySamples = [];
 $connectionExceptions = 0;
-$maxObservedClients = 0;
 $lastSubscriptionId = SubscriptionId::generate();
 
 $pickClientId = static function () use (&$clientsById): ?string {
@@ -265,8 +271,6 @@ for ($step = 0; $step < $iterations; ++$step) {
     } finally {
         delay(0);
     }
-
-    $maxObservedClients = max($maxObservedClients, $relay->getClients()->count());
 
     if (0 === $step % 200) {
         gc_collect_cycles();
@@ -324,14 +328,12 @@ echo sprintf("seed=%d max-connections=%d iterations=%d elapsed=%dms\n", $seed, $
 echo sprintf("operations: %s\n", json_encode($opCounts, JSON_THROW_ON_ERROR));
 echo sprintf("connection-exceptions (expected): %d\n", $connectionExceptions);
 echo sprintf("events-received=%d events-sent=%d\n", $metrics->getTotalEventsReceived(), $metrics->getTotalEventsSent());
-echo sprintf("max registered clients: %d (configured max %d)\n", $maxObservedClients, $maxConnections);
 echo sprintf("memory: early=%s late=%s growth=%s peak=%s\n", $mib($earlyMedian), $mib($lateMedian), $mib($growthBytes), $mib($peakBytes));
 echo sprintf("after teardown: clients=%d subscriptions=%d active-connections=%d subscriptions-counter=%d\n", $leftClients, $leftSubscriptions, $metrics->getActiveConnections(), $metrics->getTotalSubscriptions());
 
 $leak = $growthBytes > 16 * 1048576;
-$connectionLeak = $maxObservedClients > $maxConnections;
 $teardownIncomplete = 0 !== $leftClients || 0 !== $leftSubscriptions || 0 !== $metrics->getActiveConnections() || 0 !== $metrics->getTotalSubscriptions();
-$ok = [] === $violations && 0 === $internalErrors && !$leak && !$connectionLeak && !$teardownIncomplete;
+$ok = [] === $violations && 0 === $internalErrors && !$leak && !$teardownIncomplete;
 
 if ([] !== $violations) {
     echo "\nINVARIANT VIOLATIONS (only ConnectionException may escape a session operation):\n";
@@ -345,9 +347,6 @@ if (0 !== $internalErrors) {
 }
 if ($leak) {
     echo "\nPOTENTIAL LEAK: resident memory trended up beyond threshold.\n";
-}
-if ($connectionLeak) {
-    echo "\nCONNECTION LEAK: registered clients exceeded the configured max.\n";
 }
 if ($teardownIncomplete) {
     echo "\nTEARDOWN INCOMPLETE: client, subscription or metrics state remained after close.\n";

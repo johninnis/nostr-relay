@@ -40,7 +40,6 @@ final class ClientDisconnectionHandlerTest extends TestCase
             $this->clientRegistry,
             $this->subscriptionRegistry,
             new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()),
-            $logger,
         );
     }
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-0027
 
 Supersedes ADR-0009, which decoupled resource limits from access openness but placed `max_query_limit` among the caps an authenticated tenant escapes. It never did escape it, and once `filterForClient()` became the single place a read is bounded (ADR-0017) the difference between that cap and the other two became a decision in its own right. This record restates the whole of ADR-0009 and settles it.
 

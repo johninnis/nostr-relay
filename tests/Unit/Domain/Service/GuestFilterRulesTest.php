@@ -8,15 +8,14 @@ use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
-use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagFilter;
-use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
+use Innis\Nostr\Relay\Domain\ValueObject\EventHeader;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
@@ -30,7 +29,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::TENANT, self::OTHER]), kinds: EventKindCollection::fromInts([1]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues([self::TENANT, self::OTHER]), kinds: EventKindCollection::fromInts([1]))]), true);
 
         self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
     }
@@ -39,7 +38,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1]))]), true);
 
         self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
     }
@@ -48,10 +47,9 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1, 7]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter()]), false);
+        $scoped = $rules->scope(new FilterCollection([Filter::from()]), false);
 
         $filter = $scoped->getFilters()->toArray()[0];
-        self::assertTrue($filter->hasKinds());
         self::assertSame([1, 7], $filter->getKinds()?->toInts());
     }
 
@@ -59,7 +57,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1, 7]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 4]))]), false);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1, 4]))]), false);
 
         self::assertSame([1], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
     }
@@ -68,7 +66,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1, 7]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([4]))]), false);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([4]))]), false);
 
         self::assertSame([], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
     }
@@ -77,44 +75,44 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], null);
 
-        self::assertFalse($rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::TENANT]))]), true)->isBeyondScope());
-        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]), true)->isBeyondScope());
+        self::assertFalse($rules->scope(new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues([self::TENANT]))]), true)->isBeyondScope());
+        self::assertFalse($rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1]))]), true)->isBeyondScope());
     }
 
     public function testScopeBeyondScopeWhenAuthorsExceedTenants(): void
     {
         $rules = self::rules([self::TENANT], null);
 
-        self::assertTrue($rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::TENANT, self::OTHER]))]), true)->isBeyondScope());
+        self::assertTrue($rules->scope(new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues([self::TENANT, self::OTHER]))]), true)->isBeyondScope());
     }
 
     public function testScopeNotBeyondScopeWhenKindsWithinReadable(): void
     {
         $rules = self::rules([self::TENANT], [1, 7]);
 
-        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 7]))]), false)->isBeyondScope());
-        self::assertFalse($rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::TENANT]))]), false)->isBeyondScope());
+        self::assertFalse($rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1, 7]))]), false)->isBeyondScope());
+        self::assertFalse($rules->scope(new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues([self::TENANT]))]), false)->isBeyondScope());
     }
 
     public function testScopeBeyondScopeWhenKindsExceedReadable(): void
     {
         $rules = self::rules([self::TENANT], [1, 7]);
 
-        self::assertTrue($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 4]))]), false)->isBeyondScope());
+        self::assertTrue($rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1, 4]))]), false)->isBeyondScope());
     }
 
     public function testScopeNotBeyondScopeWhenReadableKindsAreUnrestricted(): void
     {
         $rules = self::rules([self::TENANT], null);
 
-        self::assertFalse($rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([9999]))]), false)->isBeyondScope());
+        self::assertFalse($rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([9999]))]), false)->isBeyondScope());
     }
 
     public function testEmptyReadableKindsNarrowEveryRequestedKindToNothing(): void
     {
         $rules = self::rules([self::TENANT], []);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1059]))]), false);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1059]))]), false);
 
         self::assertTrue($scoped->isBeyondScope());
         self::assertSame([], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
@@ -124,9 +122,8 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], []);
 
-        $filter = $rules->scope(new FilterCollection([new Filter()]), false)->getFilters()->toArray()[0];
+        $filter = $rules->scope(new FilterCollection([Filter::from()]), false)->getFilters()->toArray()[0];
 
-        self::assertTrue($filter->hasKinds());
         self::assertSame([], $filter->getKinds()?->toInts());
     }
 
@@ -156,7 +153,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1, 7]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1]))]), false);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1]))]), false);
 
         self::assertFalse($scoped->isBeyondScope());
         self::assertCount(1, $scoped->getFilters());
@@ -167,7 +164,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1, 7]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 4]))]), false);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1, 4]))]), false);
 
         self::assertTrue($scoped->isBeyondScope());
         self::assertSame([1], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
@@ -177,7 +174,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::TENANT, self::OTHER]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues([self::TENANT, self::OTHER]))]), true);
 
         self::assertTrue($scoped->isBeyondScope());
         self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
@@ -187,7 +184,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::OTHER]), kinds: EventKindCollection::fromInts([1]))]), false);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues([self::OTHER]), kinds: EventKindCollection::fromInts([1]))]), false);
 
         self::assertFalse($scoped->isBeyondScope());
         self::assertSame([self::OTHER], self::authorHexes($scoped->getFilters()->toArray()[0]));
@@ -197,7 +194,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), true);
 
         self::assertTrue($scoped->isBeyondScope());
     }
@@ -206,7 +203,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::OTHER]]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::OTHER]]))]), true);
 
         self::assertFalse($scoped->isBeyondScope());
     }
@@ -215,16 +212,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), false);
-
-        self::assertFalse($scoped->isBeyondScope());
-    }
-
-    public function testUppercasePTagIsNotTreatedAsTenantReference(): void
-    {
-        $rules = self::rules([self::TENANT], [24133]);
-
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [strtoupper(self::TENANT)]]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), false);
 
         self::assertFalse($scoped->isBeyondScope());
     }
@@ -233,7 +221,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues([self::OTHER]), kinds: EventKindCollection::fromInts([24133]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues([self::OTHER]), kinds: EventKindCollection::fromInts([24133]))]), true);
 
         self::assertFalse($scoped->isBeyondScope());
         self::assertSame([self::OTHER], self::authorHexes($scoped->getFilters()->toArray()[0]));
@@ -243,7 +231,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([24133]))]), true);
 
         self::assertFalse($scoped->isBeyondScope());
         self::assertNull($scoped->getFilters()->toArray()[0]->getAuthors());
@@ -253,7 +241,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [24133], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([24133]), tags: TagFilter::fromValues(['p' => [self::TENANT]]))]), true);
 
         self::assertFalse($scoped->isBeyondScope());
     }
@@ -262,7 +250,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([24133]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([24133]))]), true);
 
         self::assertFalse($scoped->isBeyondScope());
         self::assertSame([24133], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
@@ -272,7 +260,7 @@ final class GuestFilterRulesTest extends TestCase
     {
         $rules = self::rules([self::TENANT], [1, 24133], [24133]);
 
-        $scoped = $rules->scope(new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([1, 24133]))]), true);
+        $scoped = $rules->scope(new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1, 24133]))]), true);
 
         self::assertSame([self::TENANT], self::authorHexes($scoped->getFilters()->toArray()[0]));
         self::assertSame([1, 24133], $scoped->getFilters()->toArray()[0]->getKinds()?->toInts());
@@ -292,17 +280,16 @@ final class GuestFilterRulesTest extends TestCase
         self::assertFalse($rules->allowsEvent(self::event(self::OTHER, 1), true));
     }
 
-    private static function event(string $authorHex, int $kind): Event
+    private static function event(string $authorHex, int $kind): EventHeader
     {
         $author = PublicKey::tryFromHex($authorHex) ?? throw new RuntimeException('Invalid test pubkey');
 
-        return EventMother::fromRumour(new Rumour(
+        return EventHeader::of(EventMother::fromRumour(Rumour::draft(
             $author,
-            Timestamp::now(),
             EventKind::fromInt($kind),
-            new TagCollection(),
             EventContent::fromString('x'),
-        ));
+            new TagCollection(),
+        )));
     }
 
     /**

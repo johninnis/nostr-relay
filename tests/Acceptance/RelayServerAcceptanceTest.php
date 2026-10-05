@@ -17,6 +17,7 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\EventLimits;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage as ClientEventMessage;
@@ -26,7 +27,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
-use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Core\Infrastructure\Crypto\Secp256k1Signer;
 use Innis\Nostr\Relay\Application\Port\RelayConfigInterface;
@@ -69,7 +69,7 @@ final class RelayServerAcceptanceTest extends TestCase
         self::assertSame($event->getId()->toHex(), $ok->getEventId()->toHex());
 
         $subscriptionId = SubscriptionId::tryFromString('acc-sub') ?? throw new RuntimeException('bad subscription id');
-        $connection->sendText(new ReqMessage($subscriptionId, new FilterCollection([new Filter()]))->toJson());
+        $connection->sendText(ReqMessage::from($subscriptionId, new FilterCollection([Filter::from()]))->toJson());
 
         $eventFrame = $this->decodeFrame($this->nextFrame($connection));
         self::assertSame('EVENT', $eventFrame[0]);
@@ -80,6 +80,20 @@ final class RelayServerAcceptanceTest extends TestCase
         $eoseFrame = $this->decodeFrame($this->nextFrame($connection));
         self::assertSame('EOSE', $eoseFrame[0]);
         self::assertSame('acc-sub', $eoseFrame[1]);
+
+        $connection->close();
+    }
+
+    public function testRefusesAnEventLongerThanTheConfiguredContentLengthAsInvalid(): void
+    {
+        $base = $this->startRelay(new EventLimits(maxContentLength: 5));
+        $connection = connect("ws://{$base}/");
+
+        $connection->sendText(new ClientEventMessage($this->signedTextNote('too long'))->toJson());
+
+        $ok = OkMessage::tryFromJson($this->nextFrame($connection));
+        self::assertNotNull($ok);
+        self::assertSame([false, 'invalid: Event content exceeds maximum length'], [$ok->isAccepted(), $ok->getMessage()]);
 
         $connection->close();
     }
@@ -100,13 +114,14 @@ final class RelayServerAcceptanceTest extends TestCase
         self::assertSame('Acceptance Relay', $document['name']);
     }
 
-    private function startRelay(): string
+    private function startRelay(EventLimits $eventLimits = new EventLimits()): string
     {
-        $relayUrl = RelayUrl::tryFromString('ws://127.0.0.1:8080') ?? throw new RuntimeException('bad relay url');
+        $relayUrl = RelayUrl::fromString('ws://127.0.0.1:8080');
 
         $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getMaxConnections')->willReturn(64);
         $config->method('getRelayUrl')->willReturn($relayUrl);
+        $config->method('getEventLimits')->willReturn($eventLimits);
 
         $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
@@ -114,14 +129,16 @@ final class RelayServerAcceptanceTest extends TestCase
             eventStore: new InMemoryEventStore(),
             policy: new RelayPolicy($authenticationRegistry, new NullLogger(), RelayPolicyConfig::tryFromArray([]) ?? self::fail('config did not parse')),
             config: $config,
-            rateLimitPolicy: new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 1000, subscriptionsPerMinute: 1000)),
-            authenticationRegistry: $authenticationRegistry,
-            logger: new NullLogger(),
-            nip11InfoProvider: new StaticNip11InfoProvider(Nip11Info::fromArray($relayUrl, [
+        );
+
+        $factory = $factory
+            ->withRateLimitPolicy(new StaticRateLimitPolicy(new RateLimitConfig(eventsPerMinute: 1000, subscriptionsPerMinute: 1000)))
+            ->withAuthenticationRegistry($authenticationRegistry)
+            ->withLogger(new NullLogger())
+            ->withNip11InfoProvider(new StaticNip11InfoProvider(Nip11Info::fromArray($relayUrl, [
                 'name' => 'Acceptance Relay',
                 'supported_nips' => [1, 11],
-            ])),
-        );
+            ])));
 
         $httpServer = SocketHttpServer::createForDirectAccess(new NullLogger());
         $httpServer->expose(new InternetAddress('127.0.0.1', 0));
@@ -157,12 +174,11 @@ final class RelayServerAcceptanceTest extends TestCase
     {
         $keyPair = KeyPair::generate($this->signer());
 
-        return new Rumour(
+        return Rumour::draft(
             $keyPair->getPublicKey(),
-            Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            new TagCollection(),
             EventContent::fromString($content),
+            new TagCollection(),
         )->sign($keyPair, $this->signer());
     }
 

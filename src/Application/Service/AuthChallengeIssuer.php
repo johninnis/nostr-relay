@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class AuthChallengeIssuer
@@ -32,6 +33,20 @@ final readonly class AuthChallengeIssuer
     }
 
     /**
+     * @return list<AuthMessage>
+     */
+    public function offerForRefusal(PolicyRejection $rejection, ClientId $clientId): array
+    {
+        if (!$rejection->isAuthRequired()) {
+            return [];
+        }
+
+        $challenge = $this->issueIfUnchallenged($clientId);
+
+        return null === $challenge ? [] : [$challenge];
+    }
+
+    /**
      * @return list<RelayMessage>
      */
     public function offerForScope(ScopedFilters $scopedFilters, ClientId $clientId): array
@@ -41,7 +56,7 @@ final readonly class AuthChallengeIssuer
         }
 
         return [
-            new NoticeMessage('limited to readable scope: authenticate for full access'),
+            NoticeMessage::fromString('limited to readable scope: authenticate for full access'),
             $this->issue($clientId),
         ];
     }

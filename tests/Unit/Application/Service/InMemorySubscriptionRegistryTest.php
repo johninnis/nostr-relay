@@ -39,7 +39,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
      */
     private function createSubscription(string $subId, ?array $kinds = null): Subscription
     {
-        $filters = new FilterCollection([new Filter(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null)]);
+        $filters = new FilterCollection([Filter::from(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null)]);
 
         return Subscription::create(SubscriptionIdMother::from($subId), $filters);
     }
@@ -198,7 +198,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testRecordsAndReturnsOriginalFilters(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $originalFilters = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
+        $originalFilters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
 
         $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
 
@@ -218,7 +218,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testRemoveSubscriptionClearsOriginalFilters(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $originalFilters = new FilterCollection([new Filter(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
+        $originalFilters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
         $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
 
         $this->manager->removeSubscription($clientId, SubscriptionIdMother::from('sub-1'));

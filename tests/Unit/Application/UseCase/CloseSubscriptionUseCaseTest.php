@@ -30,7 +30,7 @@ final class CloseSubscriptionUseCaseTest extends TestCase
         $logger = new NullLogger();
         $metrics = $this->createStub(MetricsCollectorInterface::class);
         $this->subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
-        $this->useCase = new CloseSubscriptionUseCase($this->subscriptionRegistry, $logger);
+        $this->useCase = new CloseSubscriptionUseCase($this->subscriptionRegistry);
 
         $this->client = new RelayClient(
             ClientId::fromString('client-1'),
@@ -41,7 +41,7 @@ final class CloseSubscriptionUseCaseTest extends TestCase
     public function testExecuteRemovesSubscription(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
-        $subscription = Subscription::create($subId, new FilterCollection([new Filter()]));
+        $subscription = Subscription::create($subId, new FilterCollection([Filter::from()]));
         $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
 
         $this->useCase->execute($this->client, $subId);

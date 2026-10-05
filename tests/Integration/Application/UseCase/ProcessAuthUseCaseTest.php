@@ -7,7 +7,6 @@ namespace Innis\Nostr\Relay\Tests\Integration\Application\UseCase;
 use Closure;
 use Innis\Nostr\Core\Application\Port\ClockInterface;
 use Innis\Nostr\Core\Application\Service\Nip42Validator;
-use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
@@ -15,6 +14,7 @@ use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
 use Innis\Nostr\Core\Domain\Service\EventValidatorInterface;
+use Innis\Nostr\Core\Domain\Service\Nip42EventChecker;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\Service\SignatureServiceInterface;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
@@ -41,20 +41,27 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\EventValidityGate;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
+use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
+use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
+use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
+use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
+use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
@@ -114,12 +121,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->subscriptionRegistry = new InMemorySubscriptionRegistry(new InMemoryMetricsCollector(), new NullLogger());
 
         $this->useCase = new ProcessAuthUseCase(
-            $this->authenticationRegistry,
-            new AuthEventVerifier($config, $this->policy, new Nip42Validator(new SystemClock())),
-            $this->eventValidator(),
+            new Nip42Handshake(
+                $this->authenticationRegistry,
+                new AuthEventVerifier($config, $this->policy, new Nip42Validator(new Nip42EventChecker(), new SystemClock())),
+                new AuthChallengeIssuer($this->authenticationRegistry),
+            ),
+            new EventValidityGate($this->eventValidator(), new SystemClock()),
             $this->buildReevaluator($this->policy, $this->createStub(RelayEventStoreInterface::class)),
-            new AuthChallengeIssuer($this->authenticationRegistry),
-            new NullLogger(),
         );
     }
 
@@ -142,20 +150,15 @@ final class ProcessAuthUseCaseTest extends TestCase
         };
 
         $storedEventStreamer = new StoredEventStreamer(
-            $eventStore,
-            $policy,
+            new StoredEventReadGate($eventStore, $policy, new SystemClock()),
             $this->messenger,
-            $this->subscriptionRegistry,
-            new SystemClock(),
             new NullLogger(),
         );
 
         $activator = new SubscriptionActivator(
             $admission,
-            $this->subscriptionRegistry,
-            $storedEventStreamer,
-            $synchronousExecutor,
-            new AuthChallengeIssuer($this->authenticationRegistry),
+            new RegisteringStoredEventStreamer($synchronousExecutor, $storedEventStreamer, $this->subscriptionRegistry),
+            new SubscriptionAnswers($this->subscriptionRegistry, new AuthChallengeIssuer($this->authenticationRegistry)),
         );
 
         return new SubscriptionReevaluator($this->subscriptionRegistry, $activator);
@@ -186,12 +189,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $validator->expects($this->never())->method('validateEvent');
 
         $useCase = new ProcessAuthUseCase(
-            $this->authenticationRegistry,
-            new AuthEventVerifier($config, $policy, new Nip42Validator(new SystemClock())),
-            $validator,
+            new Nip42Handshake(
+                $this->authenticationRegistry,
+                new AuthEventVerifier($config, $policy, new Nip42Validator(new Nip42EventChecker(), new SystemClock())),
+                new AuthChallengeIssuer($this->authenticationRegistry),
+            ),
+            new EventValidityGate($validator, new SystemClock()),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
-            new AuthChallengeIssuer($this->authenticationRegistry),
-            new NullLogger(),
         );
 
         $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
@@ -216,12 +220,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, $originalFilters);
 
         $useCase = new ProcessAuthUseCase(
-            $this->authenticationRegistry,
-            new AuthEventVerifier($config, $policy, new Nip42Validator(new SystemClock())),
-            $this->eventValidator(),
+            new Nip42Handshake(
+                $this->authenticationRegistry,
+                new AuthEventVerifier($config, $policy, new Nip42Validator(new Nip42EventChecker(), new SystemClock())),
+                new AuthChallengeIssuer($this->authenticationRegistry),
+            ),
+            new EventValidityGate($this->eventValidator(), new SystemClock()),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
-            new AuthChallengeIssuer($this->authenticationRegistry),
-            new NullLogger(),
         );
 
         $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
@@ -229,6 +234,39 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
         $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
+    }
+
+    public function testASubscriptionRefusedAsAuthRequiredOnReevaluationIsOfferedAFreshChallenge(): void
+    {
+        $config = $this->createStub(RelayConfigInterface::class);
+        $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
+
+        $policy = $this->createStub(RelayPolicyInterface::class);
+        $policy->method('allowsAuthentication')->willReturn(null);
+        $policy->method('isRateLimitExempt')->willReturn(true);
+        $policy->method('allowSubscription')->willReturn(PolicyRejection::authRequired('authenticate as a member'));
+
+        $originalFilters = new FilterCollection([Filter::tryFromArray(['kinds' => [4]])]);
+        $subscription = Subscription::create(SubscriptionIdMother::from('dms'), $originalFilters, SubscriptionState::Live);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, $originalFilters);
+
+        $useCase = new ProcessAuthUseCase(
+            new Nip42Handshake(
+                $this->authenticationRegistry,
+                new AuthEventVerifier($config, $policy, new Nip42Validator(new Nip42EventChecker(), new SystemClock())),
+                new AuthChallengeIssuer($this->authenticationRegistry),
+            ),
+            new EventValidityGate($this->eventValidator(), new SystemClock()),
+            $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
+        );
+
+        $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
+        $replies = $useCase->execute($this->client, $this->createAuthEvent($challenge, 'wss://relay.example.com'));
+
+        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
+        $this->assertFalse($challenge->equals($replies[0]->getChallenge()));
+        $this->assertInstanceOf(ClosedMessage::class, $replies[1]);
+        $this->assertStringStartsWith('auth-required:', $replies[1]->getMessage());
     }
 
     public function testReevaluationDoesNotSpendAFreshSubscriptionToken(): void
@@ -252,17 +290,16 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $activator = new SubscriptionActivator(
             new SubscriptionAdmission($policy, new RateLimitGate($rateLimiter, $policy), $this->subscriptionRegistry),
-            $this->subscriptionRegistry,
-            new StoredEventStreamer(
-                $this->createStub(RelayEventStoreInterface::class),
-                $policy,
-                $this->messenger,
+            new RegisteringStoredEventStreamer(
+                new AmphpDeferredExecutor(),
+                new StoredEventStreamer(
+                    new StoredEventReadGate($this->createStub(RelayEventStoreInterface::class), $policy, new SystemClock()),
+                    $this->messenger,
+                    new NullLogger(),
+                ),
                 $this->subscriptionRegistry,
-                new SystemClock(),
-                new NullLogger(),
             ),
-            new AmphpDeferredExecutor(),
-            new AuthChallengeIssuer($this->authenticationRegistry),
+            new SubscriptionAnswers($this->subscriptionRegistry, new AuthChallengeIssuer($this->authenticationRegistry)),
         );
 
         new SubscriptionReevaluator($this->subscriptionRegistry, $activator)->reevaluate($this->client);
@@ -291,7 +328,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
         $request = $this->createNostrConnectRequest();
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
-        $eventStore->method('findByFilters')->willReturn(new EventCollection([$request]));
+        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($request)]));
 
         $originalFilters = new FilterCollection([Filter::tryFromArray([
             'kinds' => [EventKind::fromInt(EventKind::NOSTR_CONNECT)->toInt()],
@@ -301,12 +338,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, $originalFilters);
 
         $useCase = new ProcessAuthUseCase(
-            $this->authenticationRegistry,
-            new AuthEventVerifier($config, $policy, new Nip42Validator(new SystemClock())),
-            $this->eventValidator(),
+            new Nip42Handshake(
+                $this->authenticationRegistry,
+                new AuthEventVerifier($config, $policy, new Nip42Validator(new Nip42EventChecker(), new SystemClock())),
+                new AuthChallengeIssuer($this->authenticationRegistry),
+            ),
+            new EventValidityGate($this->eventValidator(), new SystemClock()),
             $this->buildReevaluator($policy, $eventStore),
-            new AuthChallengeIssuer($this->authenticationRegistry),
-            new NullLogger(),
         );
 
         $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
@@ -332,12 +370,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $policy->method('allowsAuthentication')->willReturn(PolicyRejection::restricted('authentication is limited to relay tenants'));
 
         $useCase = new ProcessAuthUseCase(
-            $this->authenticationRegistry,
-            new AuthEventVerifier($config, $policy, new Nip42Validator(new SystemClock())),
-            $this->eventValidator(),
+            new Nip42Handshake(
+                $this->authenticationRegistry,
+                new AuthEventVerifier($config, $policy, new Nip42Validator(new Nip42EventChecker(), new SystemClock())),
+                new AuthChallengeIssuer($this->authenticationRegistry),
+            ),
+            new EventValidityGate($this->eventValidator(), new SystemClock()),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
-            new AuthChallengeIssuer($this->authenticationRegistry),
-            new NullLogger(),
         );
 
         $replies = $useCase->execute($this->client, $event);
@@ -397,15 +436,14 @@ final class ProcessAuthUseCaseTest extends TestCase
         $victim = KeyMother::bobPublicKey();
         $challenge = $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
 
-        $forged = EventMother::fromRumour(new Rumour(
+        $forged = EventMother::fromRumour(Rumour::draft(
             $victim,
-            Timestamp::now(),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
+            EventContent::fromString(''),
             new TagCollection([
                 Tag::tryFromArray(['relay', 'wss://relay.example.com']),
                 Tag::tryFromArray(['challenge', (string) $challenge]),
             ]),
-            EventContent::fromString(''),
         ));
 
         $replies = $this->useCase->execute($this->client, $forged);
@@ -447,12 +485,13 @@ final class ProcessAuthUseCaseTest extends TestCase
         $clock->method('now')->willReturn(Timestamp::fromInt(time() + 601));
 
         $useCase = new ProcessAuthUseCase(
-            $this->authenticationRegistry,
-            new AuthEventVerifier($config, $policy, new Nip42Validator($clock)),
-            $this->eventValidator(),
+            new Nip42Handshake(
+                $this->authenticationRegistry,
+                new AuthEventVerifier($config, $policy, new Nip42Validator(new Nip42EventChecker(), $clock)),
+                new AuthChallengeIssuer($this->authenticationRegistry),
+            ),
+            new EventValidityGate($this->eventValidator(), $clock),
             $this->buildReevaluator($policy, $this->createStub(RelayEventStoreInterface::class)),
-            new AuthChallengeIssuer($this->authenticationRegistry),
-            new NullLogger(),
         );
 
         $replies = $useCase->execute($this->client, $event);
@@ -468,12 +507,11 @@ final class ProcessAuthUseCaseTest extends TestCase
     {
         $author = KeyPair::generate($this->signatureService());
 
-        return new Rumour(
+        return Rumour::draft(
             $author->getPublicKey(),
-            Timestamp::now(),
             EventKind::fromInt(EventKind::NOSTR_CONNECT),
-            new TagCollection([Tag::tryFromArray(['p', $this->keyPair->getPublicKey()->toHex()])]),
             EventContent::fromString('encrypted-request'),
+            new TagCollection([Tag::tryFromArray(['p', $this->keyPair->getPublicKey()->toHex()])]),
         )->sign($author, $this->signatureService());
     }
 
@@ -484,15 +522,15 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     private function createAuthEventWithTimestamp(Challenge $challenge, string $relayUrl, int $timestamp): Event
     {
-        return new Rumour(
+        return Rumour::draft(
             $this->keyPair->getPublicKey(),
-            Timestamp::fromInt($timestamp),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
+            EventContent::fromString(''),
             new TagCollection([
                 Tag::tryFromArray(['relay', $relayUrl]),
                 Tag::tryFromArray(['challenge', (string) $challenge]),
             ]),
-            EventContent::fromString(''),
+            Timestamp::fromInt($timestamp),
         )->sign($this->keyPair, $this->signatureService());
     }
 }

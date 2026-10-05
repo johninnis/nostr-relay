@@ -13,10 +13,11 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Collection\GuestWriteRuleCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Service\GuestFilterRules;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
+use Innis\Nostr\Relay\Domain\ValueObject\EventHeader;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
+use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionLimits;
 use Override;
 use Psr\Log\LoggerInterface;
 
@@ -25,7 +26,6 @@ final class RelayPolicy implements RelayPolicyInterface
     private readonly PublicKeyCollection $tenants;
     private readonly bool $guestReadFromTenants;
     private readonly GuestWriteRuleCollection $guestWriteRules;
-    private readonly int $maxEventSize;
     private readonly SubscriptionLimits $subscriptionLimits;
     private readonly GuestFilterRules $guestFilterRules;
 
@@ -36,7 +36,6 @@ final class RelayPolicy implements RelayPolicyInterface
     ) {
         $guest = $config->getGuest();
         $this->tenants = $config->getTenants();
-        $this->maxEventSize = $config->getMaxEventSize();
         $this->subscriptionLimits = $config->getSubscriptionLimits();
         $this->guestReadFromTenants = $guest->readsFromTenantsOnly();
         $this->guestWriteRules = $guest->getWriteRules();
@@ -46,10 +45,6 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function allowEventSubmission(RelayClient $client, Event $event): ?PolicyRejection
     {
-        if ($event->getContent()->getLength() > $this->maxEventSize) {
-            return PolicyRejection::blocked('event too large');
-        }
-
         if ($this->isOpenRelay() || $this->isTenant($client)) {
             return null;
         }
@@ -79,18 +74,15 @@ final class RelayPolicy implements RelayPolicyInterface
     #[Override]
     public function allowSubscription(RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): ?PolicyRejection
     {
-        // Deliberate: resource caps protect the store and apply to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0019
-        if ($this->isTenant($client)) {
-            return null;
-        }
-
-        return $this->subscriptionLimits->enforce($currentSubscriptionCount, $filters);
+        // Deliberate: the per-filter value ceiling bounds one store query and binds a tenant too; the concurrency caps apply to every untrusted client, even on an open relay, and only a tenant is exempt — see ADR-0027 and ADR-0024
+        return $this->subscriptionLimits->refuseOversizedFilters($filters)
+            ?? ($this->isTenant($client) ? null : $this->subscriptionLimits->enforce($currentSubscriptionCount, $filters));
     }
 
     #[Override]
     public function filterForClient(RelayClient $client, FilterCollection $filters): ScopedFilters
     {
-        // Deliberate: bounded before the openness and tenant checks, so the read ceiling is the one resource limit a tenant does not escape — see ADR-0019
+        // Deliberate: bounded before the openness and tenant checks, so the read ceiling is the one resource limit a tenant does not escape — see ADR-0027
         $bounded = $this->subscriptionLimits->bound($filters);
 
         if ($this->isOpenRelay() || $this->isTenant($client)) {
@@ -101,19 +93,19 @@ final class RelayPolicy implements RelayPolicyInterface
     }
 
     #[Override]
-    public function canClientReceiveEvent(RelayClient $client, Event $event): bool
+    public function canClientReceiveEvent(RelayClient $client, EventHeader $header): bool
     {
         if ($this->isOpenRelay() || $this->isTenant($client)) {
             return true;
         }
 
-        return $this->guestFilterRules->allowsEvent($event, $this->guestReadFromTenants);
+        return $this->guestFilterRules->allowsEvent($header, $this->guestReadFromTenants);
     }
 
     #[Override]
     public function isRateLimitExempt(RelayClient $client): bool
     {
-        // Deliberate: rate limiting protects the host and applies to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0019
+        // Deliberate: rate limiting protects the host and applies to every untrusted client, even on an open relay; only a tenant is exempt — see ADR-0027
         return $this->isTenant($client);
     }
 

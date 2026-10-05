@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
-use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
@@ -26,10 +25,14 @@ use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
+use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
+use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
+use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
@@ -67,19 +70,18 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $messenger = new ClientMessenger($this->clientRegistry);
         $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $admission = new SubscriptionAdmission($this->policy, new RateLimitGate($this->rateLimiter, $this->policy), $this->subscriptionRegistry);
-        $storedEventStreamer = new StoredEventStreamer($this->eventStore, $this->policy, $messenger, $this->subscriptionRegistry, new SystemClock(), $logger);
-        $activator = new SubscriptionActivator(
-            $admission,
-            $this->subscriptionRegistry,
-            $storedEventStreamer,
-            new AmphpDeferredExecutor(),
-            new AuthChallengeIssuer($this->authenticationRegistry),
-        );
-
-        $this->useCase = new CreateSubscriptionUseCase(
-            $activator,
+        $storedEventStreamer = new StoredEventStreamer(
+            new StoredEventReadGate($this->eventStore, $this->policy, new SystemClock()),
+            $messenger,
             $logger,
         );
+        $activator = new SubscriptionActivator(
+            $admission,
+            new RegisteringStoredEventStreamer(new AmphpDeferredExecutor(), $storedEventStreamer, $this->subscriptionRegistry),
+            new SubscriptionAnswers($this->subscriptionRegistry, new AuthChallengeIssuer($this->authenticationRegistry)),
+        );
+
+        $this->useCase = new CreateSubscriptionUseCase($activator);
 
         $this->client = $this->makeClient();
     }
@@ -95,10 +97,10 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     public function testSuccessfulSubscriptionCreation(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
-        $filters = new FilterCollection([new Filter()]);
+        $filters = new FilterCollection([Filter::from()]);
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
         $replies = $this->useCase->execute($this->client, $subId, $filters);
 
@@ -113,9 +115,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(
             ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
-        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
-        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter()]));
+        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([Filter::from()]));
 
         $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
         $this->assertInstanceOf(AuthMessage::class, $replies[1]);
@@ -128,11 +130,11 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->policy->method('filterForClient')->willReturn(
             ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
         );
-        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
         $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
 
-        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter()]));
+        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([Filter::from()]));
 
         $this->assertInstanceOf(AuthMessage::class, $replies[1], 'a beyond-scope request must re-issue an AUTH challenge even if one was already issued earlier');
     }
@@ -142,9 +144,9 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), new FilterCollection(), true));
-        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
-        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([new Filter(authors: PublicKeyCollection::fromHexValues(['ff']))]));
+        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues(['ff']))]));
 
         // A fully-out-of-scope request is scoped down and offered a challenge, not rejected: the subscription is still created.
         $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
@@ -155,7 +157,7 @@ final class CreateSubscriptionUseCaseTest extends TestCase
     public function testPolicyViolationReturnsClosedMessage(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
-        $filters = new FilterCollection([new Filter()]);
+        $filters = new FilterCollection([Filter::from()]);
 
         $this->policy->method('allowSubscription')
             ->willReturn(PolicyRejection::blocked('subscription not allowed'));
@@ -168,10 +170,36 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
+    public function testAnAuthRequiredRefusalIsPrecededByAnAuthChallenge(): void
+    {
+        $this->policy->method('allowSubscription')
+            ->willReturn(PolicyRejection::authRequired('we only serve DMs to their parties'));
+
+        $replies = $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
+
+        $this->assertCount(2, $replies);
+        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
+        $this->assertInstanceOf(ClosedMessage::class, $replies[1]);
+        $this->assertStringStartsWith('auth-required:', $replies[1]->getMessage());
+        $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
+    }
+
+    public function testAnAuthRequiredRefusalDoesNotReissueAChallengeTheClientAlreadyHolds(): void
+    {
+        $this->policy->method('allowSubscription')
+            ->willReturn(PolicyRejection::authRequired('we only serve DMs to their parties'));
+        $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
+
+        $replies = $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
+
+        $this->assertCount(1, $replies);
+        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
+    }
+
     public function testRateLimitReturnsClosedMessage(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
-        $filters = new FilterCollection([new Filter()]);
+        $filters = new FilterCollection([Filter::from()]);
 
         $this->rateLimited = true;
 
@@ -190,13 +218,13 @@ final class CreateSubscriptionUseCaseTest extends TestCase
                 : null);
         $this->policy->method('filterForClient')
             ->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
         $client = $this->makeClient();
 
         $replies = [
-            ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([new Filter()])),
-            ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([new Filter()])),
+            ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()])),
+            ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([Filter::from()])),
         ];
 
         $closed = array_values(array_filter($replies, static fn (RelayMessage $message): bool => $message instanceof ClosedMessage));

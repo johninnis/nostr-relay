@@ -8,18 +8,16 @@ use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\Collection\GuestWriteRuleCollection;
-use Innis\Nostr\Relay\Domain\Service\SubscriptionLimits;
 
 final readonly class RelayPolicyConfig
 {
-    private const int DEFAULT_MAX_EVENT_SIZE = 65536;
     private const int DEFAULT_MAX_SUBSCRIPTIONS = 20;
     private const int DEFAULT_MAX_FILTERS = 5;
     private const int DEFAULT_MAX_QUERY_LIMIT = 1000;
+    private const int DEFAULT_MAX_FILTER_VALUES = 5000;
 
     public function __construct(
         private PublicKeyCollection $tenants,
-        private int $maxEventSize,
         private GuestPolicy $guest,
         private SubscriptionLimits $subscriptionLimits,
     ) {
@@ -39,14 +37,14 @@ final readonly class RelayPolicyConfig
         $guest = self::asArray($config['guest'] ?? null);
         $readRules = self::listOfArrays($guest['read'] ?? null);
         $queryLimit = self::intOr($config['max_query_limit'] ?? null, self::DEFAULT_MAX_QUERY_LIMIT);
+        $filterValues = self::intOr($config['max_filter_values'] ?? null, self::DEFAULT_MAX_FILTER_VALUES);
 
-        if (!SubscriptionLimits::isQueryLimitInRange($queryLimit)) {
+        if (!SubscriptionLimits::isCeilingInRange($queryLimit) || !SubscriptionLimits::isCeilingInRange($filterValues)) {
             return null;
         }
 
         return new self(
             $tenants,
-            self::intOr($config['max_event_size'] ?? null, self::DEFAULT_MAX_EVENT_SIZE),
             new GuestPolicy(
                 self::resolveReadableKinds($guest['read'] ?? null),
                 array_any($readRules, static fn (array $rule): bool => 'tenants' === ($rule['from'] ?? null)),
@@ -56,6 +54,7 @@ final readonly class RelayPolicyConfig
                 self::intOr($config['max_subscriptions'] ?? null, self::DEFAULT_MAX_SUBSCRIPTIONS),
                 self::intOr($config['max_filters'] ?? null, self::DEFAULT_MAX_FILTERS),
                 $queryLimit,
+                $filterValues,
             ),
         );
     }
@@ -63,11 +62,6 @@ final readonly class RelayPolicyConfig
     public function getTenants(): PublicKeyCollection
     {
         return $this->tenants;
-    }
-
-    public function getMaxEventSize(): int
-    {
-        return $this->maxEventSize;
     }
 
     public function getGuest(): GuestPolicy

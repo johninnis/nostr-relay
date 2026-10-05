@@ -9,7 +9,6 @@ use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
-use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
@@ -31,7 +30,6 @@ final class InMemoryClientRegistryTest extends TestCase
             $metrics ?? $this->createStub(MetricsCollectorInterface::class),
             new NativeRandomBytesGenerator(),
             new NullLogger(),
-            2,
         );
     }
 
@@ -53,18 +51,6 @@ final class InMemoryClientRegistryTest extends TestCase
 
         $this->assertSame($connectionInfo, $client->getConnectionInfo());
         $this->assertSame(1, $manager->getClientCount());
-    }
-
-    public function testRegisterClientThrowsWhenMaxConnectionsReached(): void
-    {
-        $connection = $this->createStub(ClientConnectionInterface::class);
-
-        $this->manager->registerClient($connection, $this->createConnectionInfo());
-        $this->manager->registerClient($connection, $this->createConnectionInfo());
-
-        $this->expectException(ConnectionException::class);
-
-        $this->manager->registerClient($connection, $this->createConnectionInfo());
     }
 
     public function testRemoveClientDecrementsCount(): void

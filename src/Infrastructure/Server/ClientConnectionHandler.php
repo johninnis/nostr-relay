@@ -20,14 +20,12 @@ use Throwable;
 
 final class ClientConnectionHandler
 {
-    private const int DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
+    private const int IDLE_TIMEOUT_SECONDS = 300;
 
-    // Deliberate: websocket adapter turning a socket into a coordinated session behind an IP gate, bounded by an idle timeout — see ADR-0010
     public function __construct(
         private readonly ClientSessionCoordinator $sessionCoordinator,
         private readonly LoggerInterface $logger,
         private readonly ConnectionGateInterface $connectionGate,
-        private readonly int $idleTimeoutSeconds = self::DEFAULT_IDLE_TIMEOUT_SECONDS,
     ) {
     }
 
@@ -46,7 +44,7 @@ final class ClientConnectionHandler
             $adapter = new WebsocketClientConnection($websocketClient);
             $client = $this->sessionCoordinator->open($adapter, $connectionInfo);
 
-            while ($message = $websocketClient->receive(new TimeoutCancellation($this->idleTimeoutSeconds))) {
+            while ($message = $websocketClient->receive(new TimeoutCancellation(self::IDLE_TIMEOUT_SECONDS))) {
                 $this->sessionCoordinator->route($client, $message->buffer());
             }
         } catch (CancelledException) {
@@ -56,7 +54,7 @@ final class ClientConnectionHandler
                 'ip' => $ipAddress,
                 'reason' => $e->getMessage(),
             ]);
-            $websocketClient->sendText(new NoticeMessage($e->getMessage())->toJson());
+            $websocketClient->sendText(NoticeMessage::fromString($e->getMessage())->toJson());
         } catch (Throwable $e) {
             $this->logger->error('Client connection error', [
                 'ip' => $ipAddress,

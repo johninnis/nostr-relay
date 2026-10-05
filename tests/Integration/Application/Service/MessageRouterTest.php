@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Tests\Integration\Application\Service;
 
 use Innis\Nostr\Core\Application\Service\Nip42Validator;
-use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
-use Innis\Nostr\Core\Domain\Service\MessageDeserialiserInterface;
+use Innis\Nostr\Core\Domain\Service\Nip42EventChecker;
 use Innis\Nostr\Core\Domain\Service\NipComplianceValidator;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
@@ -42,35 +41,47 @@ use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\ClientVerbHandlers;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
+use Innis\Nostr\Relay\Application\Service\EventAudience;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
+use Innis\Nostr\Relay\Application\Service\EventValidityGate;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\MessageRouter;
+use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
+use Innis\Nostr\Relay\Application\Service\PublishingGate;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
+use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
+use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
+use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
+use Innis\Nostr\Relay\Infrastructure\EventStore\InMemoryEventStore;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
-use InvalidArgumentException;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
+
+use function Amp\delay;
 
 final class MessageRouterTest extends TestCase
 {
@@ -79,7 +90,6 @@ final class MessageRouterTest extends TestCase
         return Secp256k1Signer::create();
     }
 
-    private MessageDeserialiserInterface&Stub $deserialiser;
     private RelayEventStoreInterface&Stub $eventStore;
     private RelayPolicyInterface&Stub $policy;
     private InMemorySubscriptionRegistry $subscriptionRegistry;
@@ -90,7 +100,6 @@ final class MessageRouterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->deserialiser = $this->createStub(MessageDeserialiserInterface::class);
         $this->eventStore = $this->createStub(RelayEventStoreInterface::class);
         $this->policy = $this->createStub(RelayPolicyInterface::class);
         $this->policy->method('allowsAuthentication')->willReturn(null);
@@ -110,15 +119,14 @@ final class MessageRouterTest extends TestCase
         $messenger = new ClientMessenger($this->clientRegistry);
 
         $distributor = new EventDistributor(
-            $this->policy,
-            $this->subscriptionRegistry,
-            $this->clientRegistry,
+            new EventAudience($this->policy, $this->subscriptionRegistry, $this->clientRegistry),
             $messenger,
             $logger,
         );
 
         $signatureService = $this->signatureService();
         $eventValidator = new EventValidator($signatureService, new NipComplianceValidator($signatureService));
+        $validityGate = new EventValidityGate($eventValidator, new SystemClock());
 
         $authChallengeIssuer = new AuthChallengeIssuer($this->authenticationRegistry);
 
@@ -126,80 +134,57 @@ final class MessageRouterTest extends TestCase
 
         $admission = new SubscriptionAdmission($this->policy, $rateLimitGate, $this->subscriptionRegistry);
 
-        $eventAdmission = new EventAdmission($this->policy, $rateLimitGate, $eventValidator, new SystemClock());
-
-        $acceptedEventPublisher = new AcceptedEventPublisher(
-            $this->clientRegistry,
-            $distributor,
-            new AmphpDeferredExecutor(),
+        $eventAdmission = new EventAdmission(
+            $rateLimitGate,
+            $validityGate,
+            new PublishingGate($this->policy, $this->authenticationRegistry, $authChallengeIssuer),
         );
 
         $acceptedEventPipeline = new AcceptedEventPipeline(
             $this->eventStore,
-            $acceptedEventPublisher,
+            new AcceptedEventPublisher(
+                $this->clientRegistry,
+                $distributor,
+                new AmphpDeferredExecutor(),
+            ),
             new EventDeletionProcessor($this->eventStore, $logger),
-            $logger,
-        );
-
-        $processEvent = new ProcessEventSubmissionUseCase(
-            $eventAdmission,
-            $acceptedEventPipeline,
-            $authChallengeIssuer,
-            $this->clientRegistry,
-            $logger,
         );
 
         $storedEventStreamer = new StoredEventStreamer(
-            $this->eventStore,
-            $this->policy,
+            new StoredEventReadGate($this->eventStore, $this->policy, new SystemClock()),
             $messenger,
-            $this->subscriptionRegistry,
-            new SystemClock(),
             $logger,
         );
+
+        $subscriptionAnswers = new SubscriptionAnswers($this->subscriptionRegistry, $authChallengeIssuer);
 
         $subscriptionActivator = new SubscriptionActivator(
             $admission,
-            $this->subscriptionRegistry,
-            $storedEventStreamer,
-            new AmphpDeferredExecutor(),
-            $authChallengeIssuer,
+            new RegisteringStoredEventStreamer(new AmphpDeferredExecutor(), $storedEventStreamer, $this->subscriptionRegistry),
+            $subscriptionAnswers,
         );
-
-        $createSubscription = new CreateSubscriptionUseCase(
-            $subscriptionActivator,
-            $logger,
-        );
-
-        $closeSubscription = new CloseSubscriptionUseCase($this->subscriptionRegistry, $logger);
 
         $config = $this->createStub(RelayConfigInterface::class);
         $config->method('getRelayUrl')->willReturn(RelayUrl::tryFromString('wss://relay.example.com'));
 
-        $processAuth = new ProcessAuthUseCase(
-            $this->authenticationRegistry,
-            new AuthEventVerifier($config, $this->policy, new Nip42Validator(new SystemClock())),
-            $eventValidator,
-            new SubscriptionReevaluator($this->subscriptionRegistry, $subscriptionActivator),
-            $authChallengeIssuer,
-            $logger,
-        );
-
-        $countSubscription = new CountSubscriptionUseCase(
-            $this->eventStore,
-            $admission,
-            $authChallengeIssuer,
-            $logger,
-        );
-
         $dispatcher = new ClientMessageDispatcher(
-            $this->deserialiser,
+            new ClientVerbHandlers(
+                new ProcessEventSubmissionUseCase($eventAdmission, $acceptedEventPipeline, $logger),
+                new CreateSubscriptionUseCase($subscriptionActivator),
+                new CloseSubscriptionUseCase($this->subscriptionRegistry),
+                new ProcessAuthUseCase(
+                    new Nip42Handshake(
+                        $this->authenticationRegistry,
+                        new AuthEventVerifier($config, $this->policy, new Nip42Validator(new Nip42EventChecker(), new SystemClock())),
+                        $authChallengeIssuer,
+                    ),
+                    $validityGate,
+                    new SubscriptionReevaluator($this->subscriptionRegistry, $subscriptionActivator),
+                ),
+                new CountSubscriptionUseCase($this->eventStore, $admission, $subscriptionAnswers),
+            ),
+            $this->clientRegistry,
             $logger,
-            $processEvent,
-            $createSubscription,
-            $closeSubscription,
-            $processAuth,
-            $countSubscription,
         );
 
         $this->router = new MessageRouter($dispatcher, $messenger, $logger);
@@ -218,15 +203,13 @@ final class MessageRouterTest extends TestCase
     public function testRoutesEventMessage(): void
     {
         $keyPair = KeyPair::generate($this->signatureService());
-        $event = new Rumour(
+        $event = Rumour::draft(
             $keyPair->getPublicKey(),
-            Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            new TagCollection(),
             EventContent::fromString('test'),
+            new TagCollection(),
         )->sign($keyPair, $this->signatureService());
 
-        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new EventMessage($event));
         $this->eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
 
         $connection = $this->createMock(ClientConnectionInterface::class);
@@ -239,19 +222,18 @@ final class MessageRouterTest extends TestCase
             }));
         $client = $this->makeClient($connection);
 
-        $this->router->route($client, '["EVENT",{}]');
+        $this->router->route($client, new EventMessage($event)->toJson());
     }
 
     public function testRoutesReqMessage(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
-        $filters = new FilterCollection([new Filter()]);
+        $filters = new FilterCollection([Filter::from()]);
 
-        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new ReqMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
-        $this->router->route($this->client, '["REQ","sub-1",{}]');
+        $this->router->route($this->client, ReqMessage::from($subId, $filters)->toJson());
 
         $clientId = $this->client->getId();
         $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($clientId));
@@ -260,18 +242,13 @@ final class MessageRouterTest extends TestCase
     public function testRoutesCloseMessage(): void
     {
         $subId = SubscriptionIdMother::from('sub-1');
-        $filters = new FilterCollection([new Filter()]);
+        $filters = new FilterCollection([Filter::from()]);
 
-        $this->deserialiser->method('deserialiseClientMessage')
-            ->willReturnOnConsecutiveCalls(
-                new ReqMessage($subId, $filters),
-                new CloseMessage($subId),
-            );
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn(new EventCollection([]));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
-        $this->router->route($this->client, '["REQ","sub-1",{}]');
-        $this->router->route($this->client, '["CLOSE","sub-1"]');
+        $this->router->route($this->client, ReqMessage::from($subId, $filters)->toJson());
+        $this->router->route($this->client, new CloseMessage($subId)->toJson());
 
         $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
@@ -291,20 +268,17 @@ final class MessageRouterTest extends TestCase
         $client = $this->makeClient($connection);
         $challenge = $this->authenticationRegistry->getOrCreateChallenge($client->getId());
 
-        $event = new Rumour(
+        $event = Rumour::draft(
             $keyPair->getPublicKey(),
-            Timestamp::now(),
             EventKind::fromInt(EventKind::CLIENT_AUTH),
+            EventContent::fromString(''),
             new TagCollection([
                 Tag::tryFromArray(['relay', 'wss://relay.example.com']),
                 Tag::tryFromArray(['challenge', (string) $challenge]),
             ]),
-            EventContent::fromString(''),
         )->sign($keyPair, $this->signatureService());
 
-        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new AuthMessage($event));
-
-        $this->router->route($client, '["AUTH",{}]');
+        $this->router->route($client, AuthMessage::fromEvent($event)->toJson());
 
         $this->assertTrue($this->authenticationRegistry->isAuthenticated($client->getId()));
     }
@@ -312,9 +286,8 @@ final class MessageRouterTest extends TestCase
     public function testRoutesCountMessage(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
-        $filters = new FilterCollection([new Filter()]);
+        $filters = new FilterCollection([Filter::from()]);
 
-        $this->deserialiser->method('deserialiseClientMessage')->willReturn(new CountMessage($subId, $filters));
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(42));
 
@@ -327,15 +300,80 @@ final class MessageRouterTest extends TestCase
             }));
         $client = $this->makeClient($connection);
 
-        $this->router->route($client, '["COUNT","count-1",{}]');
+        $this->router->route($client, CountMessage::from($subId, $filters)->toJson());
+    }
+
+    public function testAReqWhoseFiltersCannotMatchIsAnsweredWithEoseAndNoEvents(): void
+    {
+        $this->routeAgainstAStoreHoldingOneNote();
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $sent[] = $json;
+        });
+
+        $this->router->route($this->makeClient($connection), '["REQ","sub-1",{"authors":[]},{"since":2,"until":1}]');
+        delay(0.01);
+
+        $this->assertSame(['["EOSE","sub-1"]'], $sent);
+    }
+
+    public function testAReqWithMoreFiltersThanThePolicyServesIsClosedByThePolicy(): void
+    {
+        $this->policy->method('allowSubscription')->willReturn(PolicyRejection::blocked('too many filters (max 5)'));
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $sent[] = $json;
+        });
+
+        $this->router->route($this->makeClient($connection), '["REQ","sub-1"'.str_repeat(',{"kinds":[1]}', 25).']');
+
+        $this->assertSame(['["CLOSED","sub-1","blocked: too many filters (max 5)"]'], $sent);
+    }
+
+    public function testACountWhoseFiltersCannotMatchIsAnsweredWithZero(): void
+    {
+        $this->routeAgainstAStoreHoldingOneNote();
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $sent[] = $json;
+        });
+
+        $this->router->route($this->makeClient($connection), '["COUNT","count-1",{"kinds":[]}]');
+
+        $this->assertCount(1, $sent);
+        $this->assertSame(0, RelayCountMessage::tryFromJson($sent[0])?->getCount()->toInt());
+    }
+
+    public function testAReqWhosePubkeyConditionIsNotLowercaseHexIsAnsweredWithANotice(): void
+    {
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $sent[] = $json;
+        });
+
+        $this->router->route($this->makeClient($connection), '["REQ","sub-1",{"kinds":[24133],"#p":["'.str_repeat('A', 64).'"]}]');
+
+        $this->assertCount(1, $sent);
+        $this->assertNotNull(NoticeMessage::tryFromJson($sent[0]));
+    }
+
+    private function routeAgainstAStoreHoldingOneNote(): void
+    {
+        $store = new InMemoryEventStore();
+        $keyPair = KeyPair::generate($this->signatureService());
+        $store->store(Rumour::draft($keyPair->getPublicKey(), EventKind::fromInt(EventKind::TEXT_NOTE), EventContent::fromString('stored'))->sign($keyPair, $this->signatureService()));
+
+        $this->policy->method('filterForClient')->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
+        $this->eventStore->method('findByFilters')->willReturnCallback($store->findByFilters(...));
+        $this->eventStore->method('countByFilters')->willReturnCallback($store->countByFilters(...));
     }
 
     public function testSendsNoticeForInvalidMessage(): void
     {
-        $this->deserialiser
-            ->method('deserialiseClientMessage')
-            ->willThrowException(new InvalidArgumentException('bad json'));
-
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
@@ -350,19 +388,19 @@ final class MessageRouterTest extends TestCase
 
     public function testSendsNoticeForUnexpectedError(): void
     {
-        $this->deserialiser
-            ->method('deserialiseClientMessage')
-            ->willThrowException(new RuntimeException('unexpected'));
+        $sent = [];
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
+            $sent[] = $json;
 
-        $connection = $this->createMock(ClientConnectionInterface::class);
-        $connection->expects($this->once())->method('sendText')
-            ->with($this->callback(static function (string $json): bool {
-                $message = NoticeMessage::tryFromJson($json);
-
-                return null !== $message && str_contains($message->getMessage(), 'Internal server error');
-            }));
+            if (1 === count($sent)) {
+                throw new RuntimeException('unexpected');
+            }
+        });
         $client = $this->makeClient($connection);
 
-        $this->router->route($client, '[]');
+        $this->router->route($client, 'invalid');
+
+        $this->assertSame('Internal server error', NoticeMessage::tryFromJson($sent[1] ?? '')?->getMessage());
     }
 }

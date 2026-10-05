@@ -20,10 +20,12 @@ use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
+use Innis\Nostr\Relay\Domain\ValueObject\EncodedEvent;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
+use InvalidArgumentException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -52,7 +54,7 @@ final class ClientMessengerTest extends TestCase
 
     public function testDeliversMessageToTheClientConnection(): void
     {
-        $message = new NoticeMessage('hello');
+        $message = NoticeMessage::fromString('hello');
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')->with($message->toJson());
 
@@ -66,25 +68,53 @@ final class ClientMessengerTest extends TestCase
 
         $this->expectNotToPerformAssertions();
 
-        $this->messenger->send($client, new NoticeMessage('hello'));
+        $this->messenger->send($client, NoticeMessage::fromString('hello'));
     }
 
-    public function testSendingEventMessageIncrementsEventsSent(): void
+    public function testAnEncodedEventIsDeliveredAsItsEventFrame(): void
+    {
+        $encoded = EncodedEvent::of($this->createEvent());
+        $connection = $this->createMock(ClientConnectionInterface::class);
+        $connection->expects($this->once())->method('sendText')->with($encoded->framedFor(SubscriptionIdMother::from('sub-1')));
+
+        $this->messenger->sendEvent($this->register($connection), SubscriptionIdMother::from('sub-1'), $encoded);
+    }
+
+    public function testSendingAnEncodedEventIncrementsEventsSent(): void
     {
         $client = $this->register($this->createStub(ClientConnectionInterface::class));
-        $message = new EventMessage(SubscriptionIdMother::from('sub-1'), $this->createEvent());
+        $encoded = EncodedEvent::of($this->createEvent());
 
-        $this->messenger->send($client, $message);
-        $this->messenger->send($client, $message);
+        $this->messenger->sendEvent($client, SubscriptionIdMother::from('sub-1'), $encoded);
+        $this->messenger->sendEvent($client, SubscriptionIdMother::from('sub-1'), $encoded);
 
         $this->assertSame(2, $this->registry->getSessionCounters($client->getId())->getEventsSent());
+    }
+
+    public function testAnEventMessageIsRefusedSoEveryEventFrameTakesOnePath(): void
+    {
+        $client = $this->register($this->createStub(ClientConnectionInterface::class));
+
+        $this->expectException(InvalidArgumentException::class);
+
+        $this->messenger->send($client, new EventMessage(SubscriptionIdMother::from('sub-1'), $this->createEvent()));
+    }
+
+    public function testSendingAnEncodedEventToAnUnknownClientIsANoOp(): void
+    {
+        $client = $this->register($this->createStub(ClientConnectionInterface::class));
+        $this->registry->removeClient($client->getId());
+
+        $this->expectNotToPerformAssertions();
+
+        $this->messenger->sendEvent($client, SubscriptionIdMother::from('sub-1'), EncodedEvent::of($this->createEvent()));
     }
 
     public function testSendingNonEventMessageDoesNotIncrementEventsSent(): void
     {
         $client = $this->register($this->createStub(ClientConnectionInterface::class));
 
-        $this->messenger->send($client, new NoticeMessage('hi'));
+        $this->messenger->send($client, NoticeMessage::fromString('hi'));
 
         $this->assertSame(0, $this->registry->getSessionCounters($client->getId())->getEventsSent());
     }
@@ -94,12 +124,11 @@ final class ClientMessengerTest extends TestCase
         $connection = $this->createStub(ClientConnectionInterface::class);
         $connection->method('sendText')->willThrowException(ConnectionException::peerDisconnected());
         $client = $this->register($connection);
-        $message = new EventMessage(SubscriptionIdMother::from('sub-1'), $this->createEvent());
 
         $this->expectException(ConnectionException::class);
 
         try {
-            $this->messenger->send($client, $message);
+            $this->messenger->sendEvent($client, SubscriptionIdMother::from('sub-1'), EncodedEvent::of($this->createEvent()));
         } finally {
             $this->assertSame(0, $this->registry->getSessionCounters($client->getId())->getEventsSent());
         }
@@ -107,12 +136,11 @@ final class ClientMessengerTest extends TestCase
 
     private function createEvent(): Event
     {
-        return EventMother::fromRumour(new Rumour(
+        return EventMother::fromRumour(Rumour::draft(
             KeyMother::alicePublicKey(),
-            Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            new TagCollection(),
             EventContent::fromString('test'),
+            new TagCollection(),
         ));
     }
 }

@@ -18,14 +18,17 @@ use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RateLimiterInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
+use Innis\Nostr\Relay\Application\Service\EventValidityGate;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
+use Innis\Nostr\Relay\Application\Service\PublishingGate;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
-use Innis\Nostr\Relay\Domain\ValueObject\EventAdmitted;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
-use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
+use Innis\Nostr\Relay\Domain\ValueObject\PublishingAnswer;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use PHPUnit\Framework\TestCase;
@@ -37,33 +40,44 @@ final class EventAdmissionTest extends TestCase
 
     public function testAnEventWithNoExpiryIsAdmitted(): void
     {
-        $this->assertInstanceOf(EventAdmitted::class, $this->admit($this->event(null)));
+        $this->assertTrue($this->admit($this->event(null))->isAdmitted());
     }
 
     public function testAnAlreadyExpiredEventIsRefusedAsInvalid(): void
     {
-        $outcome = $this->admit($this->event(self::NOW - 1));
+        $rejection = $this->admit($this->event(self::NOW - 1))->getRejection();
 
-        $this->assertInstanceOf(PolicyRejection::class, $outcome);
-        $this->assertSame('invalid: event has expired', $outcome->toWireReason());
+        $this->assertNotNull($rejection);
+        $this->assertSame('invalid: event has expired', $rejection->toWireReason());
     }
 
     public function testAnEventIsRefusedAtTheExpiryInstant(): void
     {
-        $this->assertInstanceOf(PolicyRejection::class, $this->admit($this->event(self::NOW)));
+        $this->assertFalse($this->admit($this->event(self::NOW))->isAdmitted());
     }
 
     public function testAnEventExpiringOneSecondLaterIsAdmitted(): void
     {
-        $this->assertInstanceOf(EventAdmitted::class, $this->admit($this->event(self::NOW + 1)));
+        $this->assertTrue($this->admit($this->event(self::NOW + 1))->isAdmitted());
     }
 
     public function testExpiryIsJudgedAgainstTheInjectedClockNotTheWallClock(): void
     {
-        $this->assertInstanceOf(EventAdmitted::class, $this->admit($this->event(self::NOW + 1), now: self::NOW - 3600));
+        $this->assertTrue($this->admit($this->event(self::NOW + 1), now: self::NOW - 3600)->isAdmitted());
     }
 
-    private function admit(Event $event, int $now = self::NOW): PolicyRejection|EventAdmitted
+    public function testValidityIsJudgedAgainstTheInjectedClockNotTheWallClock(): void
+    {
+        $validator = $this->createMock(EventValidatorInterface::class);
+        $validator->expects($this->once())->method('validateEvent')->with(
+            $this->anything(),
+            $this->callback(static fn (Timestamp $reference): bool => self::NOW === $reference->toInt()),
+        );
+
+        $this->admit($this->event(null), validator: $validator);
+    }
+
+    private function admit(Event $event, int $now = self::NOW, ?EventValidatorInterface $validator = null): PublishingAnswer
     {
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('allowEventSubmission')->willReturn(null);
@@ -75,11 +89,12 @@ final class EventAdmissionTest extends TestCase
         $clock = $this->createStub(ClockInterface::class);
         $clock->method('now')->willReturn(Timestamp::fromInt($now));
 
+        $sessions = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+
         $admission = new EventAdmission(
-            $policy,
             new RateLimitGate($rateLimiter, $policy),
-            $this->createStub(EventValidatorInterface::class),
-            $clock,
+            new EventValidityGate($validator ?? $this->createStub(EventValidatorInterface::class), $clock),
+            new PublishingGate($policy, $sessions, new AuthChallengeIssuer($sessions)),
         );
 
         return $admission->admit($this->client(), $event);
@@ -103,12 +118,12 @@ final class EventAdmissionTest extends TestCase
     {
         $tags = null === $expiration ? [] : [Tag::tryFromArray(['expiration', (string) $expiration])];
 
-        return EventMother::fromRumour(new Rumour(
+        return EventMother::fromRumour(Rumour::draft(
             KeyMother::alicePublicKey(),
-            Timestamp::fromInt(self::NOW - 60),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            new TagCollection($tags),
             EventContent::fromString('hello'),
+            new TagCollection($tags),
+            Timestamp::fromInt(self::NOW - 60),
         ));
     }
 }

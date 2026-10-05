@@ -5,20 +5,15 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage;
-use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
-use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
-use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
+use Innis\Nostr\Relay\Domain\ValueObject\EncodedEvent;
+use Innis\Nostr\Relay\Domain\ValueObject\EventRecipient;
 use Psr\Log\LoggerInterface;
 
 final readonly class EventDistributor
 {
-    // Deliberate: fan-out coordinates policy, subscription lookup, registry, messenger and logging — see ADR-0010
     public function __construct(
-        private RelayPolicyInterface $policy,
-        private SubscriptionLookupInterface $subscriptionLookup,
-        private ClientRegistryInterface $registry,
+        private EventAudience $audience,
         private ClientMessengerInterface $messenger,
         private LoggerInterface $logger,
     ) {
@@ -27,18 +22,17 @@ final readonly class EventDistributor
     // Deliberate: no expiry check here — admission is the only way an event reaches this, and it refuses one that has already expired — see ADR-0014
     public function distributeToSubscribers(Event $event): void
     {
-        $subscriptionsWithClients = $this->subscriptionLookup->getSubscriptionsForEvent(
-            $event->getKind()
-        );
+        $recipients = $this->audience->audienceFor($event);
 
-        if ($subscriptionsWithClients->isEmpty()) {
+        if ($recipients->isEmpty()) {
             return;
         }
 
+        $encoded = EncodedEvent::of($event);
         $distributionCount = 0;
 
-        foreach ($subscriptionsWithClients as $match) {
-            if ($this->sendToMatchingClient($match, $event)) {
+        foreach ($recipients as $recipient) {
+            if ($this->send($recipient, $encoded)) {
                 ++$distributionCount;
             }
         }
@@ -51,28 +45,14 @@ final readonly class EventDistributor
         }
     }
 
-    private function sendToMatchingClient(SubscriptionMatch $match, Event $event): bool
+    private function send(EventRecipient $recipient, EncodedEvent $encoded): bool
     {
-        if (!$match->getSubscription()->matchesEvent($event)) {
-            return false;
-        }
-
-        $client = $this->registry->getClient($match->getClientId());
-
-        if (!$client instanceof RelayClient) {
-            return false;
-        }
-
-        if (!$this->policy->canClientReceiveEvent($client, $event)) {
-            return false;
-        }
-
         try {
-            $this->messenger->send($client, new EventMessage($match->getSubscription()->getId(), $event));
+            $this->messenger->sendEvent($recipient->getClient(), $recipient->getSubscriptionId(), $encoded);
         } catch (ConnectionException $e) {
             $this->logger->debug('Skipping send to disconnected subscriber', [
-                'client_id' => (string) $match->getClientId(),
-                'subscription_id' => (string) $match->getSubscription()->getId(),
+                'client_id' => (string) $recipient->getClient()->getId(),
+                'subscription_id' => (string) $recipient->getSubscriptionId(),
                 'reason' => $e->getMessage(),
             ]);
 

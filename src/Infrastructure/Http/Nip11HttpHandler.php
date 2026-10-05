@@ -12,8 +12,6 @@ use Innis\Nostr\Relay\Application\Port\Nip11InfoProviderInterface;
 
 final readonly class Nip11HttpHandler
 {
-    private const int ENCODING_FLAGS = JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
-
     public function __construct(
         private Nip11InfoProviderInterface $infoProvider,
     ) {
@@ -28,7 +26,7 @@ final readonly class Nip11HttpHandler
         return new Response(
             HttpStatus::OK,
             ['content-type' => Nip11Info::MEDIA_TYPE],
-            json_encode($this->infoProvider->getNip11Info()->toArray(), self::ENCODING_FLAGS),
+            $this->infoProvider->getNip11Info()->toJson(),
         );
     }
 

@@ -32,13 +32,4 @@ final class ConnectionExceptionTest extends TestCase
 
         $this->assertSame($ipAddress, $exception->getIpAddress());
     }
-
-    public function testMaxConnectionsReachedIncludesIpInMessage(): void
-    {
-        $ipAddress = IpAddress::fromString('192.168.1.1');
-        $exception = ConnectionException::maxConnectionsReached($ipAddress);
-
-        $this->assertStringContainsString('192.168.1.1', $exception->getMessage());
-        $this->assertSame($ipAddress, $exception->getIpAddress());
-    }
 }

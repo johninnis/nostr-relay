@@ -25,7 +25,7 @@ final class MessageRouter
                 $this->messenger->send($client, $reply);
             }
         } catch (Throwable $e) {
-            $this->messenger->send($client, new NoticeMessage('Internal server error'));
+            $this->messenger->send($client, NoticeMessage::fromString('Internal server error'));
             $this->logger->error('Message routing error', [
                 'client_id' => (string) $client->getId(),
                 'error' => $e->getMessage(),

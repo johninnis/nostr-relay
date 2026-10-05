@@ -18,6 +18,8 @@ A record is never edited to change its decision; it is superseded by a later rec
 
 Where a decision reads like a smell at the call site, the code carries a one-line Chesterton's-Fence comment pointing at the record — `// Deliberate: … — see ADR-NNNN` — backed by a test that fails if the design is undone. The comment, the test, and the record together are what stop a well-meaning refactor.
 
+A record's filename is its four-digit number and a kebab-case slug of its title, at most 95 characters including the `.md` extension, the longest path component JSR accepts. A longer title is shortened in the filename, never in the record's heading.
+
 ## Consequences
 
 - Design rationale lives in `docs/adr/`, alongside the code, and survives the people who made it. It is not inlined into the `README.md`, which stays user-facing documentation.

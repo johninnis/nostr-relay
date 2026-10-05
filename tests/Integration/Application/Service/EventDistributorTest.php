@@ -20,6 +20,7 @@ use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\EventAudience;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
@@ -29,6 +30,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
+use Innis\Nostr\Relay\Tests\Support\RecordingClientConnection;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\MockObject\Stub;
@@ -57,9 +59,7 @@ final class EventDistributorTest extends TestCase
         );
 
         $this->distributor = new EventDistributor(
-            $this->policy,
-            $this->subscriptionRegistry,
-            $this->clientRegistry,
+            new EventAudience($this->policy, $this->subscriptionRegistry, $this->clientRegistry),
             new ClientMessenger($this->clientRegistry),
             $logger,
         );
@@ -67,12 +67,11 @@ final class EventDistributorTest extends TestCase
 
     private function createEvent(): Event
     {
-        return EventMother::fromRumour(new Rumour(
+        return EventMother::fromRumour(Rumour::draft(
             KeyMother::alicePublicKey(),
-            Timestamp::now(),
             EventKind::fromInt(EventKind::TEXT_NOTE),
-            new TagCollection(),
             EventContent::fromString('test content'),
+            new TagCollection(),
         ));
     }
 
@@ -85,7 +84,7 @@ final class EventDistributorTest extends TestCase
         $connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
         $client = $this->clientRegistry->registerClient($connection, $connectionInfo);
 
-        $filter = new Filter(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null);
+        $filter = Filter::from(kinds: null !== $kinds ? EventKindCollection::fromInts($kinds) : null);
         $subscription = Subscription::create(SubscriptionIdMother::from($subIdStr), new FilterCollection([$filter]))
             ->withState(SubscriptionState::Active);
 
@@ -147,5 +146,23 @@ final class EventDistributorTest extends TestCase
         $this->registerClientWithSubscription('sub-live', [EventKind::TEXT_NOTE], $liveConnection);
 
         $this->distributor->distributeToSubscribers($this->createEvent());
+    }
+
+    public function testEachSubscriberReceivesTheEventsOwnEncodingUnderItsOwnSubscriptionId(): void
+    {
+        $this->policy->method('canClientReceiveEvent')->willReturn(true);
+        $this->metrics->expects($this->exactly(2))->method('incrementEventsSent');
+        $first = new RecordingClientConnection();
+        $second = new RecordingClientConnection();
+        $this->registerClientWithSubscription('sub-1', [EventKind::TEXT_NOTE], $first);
+        $this->registerClientWithSubscription('sub-2', [EventKind::TEXT_NOTE], $second);
+        $event = $this->createEvent();
+
+        $this->distributor->distributeToSubscribers($event);
+
+        $this->assertSame(
+            [['["EVENT","sub-1",'.$event->toJson().']'], ['["EVENT","sub-2",'.$event->toJson().']']],
+            [$first->sentFrames(), $second->sentFrames()],
+        );
     }
 }

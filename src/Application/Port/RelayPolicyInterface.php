@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\ValueObject\EventHeader;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
@@ -23,7 +24,7 @@ interface RelayPolicyInterface
 
     public function filterForClient(RelayClient $client, FilterCollection $filters): ScopedFilters;
 
-    public function canClientReceiveEvent(RelayClient $client, Event $event): bool;
+    public function canClientReceiveEvent(RelayClient $client, EventHeader $header): bool;
 
     public function isRateLimitExempt(RelayClient $client): bool;
 }
