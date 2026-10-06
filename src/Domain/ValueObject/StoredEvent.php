@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Domain\ValueObject;
 
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 
 final readonly class StoredEvent
@@ -21,27 +20,9 @@ final readonly class StoredEvent
     {
         return new self(
             EventHeader::of($event),
-            self::earliestExpiry($event->getTags()->getValuesByType(TagType::expiration())),
+            $event->expiresAt(),
             EncodedEvent::of($event),
         );
-    }
-
-    /**
-     * @param iterable<string> $statedExpiries
-     */
-    public static function earliestExpiry(iterable $statedExpiries): ?Timestamp
-    {
-        $earliest = null;
-
-        foreach ($statedExpiries as $value) {
-            $expiry = Timestamp::tryFromDecimalString($value);
-
-            if (null !== $expiry && (null === $earliest || $expiry->isBefore($earliest))) {
-                $earliest = $expiry;
-            }
-        }
-
-        return $earliest;
     }
 
     public function getHeader(): EventHeader

@@ -25,7 +25,7 @@ Stored events travel as `StoredEvent`: the event's `EventHeader` (id, author, ki
 
 An `EVENT` frame is built in one place, `EncodedEvent::framedFor(SubscriptionId)`, which JSON-encodes the frame type and subscription id and splices the bytes in after them unchanged. `ClientMessengerInterface::sendEvent()` is the one way an event reaches a client, stored or live, and it is where a sent event is counted; `send()` refuses an `EventMessage` so the two paths cannot drift. `EventDistributor` encodes a live event once per distribution, the first time a subscriber is found to receive it, and hands every recipient the same `EncodedEvent`.
 
-The expiry travels as the earliest stated expiry that parses, through `StoredEvent::earliestExpiry()`, which a store reading expiries from its own index uses too. An event is expired once any stated expiry has passed, and that holds exactly when the earliest one has, so the streamer's answer is the one `Event::isExpiredAt()` gives; ADR-0014's rule and its injected clock are unchanged.
+The expiry travels as the earliest stated expiry that parses, derived by nostr-core — `Event::expiresAt()` on the write path, and `ExpirationDerivation::earliestStated()` for a store reading expiries from its own index. An event is expired once any stated expiry has passed, and that holds exactly when the earliest one has, so the streamer's answer is the one `Event::isExpiredAt()` gives; ADR-0014's rule and its injected clock are unchanged. The rule lives in nostr-core (nostr-core ADR-0071, shared ADR-0011); this package holds no copy of it.
 
 ## Consequences
 

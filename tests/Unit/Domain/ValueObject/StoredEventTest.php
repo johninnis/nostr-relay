@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Service\ExpirationDerivation;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
@@ -57,7 +58,7 @@ final class StoredEventTest extends TestCase
     {
         $event = self::event($expiries);
         $now = Timestamp::fromInt(self::NOW);
-        $fromIndex = new StoredEvent(EventHeader::of($event), StoredEvent::earliestExpiry($expiries), EncodedEvent::of($event));
+        $fromIndex = new StoredEvent(EventHeader::of($event), ExpirationDerivation::earliestStated($expiries), EncodedEvent::of($event));
 
         self::assertSame($event->isExpiredAt($now), $fromIndex->isExpiredAt($now));
     }
@@ -84,16 +85,6 @@ final class StoredEventTest extends TestCase
         yield 'unparseable beside future' => [['soon', $future]];
         yield 'unparseable beside passed' => [['soon', $past]];
         yield 'beyond the integer range' => [['99999999999999999999999']];
-    }
-
-    public function testTheEarliestExpiryIgnoresValuesThatDoNotParse(): void
-    {
-        self::assertSame(self::NOW, StoredEvent::earliestExpiry(['soon', (string) (self::NOW + 5), (string) self::NOW, ''])?->toInt());
-    }
-
-    public function testAnEventStatingNoParseableExpiryHasNone(): void
-    {
-        self::assertNull(StoredEvent::earliestExpiry(['soon', '0100']));
     }
 
     /**
