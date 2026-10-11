@@ -21,6 +21,7 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **NIP-67 EOSE hint** - A `REQ` narrowed to what a guest may read ends with an `AUTH` challenge and an `EOSE` carrying the `"auth"` hint; one narrowed to nothing is refused `CLOSED` `auth-required:`
 - **NIP-59 / NIP-17 gift wraps** - A kind 1059 or 21059 event is served only to a connection authenticated as a key its `p` tag names, whatever the policy grants; a filter naming no kind matches no gift wrap (see [ADR-0035](docs/adr/0035-a-gift-wrap-is-served-only-to-the-key-it-names.md))
 - **NIP-45 COUNT** - COUNT message support
+- **NIP-50 search** - A filter's `search` reaches the store with the rest of the filter; the built-in `InMemoryEventStore` matches it through nostr-core's `Filter`, and a durable store answers it as it can
 - **NIP-70 protected events** - An event carrying a tag named `-` (NIP-70's `["-"]`, or the same name followed by any values) is admitted only from a connection authenticated as its author, whatever the policy; an unauthenticated connection is answered `auth-required`, preceded by a challenge when it holds none (see [ADR-0023](docs/adr/0023-a-protected-event-is-admitted-only-from-its-authenticated-author-whatever-the-policy.md))
 - **Ephemeral events** - Kinds 20000-29999 skip storage
 - **Host-owned HTTP server** - The relay is an `Amp\Http\Server\RequestHandler` you mount on your own `HttpServer`, so the host controls binding, middleware (CORS, forwarded headers, compression) and lifecycle, and serves its own routes on the same origin
@@ -114,7 +115,7 @@ $config = new MyRelayConfig();
 $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->getRelayUrl(), [
     'name' => 'My Nostr Relay',
     'pubkey' => 'your-hex-pubkey',
-    'supported_nips' => [1, 9, 11, 40, 42, 45, 70],
+    'supported_nips' => [1, 9, 11, 17, 40, 42, 45, 50, 59, 67, 70],
 ]));
 
 $factory = (new RelayServerFactory(
