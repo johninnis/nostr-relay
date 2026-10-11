@@ -22,5 +22,7 @@ A policy could want more: a recipient check against an event's `p` tags, say. Gi
 
 - Deciding whether a client receives a stored event costs no parse, and the live and stored paths ask the policy the same question in the same shape.
 - A host policy implementing `canClientReceiveEvent` must change its signature. The two built-in callers of `GuestFilterRules::allowsEvent` pass a header.
-- A policy cannot decide delivery on tags or content. Scoping on those belongs in `filterForClient`, where the store applies it before anything is read. A host that genuinely needs a per-event decision over the tags is asking to reverse this record, and the cost it must accept is a parse per delivered stored event.
+- A policy cannot decide delivery on tags or content. Scoping on those is done by narrowing the request's filters before the store reads anything: a policy's in `filterForClient`, and the relay's own confinement of gift wraps to the keys they name, which `ReadScopeGate` applies after every policy (ADR-0035). A host that genuinely needs a per-event decision over the tags is asking to reverse this record, and the cost it must accept is a parse per delivered stored event.
+- The relay's own `DeliveryGate` asks one question before the policy's: whether the event is a gift wrap and the request holds a filter naming no kind, which it answers from the header's kind and the request's own filters (ADR-0035).
 - Do not widen the header with fields the store cannot read from an index. The header is what makes the check cheap; a field that forces a parse to fill it undoes ADR-0021 by the back door.
+- Shared decision: nostr-adrs ADR-0009.

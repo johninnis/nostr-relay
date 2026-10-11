@@ -27,26 +27,30 @@ use RuntimeException;
 
 final class InMemoryEventStoreTest extends TestCase
 {
-    public function testAnEventIsStoredOnceAndThenSeenAsADuplicate(): void
+    public function testANewEventIsStored(): void
     {
-        $store = new InMemoryEventStore();
-        $event = $this->note('hello', 100);
+        $this->assertSame(EventStoreOutcome::Stored, new InMemoryEventStore()->store($this->note('hello', 100)));
+    }
 
-        $this->assertSame(EventStoreOutcome::Stored, $store->store($event));
-        $this->assertSame(EventStoreOutcome::Duplicate, $store->store($event));
+    public function testAnEventStoredAgainIsSeenAsADuplicate(): void
+    {
+        $store = $this->storeHolding($this->note('hello', 100));
+
+        $this->assertSame(EventStoreOutcome::Duplicate, $store->store($this->note('hello', 100)));
+    }
+
+    public function testANewerReplaceableEventIsStored(): void
+    {
+        $store = $this->storeHolding($this->profile('first', 100));
+
+        $this->assertSame(EventStoreOutcome::Stored, $store->store($this->profile('second', 200)));
     }
 
     public function testANewerReplaceableEventReplacesTheOlder(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->profile('first', 100));
-        $newer = $this->profile('second', 200);
+        $store = $this->storeHolding($this->profile('first', 100), $this->profile('second', 200));
 
-        $this->assertSame(EventStoreOutcome::Stored, $store->store($newer));
-
-        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::METADATA]]));
-
-        $this->assertSame(['second'], self::contents($found));
+        $this->assertSame(['second'], $this->contentsOfKind($store, EventKind::METADATA));
     }
 
     public function testAnOlderReplaceableEventIsSuperseded(): void
@@ -68,14 +72,9 @@ final class InMemoryEventStoreTest extends TestCase
 
     public function testAnAddressableEventReplacesTheSameIdentifier(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->article('draft', 'a-slug', 100));
-        $store->store($this->article('revised', 'a-slug', 200));
+        $store = $this->storeHolding($this->article('draft', 'a-slug', 100), $this->article('revised', 'a-slug', 200));
 
-        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]]));
-
-        $this->assertCount(1, $found);
-        $this->assertSame('revised', self::contents($found)[0] ?? null);
+        $this->assertSame(['revised'], $this->contentsOfKind($store, EventKind::LONGFORM_CONTENT));
     }
 
     public function testAnOrdinaryKindIsNeverReplaced(): void
@@ -122,14 +121,51 @@ final class InMemoryEventStoreTest extends TestCase
         $this->assertSame(['note 3', 'note 2', 'note 1'], self::contents($found));
     }
 
+    public function testEventsCreatedAtOnceComeBackLowerIdFirst(): void
+    {
+        [$lower, $higher] = $this->twoNotesCreatedAtOnceLowerIdFirst();
+        $store = $this->storeHolding($higher, $lower);
+
+        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]));
+
+        $this->assertSame([$lower->getId()->toHex(), $higher->getId()->toHex()], self::ids($found));
+    }
+
+    public function testAFilterLimitedToOneOfTwoEventsCreatedAtOnceKeepsTheLowerId(): void
+    {
+        [$lower, $higher] = $this->twoNotesCreatedAtOnceLowerIdFirst();
+        $store = $this->storeHolding($higher, $lower);
+
+        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 1]));
+
+        $this->assertSame([$lower->getId()->toHex()], self::ids($found));
+    }
+
+    public function testTheUnionOfTwoFiltersListsEventsCreatedAtOnceLowerIdFirst(): void
+    {
+        [$lower, $higher] = $this->twoNotesCreatedAtOnceLowerIdFirst();
+        $store = $this->storeHolding($higher, $lower);
+
+        $found = $store->findByFilters(new FilterCollection([
+            Filter::tryFromArray(['ids' => [$higher->getId()->toHex()]]) ?? throw new RuntimeException('Invalid filter'),
+            Filter::tryFromArray(['ids' => [$lower->getId()->toHex()]]) ?? throw new RuntimeException('Invalid filter'),
+        ]));
+
+        $this->assertSame([$lower->getId()->toHex(), $higher->getId()->toHex()], self::ids($found));
+    }
+
     public function testACountIgnoresTheFiltersPageSize(): void
     {
         $store = $this->storeWithNotes(12);
 
-        $counted = $store->countByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 3]));
+        $this->assertSame(12, $store->countByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 3]))->toInt());
+    }
 
-        $this->assertSame(12, $counted->toInt());
-        $this->assertFalse($counted->isApproximate());
+    public function testACountIsExact(): void
+    {
+        $store = $this->storeWithNotes(12);
+
+        $this->assertFalse($store->countByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 3]))->isApproximate());
     }
 
     public function testACountOfTwoOverlappingFiltersCountsAnEventOnce(): void
@@ -170,13 +206,19 @@ final class InMemoryEventStoreTest extends TestCase
         $this->assertSame([$note->toJson()], array_map(static fn (StoredEvent $stored): string => $stored->getEncoded()->toJson(), $found->toArray()));
     }
 
-    public function testAReplaceableCoordinateDeletesTheAuthorsVersionUpToTheRequest(): void
+    public function testAReplaceableCoordinateReportsOneDeletion(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->profile('profile', 100));
+        $store = $this->storeHolding($this->profile('profile', 100));
 
         $this->assertSame(1, $this->deleteByCoordinate($store, EventKind::METADATA, '', 150));
-        $this->assertCount(0, $store->findByFilters($this->filters(['kinds' => [EventKind::METADATA]])));
+    }
+
+    public function testAReplaceableCoordinateDeletesTheAuthorsVersionUpToTheRequest(): void
+    {
+        $store = $this->storeHolding($this->profile('profile', 100));
+        $this->deleteByCoordinate($store, EventKind::METADATA, '', 150);
+
+        $this->assertSame([], $this->contentsOfKind($store, EventKind::METADATA));
     }
 
     public function testAReplaceableCoordinateDeletesAVersionCreatedAtTheRequestsOwnTimestamp(): void
@@ -187,32 +229,49 @@ final class InMemoryEventStoreTest extends TestCase
         $this->assertSame(1, $this->deleteByCoordinate($store, EventKind::METADATA, '', 150));
     }
 
-    public function testAReplaceableCoordinateLeavesAVersionNewerThanTheRequest(): void
+    public function testAReplaceableCoordinateReportsNoDeletionOfAVersionNewerThanTheRequest(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->profile('profile', 200));
+        $store = $this->storeHolding($this->profile('profile', 200));
 
         $this->assertSame(0, $this->deleteByCoordinate($store, EventKind::METADATA, '', 150));
-        $this->assertSame(['profile'], self::contents($store->findByFilters($this->filters(['kinds' => [EventKind::METADATA]]))));
+    }
+
+    public function testAReplaceableCoordinateLeavesAVersionNewerThanTheRequest(): void
+    {
+        $store = $this->storeHolding($this->profile('profile', 200));
+        $this->deleteByCoordinate($store, EventKind::METADATA, '', 150);
+
+        $this->assertSame(['profile'], $this->contentsOfKind($store, EventKind::METADATA));
+    }
+
+    public function testAReplaceableCoordinateReportsNoDeletionOfAnotherAuthorsVersion(): void
+    {
+        $store = $this->storeHolding($this->bobsProfile());
+
+        $this->assertSame(0, $this->deleteByCoordinate($store, EventKind::METADATA, '', 150));
     }
 
     public function testAReplaceableCoordinateLeavesAnotherAuthorsVersion(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->event(EventKind::METADATA, 'bob', 100, new TagCollection([]), KeyMother::bobPublicKey()));
+        $store = $this->storeHolding($this->bobsProfile());
+        $this->deleteByCoordinate($store, EventKind::METADATA, '', 150);
 
-        $this->assertSame(0, $this->deleteByCoordinate($store, EventKind::METADATA, '', 150));
-        $this->assertSame(['bob'], self::contents($store->findByFilters($this->filters(['kinds' => [EventKind::METADATA]]))));
+        $this->assertSame(['bob'], $this->contentsOfKind($store, EventKind::METADATA));
+    }
+
+    public function testAnAddressableCoordinateReportsOneDeletionForItsOwnIdentifier(): void
+    {
+        $store = $this->storeHolding($this->article('target', 'a-slug', 100), $this->article('other', 'another-slug', 100));
+
+        $this->assertSame(1, $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, 'a-slug', 150));
     }
 
     public function testAnAddressableCoordinateDeletesOnlyItsOwnIdentifierUpToTheRequest(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->article('target', 'a-slug', 100));
-        $store->store($this->article('other', 'another-slug', 100));
+        $store = $this->storeHolding($this->article('target', 'a-slug', 100), $this->article('other', 'another-slug', 100));
+        $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, 'a-slug', 150);
 
-        $this->assertSame(1, $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, 'a-slug', 150));
-        $this->assertSame(['other'], self::contents($store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]]))));
+        $this->assertSame(['other'], $this->contentsOfKind($store, EventKind::LONGFORM_CONTENT));
     }
 
     public function testAnAddressableCoordinateLeavesAVersionNewerThanTheRequest(): void
@@ -223,24 +282,34 @@ final class InMemoryEventStoreTest extends TestCase
         $this->assertSame(0, $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, 'a-slug', 150));
     }
 
-    public function testAnAddressableCoordinateWithAnEmptyIdentifierDeletesTheEmptyIdentifiersVersion(): void
+    public function testAnAddressableCoordinateWithAnEmptyIdentifierReportsOneDeletionForTheEmptyIdentifiersVersion(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->article('empty', '', 100));
-        $store->store($this->article('named', 'a-slug', 100));
+        $store = $this->storeHolding($this->article('empty', '', 100), $this->article('named', 'a-slug', 100));
 
         $this->assertSame(1, $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, '', 150));
-        $this->assertSame(['named'], self::contents($store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]]))));
+    }
+
+    public function testAnAddressableCoordinateWithAnEmptyIdentifierDeletesTheEmptyIdentifiersVersion(): void
+    {
+        $store = $this->storeHolding($this->article('empty', '', 100), $this->article('named', 'a-slug', 100));
+        $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, '', 150);
+
+        $this->assertSame(['named'], $this->contentsOfKind($store, EventKind::LONGFORM_CONTENT));
+    }
+
+    public function testAnAddressableCoordinateWithAnEmptyIdentifierReportsOneDeletionForAVersionWithNoDTag(): void
+    {
+        $store = $this->storeHolding($this->articleWithoutDTag('untagged', 100), $this->article('named', 'a-slug', 100));
+
+        $this->assertSame(1, $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, '', 150));
     }
 
     public function testAnAddressableCoordinateWithAnEmptyIdentifierDeletesAVersionWithNoDTagUpToTheRequest(): void
     {
-        $store = new InMemoryEventStore();
-        $store->store($this->articleWithoutDTag('untagged', 100));
-        $store->store($this->article('named', 'a-slug', 100));
+        $store = $this->storeHolding($this->articleWithoutDTag('untagged', 100), $this->article('named', 'a-slug', 100));
+        $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, '', 150);
 
-        $this->assertSame(1, $this->deleteByCoordinate($store, EventKind::LONGFORM_CONTENT, '', 150));
-        $this->assertSame(['named'], self::contents($store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]]))));
+        $this->assertSame(['named'], $this->contentsOfKind($store, EventKind::LONGFORM_CONTENT));
     }
 
     public function testAnAddressableCoordinateWithAnEmptyIdentifierLeavesAVersionWithNoDTagNewerThanTheRequest(): void
@@ -271,12 +340,50 @@ final class InMemoryEventStoreTest extends TestCase
         );
     }
 
+    /**
+     * @return list<string>
+     */
+    private static function ids(StoredEventCollection $found): array
+    {
+        return array_map(static fn (StoredEvent $stored): string => $stored->getHeader()->getId()->toHex(), $found->toArray());
+    }
+
+    /**
+     * @return array{Event, Event}
+     */
+    private function twoNotesCreatedAtOnceLowerIdFirst(): array
+    {
+        $one = $this->note('tied one', 100);
+        $two = $this->note('tied two', 100);
+
+        return strcmp($one->getId()->toHex(), $two->getId()->toHex()) < 0 ? [$one, $two] : [$two, $one];
+    }
+
     private function deleteByCoordinate(InMemoryEventStore $store, int $kind, string $identifier, int $requestedAt): int
     {
         $coordinate = EventCoordinate::tryFrom(EventKind::fromInt($kind), KeyMother::alicePublicKey(), $identifier)
             ?? throw new RuntimeException('Invalid coordinate');
 
         return $store->deleteByCoordinates(new EventCoordinateCollection([$coordinate]), KeyMother::alicePublicKey(), Timestamp::fromInt($requestedAt));
+    }
+
+    private function storeHolding(Event ...$events): InMemoryEventStore
+    {
+        $store = new InMemoryEventStore();
+
+        foreach ($events as $event) {
+            $store->store($event);
+        }
+
+        return $store;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function contentsOfKind(InMemoryEventStore $store, int $kind): array
+    {
+        return self::contents($store->findByFilters($this->filters(['kinds' => [$kind]])));
     }
 
     private function storeWithNotes(int $count): InMemoryEventStore
@@ -326,10 +433,14 @@ final class InMemoryEventStoreTest extends TestCase
             'kind' => EventKind::LONGFORM_CONTENT,
             'tags' => [],
             'content' => $content,
-        ]);
-        $this->assertInstanceOf(Rumour::class, $rumour);
+        ]) ?? throw new RuntimeException('Fixture did not parse');
 
         return EventMother::fromRumour($rumour);
+    }
+
+    private function bobsProfile(): Event
+    {
+        return $this->event(EventKind::METADATA, 'bob', 100, new TagCollection([]), KeyMother::bobPublicKey());
     }
 
     private function event(int $kind, string $content, int $createdAt, TagCollection $tags, ?PublicKey $author = null): Event

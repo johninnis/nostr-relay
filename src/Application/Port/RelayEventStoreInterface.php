@@ -19,7 +19,7 @@ interface RelayEventStoreInterface
     // Deliberate: a store is handed an Event, never bytes, and keeps EncodedEvent::of() of it, so what findByFilters returns may be streamed unparsed — see ADR-0021
     public function store(Event $event): EventStoreOutcome;
 
-    // Deliberate: a store returns the union of what the filters match, newest first, applying each filter's own limit — the relay bounds a read by bounding the filters, never by a second number here — see ADR-0024
+    // Deliberate: a store returns the union of what the filters match, newest first and of two created at once the lower id first, applying each filter's own limit to that order — the relay bounds a read by bounding the filters, never by a second number here — see ADR-0024
     public function findByFilters(FilterCollection $filters): StoredEventCollection;
 
     // Deliberate: a filter's limit bounds a REQ reply and says nothing about how many events match, so a count ignores it — a store that stops early stops at its own ceiling and says the count is approximate — see ADR-0013

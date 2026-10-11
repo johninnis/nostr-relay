@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class IpAddressTest extends TestCase
@@ -17,10 +18,12 @@ final class IpAddressTest extends TestCase
 
     public function testParsesIpv6(): void
     {
-        $address = IpAddress::fromString('2001:db8::1');
+        $this->assertSame('2001:db8::1', (string) IpAddress::fromString('2001:db8::1'));
+    }
 
-        $this->assertSame('2001:db8::1', (string) $address);
-        $this->assertTrue($address->isIpV6());
+    public function testIpv6IsIpv6(): void
+    {
+        $this->assertTrue(IpAddress::fromString('2001:db8::1')->isIpV6());
     }
 
     public function testIpv4IsNotIpv6(): void
@@ -28,10 +31,19 @@ final class IpAddressTest extends TestCase
         $this->assertFalse(IpAddress::fromString('10.0.0.1')->isIpV6());
     }
 
-    public function testTryFromStringReturnsNullForInvalidInput(): void
+    #[DataProvider('invalidAddresses')]
+    public function testTryFromStringReturnsNullForInvalidInput(string $input): void
     {
-        $this->assertNull(IpAddress::tryFromString('not-an-ip'));
-        $this->assertNull(IpAddress::tryFromString(''));
+        $this->assertNull(IpAddress::tryFromString($input));
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function invalidAddresses(): iterable
+    {
+        yield 'not an address' => ['not-an-ip'];
+        yield 'empty' => [''];
     }
 
     public function testRejectsAddressCarryingAPort(): void
@@ -46,9 +58,13 @@ final class IpAddressTest extends TestCase
         IpAddress::fromString('192.168.1.1:54321');
     }
 
-    public function testEqualityComparesValue(): void
+    public function testAddressesOfTheSameValueAreEqual(): void
     {
         $this->assertTrue(IpAddress::fromString('10.0.0.1')->equals(IpAddress::fromString('10.0.0.1')));
+    }
+
+    public function testAddressesOfDifferentValuesAreNotEqual(): void
+    {
         $this->assertFalse(IpAddress::fromString('10.0.0.1')->equals(IpAddress::fromString('10.0.0.2')));
     }
 }

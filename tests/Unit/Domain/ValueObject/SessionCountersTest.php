@@ -11,24 +11,27 @@ final class SessionCountersTest extends TestCase
 {
     public function testEmptyStartsAtZero(): void
     {
-        $counters = SessionCounters::empty();
-
-        $this->assertSame(0, $counters->getEventsReceived());
-        $this->assertSame(0, $counters->getEventsAccepted());
-        $this->assertSame(0, $counters->getEventsSent());
+        $this->assertEquals(new SessionCounters(0, 0, 0), SessionCounters::empty());
     }
 
-    public function testWithEventReceivedReturnsNewInstanceWithIncrementedCounter(): void
+    public function testWithEventReceivedReturnsANewInstance(): void
     {
         $initial = SessionCounters::empty();
 
-        $next = $initial->withEventReceived();
+        $this->assertNotSame($initial, $initial->withEventReceived());
+    }
 
-        $this->assertNotSame($initial, $next);
+    public function testWithEventReceivedLeavesTheOriginalUnchanged(): void
+    {
+        $initial = SessionCounters::empty();
+        $initial->withEventReceived();
+
         $this->assertSame(0, $initial->getEventsReceived());
-        $this->assertSame(1, $next->getEventsReceived());
-        $this->assertSame(0, $next->getEventsAccepted());
-        $this->assertSame(0, $next->getEventsSent());
+    }
+
+    public function testWithEventReceivedOnlyIncrementsReceived(): void
+    {
+        $this->assertEquals(new SessionCounters(1, 0, 0), SessionCounters::empty()->withEventReceived());
     }
 
     public function testWithEventAcceptedOnlyIncrementsAccepted(): void
@@ -37,9 +40,7 @@ final class SessionCountersTest extends TestCase
             ->withEventAccepted()
             ->withEventAccepted();
 
-        $this->assertSame(0, $counters->getEventsReceived());
-        $this->assertSame(2, $counters->getEventsAccepted());
-        $this->assertSame(0, $counters->getEventsSent());
+        $this->assertEquals(new SessionCounters(0, 2, 0), $counters);
     }
 
     public function testWithEventSentOnlyIncrementsSent(): void
@@ -49,9 +50,7 @@ final class SessionCountersTest extends TestCase
             ->withEventSent()
             ->withEventSent();
 
-        $this->assertSame(0, $counters->getEventsReceived());
-        $this->assertSame(0, $counters->getEventsAccepted());
-        $this->assertSame(3, $counters->getEventsSent());
+        $this->assertEquals(new SessionCounters(0, 0, 3), $counters);
     }
 
     public function testCountersComposeIndependently(): void
@@ -65,17 +64,21 @@ final class SessionCountersTest extends TestCase
             ->withEventSent()
             ->withEventSent();
 
-        $this->assertSame(2, $counters->getEventsReceived());
-        $this->assertSame(1, $counters->getEventsAccepted());
-        $this->assertSame(4, $counters->getEventsSent());
+        $this->assertEquals(new SessionCounters(2, 1, 4), $counters);
     }
 
-    public function testConstructorPreservesProvidedValues(): void
+    public function testConstructorPreservesEventsReceived(): void
     {
-        $counters = new SessionCounters(5, 3, 7);
+        $this->assertSame(5, new SessionCounters(5, 3, 7)->getEventsReceived());
+    }
 
-        $this->assertSame(5, $counters->getEventsReceived());
-        $this->assertSame(3, $counters->getEventsAccepted());
-        $this->assertSame(7, $counters->getEventsSent());
+    public function testConstructorPreservesEventsAccepted(): void
+    {
+        $this->assertSame(3, new SessionCounters(5, 3, 7)->getEventsAccepted());
+    }
+
+    public function testConstructorPreservesEventsSent(): void
+    {
+        $this->assertSame(7, new SessionCounters(5, 3, 7)->getEventsSent());
     }
 }

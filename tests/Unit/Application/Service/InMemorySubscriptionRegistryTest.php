@@ -13,9 +13,12 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
+use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Stringable;
 
 final class InMemorySubscriptionRegistryTest extends TestCase
 {
@@ -56,36 +59,46 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $manager->addSubscription($clientId, $subscription);
     }
 
-    public function testAddSubscriptionReplacesExisting(): void
+    public function testReplacingASubscriptionIncrementsMetricsForEachAddition(): void
     {
         $metrics = $this->createMock(MetricsCollectorInterface::class);
         $metrics->expects($this->exactly(2))->method('incrementSubscriptions');
+
+        $this->replaceSubscription($this->makeManager($metrics), ClientId::fromString('client-1'));
+    }
+
+    public function testReplacingASubscriptionDecrementsMetricsForTheReplaced(): void
+    {
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
         $metrics->expects($this->once())->method('decrementSubscriptions');
-        $manager = $this->makeManager($metrics);
 
+        $this->replaceSubscription($this->makeManager($metrics), ClientId::fromString('client-1'));
+    }
+
+    public function testAddSubscriptionReplacesExisting(): void
+    {
         $clientId = ClientId::fromString('client-1');
-        $sub1 = $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]);
-        $sub2 = $this->createSubscription('sub-1', [EventKind::METADATA]);
 
-        $manager->addSubscription($clientId, $sub1);
-        $manager->addSubscription($clientId, $sub2);
+        $this->replaceSubscription($this->manager, $clientId);
 
-        $this->assertSame(1, $manager->getSubscriptionCountForClient($clientId));
+        $this->assertSame(1, $this->manager->getSubscriptionCountForClient($clientId));
     }
 
     public function testRemoveSubscriptionDecrementsMetrics(): void
     {
         $metrics = $this->createMock(MetricsCollectorInterface::class);
         $metrics->expects($this->once())->method('decrementSubscriptions');
-        $manager = $this->makeManager($metrics);
 
+        $this->addAndRemoveSubscription($this->makeManager($metrics), ClientId::fromString('client-1'));
+    }
+
+    public function testRemoveSubscriptionLeavesTheClientNone(): void
+    {
         $clientId = ClientId::fromString('client-1');
-        $subscription = $this->createSubscription('sub-1');
 
-        $manager->addSubscription($clientId, $subscription);
-        $manager->removeSubscription($clientId, $subscription->getId());
+        $this->addAndRemoveSubscription($this->manager, $clientId);
 
-        $this->assertSame(0, $manager->getSubscriptionCountForClient($clientId));
+        $this->assertSame(0, $this->manager->getSubscriptionCountForClient($clientId));
     }
 
     public function testRemoveNonExistentSubscriptionIsNoOp(): void
@@ -100,19 +113,21 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         );
     }
 
-    public function testRemoveAllForClientCleansUpAllSubscriptions(): void
+    public function testRemoveAllForClientDecrementsMetricsForEachSubscription(): void
     {
         $metrics = $this->createMock(MetricsCollectorInterface::class);
         $metrics->expects($this->exactly(2))->method('decrementSubscriptions');
-        $manager = $this->makeManager($metrics);
 
+        $this->addTwoAndRemoveAllForClient($this->makeManager($metrics), ClientId::fromString('client-1'));
+    }
+
+    public function testRemoveAllForClientCleansUpAllSubscriptions(): void
+    {
         $clientId = ClientId::fromString('client-1');
-        $manager->addSubscription($clientId, $this->createSubscription('sub-1'));
-        $manager->addSubscription($clientId, $this->createSubscription('sub-2'));
 
-        $manager->removeAllForClient($clientId);
+        $this->addTwoAndRemoveAllForClient($this->manager, $clientId);
 
-        $this->assertSame(0, $manager->getSubscriptionCountForClient($clientId));
+        $this->assertSame(0, $this->manager->getSubscriptionCountForClient($clientId));
     }
 
     public function testUpdateSubscriptionStateChangesState(): void
@@ -124,10 +139,9 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $this->manager->addSubscription($clientId, $subscription);
         $this->manager->updateSubscriptionState($clientId, $subId, SubscriptionState::Live);
 
-        $result = $this->manager->getSubscriptionsForClient($clientId);
-        $updated = $result->get($subId);
-        $this->assertNotNull($updated);
-        $this->assertSame(SubscriptionState::Live, $updated->getState());
+        $updated = $this->manager->getSubscriptionsForClient($clientId)->get($subId);
+
+        $this->assertSame(SubscriptionState::Live, $updated?->getState());
     }
 
     public function testGetSubscriptionsForEventReturnsMatchingByKind(): void
@@ -139,8 +153,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
 
         $results = $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE));
 
-        $this->assertCount(1, $results);
-        $this->assertTrue($clientId->equals($results->toArray()[0]->getClientId()));
+        $this->assertEquals([new SubscriptionMatch($clientId, $subscription)], $results->toArray());
     }
 
     public function testGetSubscriptionsForEventReturnsWildcardSubscriptions(): void
@@ -195,34 +208,101 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $this->assertSame(2, $result->count());
     }
 
-    public function testRecordsAndReturnsOriginalFilters(): void
+    public function testASubscriptionGoingLiveIsRecorded(): void
     {
-        $clientId = ClientId::fromString('client-1');
-        $originalFilters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
+        $recorded = [];
+        $logger = $this->createStub(LoggerInterface::class);
+        $logger->method('debug')->willReturnCallback(static function (string|Stringable $message, array $context) use (&$recorded): void {
+            $recorded[] = [(string) $message, $context];
+        });
+        $manager = new InMemorySubscriptionRegistry($this->createStub(MetricsCollectorInterface::class), $logger);
+        $manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'));
 
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
+        $manager->updateSubscriptionState(ClientId::fromString('client-1'), SubscriptionIdMother::from('sub-1'), SubscriptionState::Live);
 
-        $this->assertSame(
-            $originalFilters,
-            $this->manager->getOriginalFilters($clientId, SubscriptionIdMother::from('sub-1')),
-        );
+        $this->assertContains(['Subscription now live', ['subscription_id' => 'sub-1', 'client_id' => 'client-1']], $recorded);
     }
 
-    public function testGetOriginalFiltersDefaultsToEmptyWhenUnknown(): void
+    public function testItHoldsASubscriptionItRegistered(): void
     {
-        $this->assertTrue(
-            $this->manager->getOriginalFilters(ClientId::fromString('client-1'), SubscriptionIdMother::from('missing'))->isEmpty(),
-        );
+        $subscription = $this->createSubscription('sub-1');
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+
+        $this->assertTrue($this->manager->holds(ClientId::fromString('client-1'), $subscription));
     }
 
-    public function testRemoveSubscriptionClearsOriginalFilters(): void
+    public function testItNoLongerHoldsASubscriptionReplacedOnItsId(): void
     {
-        $clientId = ClientId::fromString('client-1');
-        $originalFilters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), $originalFilters);
+        $replaced = $this->createSubscription('sub-1');
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $replaced);
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'));
 
-        $this->manager->removeSubscription($clientId, SubscriptionIdMother::from('sub-1'));
+        $this->assertFalse($this->manager->holds(ClientId::fromString('client-1'), $replaced));
+    }
 
-        $this->assertTrue($this->manager->getOriginalFilters($clientId, SubscriptionIdMother::from('sub-1'))->isEmpty());
+    public function testItHoldsTheSubscriptionThatReplacedAnother(): void
+    {
+        $replacement = $this->createSubscription('sub-1');
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'));
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $replacement);
+
+        $this->assertTrue($this->manager->holds(ClientId::fromString('client-1'), $replacement));
+    }
+
+    public function testItNoLongerHoldsARemovedSubscription(): void
+    {
+        $subscription = $this->createSubscription('sub-1');
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->removeSubscription(ClientId::fromString('client-1'), $subscription->getId());
+
+        $this->assertFalse($this->manager->holds(ClientId::fromString('client-1'), $subscription));
+    }
+
+    public function testItNoLongerHoldsASubscriptionOfAClientWhoseSubscriptionsWereAllRemoved(): void
+    {
+        $subscription = $this->createSubscription('sub-1');
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->removeAllForClient(ClientId::fromString('client-1'));
+
+        $this->assertFalse($this->manager->holds(ClientId::fromString('client-1'), $subscription));
+    }
+
+    public function testItStillHoldsASubscriptionThatWentLive(): void
+    {
+        $subscription = $this->createSubscription('sub-1');
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->updateSubscriptionState(ClientId::fromString('client-1'), $subscription->getId(), SubscriptionState::Live);
+
+        $this->assertTrue($this->manager->holds(ClientId::fromString('client-1'), $subscription));
+    }
+
+    public function testItDoesNotHoldASubscriptionForAnotherClient(): void
+    {
+        $subscription = $this->createSubscription('sub-1');
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+
+        $this->assertFalse($this->manager->holds(ClientId::fromString('client-2'), $subscription));
+    }
+
+    private function replaceSubscription(InMemorySubscriptionRegistry $manager, ClientId $clientId): void
+    {
+        $manager->addSubscription($clientId, $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]));
+        $manager->addSubscription($clientId, $this->createSubscription('sub-1', [EventKind::METADATA]));
+    }
+
+    private function addAndRemoveSubscription(InMemorySubscriptionRegistry $manager, ClientId $clientId): void
+    {
+        $subscription = $this->createSubscription('sub-1');
+
+        $manager->addSubscription($clientId, $subscription);
+        $manager->removeSubscription($clientId, $subscription->getId());
+    }
+
+    private function addTwoAndRemoveAllForClient(InMemorySubscriptionRegistry $manager, ClientId $clientId): void
+    {
+        $manager->addSubscription($clientId, $this->createSubscription('sub-1'));
+        $manager->addSubscription($clientId, $this->createSubscription('sub-2'));
+
+        $manager->removeAllForClient($clientId);
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Domain\ValueObject;
 
 use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
+use Innis\Nostr\Core\Domain\Failure\Nip42ValidationFailure;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
@@ -41,6 +42,11 @@ final readonly class PolicyRejection
     public static function restricted(string $message): self
     {
         return new self(ReasonPrefix::Restricted, $message);
+    }
+
+    public static function fromNip42Failure(Nip42ValidationFailure $failure): self
+    {
+        return new self($failure->reasonPrefix(), $failure->message());
     }
 
     public function isAuthRequired(): bool

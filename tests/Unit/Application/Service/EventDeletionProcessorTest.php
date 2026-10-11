@@ -22,6 +22,7 @@ use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 use RuntimeException;
@@ -49,17 +50,22 @@ final class EventDeletionProcessorTest extends TestCase
 
     public function testSkipsEventsOwnedBySomeoneElse(): void
     {
-        $author = PublicKey::tryFromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
-        $stranger = PublicKey::tryFromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
-        $strangerEvent = $this->event($stranger, EventKind::fromInt(EventKind::TEXT_NOTE));
-        $deletion = $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($strangerEvent->getId())]));
+        $strangerEvent = $this->strangersEvent();
 
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($strangerEvent)]));
+        $eventStore = $this->storeHolding($strangerEvent);
         $eventStore->expects($this->never())->method('deleteByEventIds');
+
+        new EventDeletionProcessor($eventStore, new NullLogger())->process($this->authorsDeletionOf($strangerEvent));
+    }
+
+    public function testAnEventOwnedBySomeoneElseDeletesNoCoordinates(): void
+    {
+        $strangerEvent = $this->strangersEvent();
+
+        $eventStore = $this->storeHolding($strangerEvent);
         $eventStore->expects($this->never())->method('deleteByCoordinates');
 
-        new EventDeletionProcessor($eventStore, new NullLogger())->process($deletion);
+        new EventDeletionProcessor($eventStore, new NullLogger())->process($this->authorsDeletionOf($strangerEvent));
     }
 
     public function testADeletionRequestAgainstADeletionRequestHasNoEffect(): void
@@ -122,6 +128,28 @@ final class EventDeletionProcessorTest extends TestCase
             ->willReturn(new StoredEventCollection([]));
 
         new EventDeletionProcessor($eventStore, new NullLogger())->process($deletion);
+    }
+
+    private function strangersEvent(): Event
+    {
+        $stranger = PublicKey::tryFromHex(str_repeat('bb', 32)) ?? throw new RuntimeException('Invalid pubkey');
+
+        return $this->event($stranger, EventKind::fromInt(EventKind::TEXT_NOTE));
+    }
+
+    private function authorsDeletionOf(Event $target): Event
+    {
+        $author = PublicKey::tryFromHex(str_repeat('aa', 32)) ?? throw new RuntimeException('Invalid pubkey');
+
+        return $this->event($author, EventKind::fromInt(EventKind::EVENT_DELETION), new TagCollection([Tag::event($target->getId())]));
+    }
+
+    private function storeHolding(Event $event): RelayEventStoreInterface&MockObject
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($event)]));
+
+        return $eventStore;
     }
 
     private function event(PublicKey $author, EventKind $kind, ?TagCollection $tags = null, ?Timestamp $createdAt = null): Event

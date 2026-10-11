@@ -12,30 +12,46 @@ use PHPUnit\Framework\TestCase;
 
 final class PublishingAnswerTest extends TestCase
 {
+    public function testAnAdmittedAnswerIsAdmitted(): void
+    {
+        $this->assertTrue(PublishingAnswer::admitted()->isAdmitted());
+    }
+
     public function testAnAdmittedAnswerCarriesNoRejection(): void
     {
-        $answer = PublishingAnswer::admitted();
+        $this->assertNull(PublishingAnswer::admitted()->getRejection());
+    }
 
-        $this->assertTrue($answer->isAdmitted());
-        $this->assertNull($answer->getRejection());
-        $this->assertNull($answer->getChallenge());
+    public function testAnAdmittedAnswerCarriesNoChallenge(): void
+    {
+        $this->assertNull(PublishingAnswer::admitted(offersChallenge: true)->getChallenge());
+    }
+
+    public function testAnAdmittedAnswerOffersNoChallengeUnlessThePolicyDoes(): void
+    {
+        $this->assertFalse(PublishingAnswer::admitted()->offersChallenge());
+    }
+
+    public function testARefusedAnswerIsNotAdmitted(): void
+    {
+        $this->assertFalse(PublishingAnswer::refused(PolicyRejection::blocked('event too large'))->isAdmitted());
     }
 
     public function testARefusedAnswerCarriesTheRejection(): void
     {
         $rejection = PolicyRejection::blocked('event too large');
 
-        $answer = PublishingAnswer::refused($rejection);
-
-        $this->assertFalse($answer->isAdmitted());
-        $this->assertSame($rejection, $answer->getRejection());
+        $this->assertSame($rejection, PublishingAnswer::refused($rejection)->getRejection());
     }
 
-    public function testAnAdmittedAnswerCanCarryAChallenge(): void
+    public function testAnAdmittedAnswerCanCarryThePolicysChallengeOffer(): void
     {
-        $challenge = new AuthMessage(Challenge::fromString('challenge-1'));
+        $this->assertTrue(PublishingAnswer::admitted(offersChallenge: true)->offersChallenge());
+    }
 
-        $this->assertSame($challenge, PublishingAnswer::admitted($challenge)->getChallenge());
+    public function testARefusedAnswerOffersNoChallengeForAcceptance(): void
+    {
+        $this->assertFalse(PublishingAnswer::refused(PolicyRejection::blocked('event too large'))->offersChallenge());
     }
 
     public function testARefusedAnswerCanCarryAChallenge(): void

@@ -7,16 +7,24 @@ namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class RateLimitConfigTest extends TestCase
 {
-    public function testPerMinuteSelectsByMetric(): void
+    #[DataProvider('ratesByMetric')]
+    public function testPerMinuteSelectsByMetric(RateLimitMetric $metric, int $expected): void
     {
-        $config = new RateLimitConfig(120, 30);
+        $this->assertSame($expected, new RateLimitConfig(120, 30)->perMinute($metric));
+    }
 
-        $this->assertSame(120, $config->perMinute(RateLimitMetric::Events));
-        $this->assertSame(30, $config->perMinute(RateLimitMetric::Subscriptions));
+    /**
+     * @return iterable<string, array{RateLimitMetric, int}>
+     */
+    public static function ratesByMetric(): iterable
+    {
+        yield 'events' => [RateLimitMetric::Events, 120];
+        yield 'subscriptions' => [RateLimitMetric::Subscriptions, 30];
     }
 
     public function testRejectsZeroEventsPerMinute(): void
@@ -45,20 +53,15 @@ final class RateLimitConfigTest extends TestCase
     {
         $config = new RateLimitConfig(200, 50);
 
-        $restored = RateLimitConfig::tryFromArray($config->toArray());
-
-        $this->assertNotNull($restored);
-        $this->assertSame(200, $restored->perMinute(RateLimitMetric::Events));
-        $this->assertSame(50, $restored->perMinute(RateLimitMetric::Subscriptions));
+        $this->assertEquals($config, RateLimitConfig::tryFromArray($config->toArray()));
     }
 
     public function testFromArrayCoercesNumericStrings(): void
     {
-        $config = RateLimitConfig::tryFromArray(['events_per_minute' => '90', 'subscriptions_per_minute' => '15']);
-
-        $this->assertNotNull($config);
-        $this->assertSame(90, $config->perMinute(RateLimitMetric::Events));
-        $this->assertSame(15, $config->perMinute(RateLimitMetric::Subscriptions));
+        $this->assertEquals(
+            new RateLimitConfig(90, 15),
+            RateLimitConfig::tryFromArray(['events_per_minute' => '90', 'subscriptions_per_minute' => '15']),
+        );
     }
 
     public function testFromArrayReturnsNullWhenKeyMissing(): void

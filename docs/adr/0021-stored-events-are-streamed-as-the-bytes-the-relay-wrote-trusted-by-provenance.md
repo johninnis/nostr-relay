@@ -16,7 +16,9 @@ What the streamer did with the parsed event was small: it asked whether the even
 
 ## Decision
 
-Stored events travel as `StoredEvent`: the event's `EventHeader` (id, author, kind), its earliest stated expiry, and an `EncodedEvent` holding the bytes. `RelayEventStoreInterface::findByFilters` returns a `StoredEventCollection`, and nothing on the read path parses those bytes.
+Stored events travel as `StoredEvent`: the event's `EventHeader` (id, author, kind), its `created_at`, its earliest stated expiry, and an `EncodedEvent` holding the bytes. `RelayEventStoreInterface::findByFilters` returns a `StoredEventCollection`, and nothing on the read path parses those bytes.
+
+Stored events are read in the order NIP-01 gives a REQ's: newest first, and "In case of events with the same created_at, the event with the lowest id (first in lexical order) should be first." A store returns its union in that order and applies each filter's `limit` to it, as `InMemoryEventStore` does. The relay puts what each store query returns in that order again (`StoredEventCollection::newestFirst`, over `StoredEvent::precedes`) before it cuts a group to its limit and merges the groups (ADR-0035), so a store that breaks a tie the other way never decides which event a limit keeps.
 
 `EncodedEvent` has a private constructor and two named constructors, and they are the whole of its provenance rule:
 
@@ -32,6 +34,7 @@ The expiry travels as the earliest stated expiry that parses, derived by nostr-c
 - Streaming a stored event costs no parse and no encode. Measured with `tools/stream-benchmark.php` over 1,000 stored 2 KB events, turning stored bytes into a frame fell from about 54 µs per event to about 1.4 µs. Distributing one live event to fifty subscribers fell from about 17 µs per recipient, one encode each, to about 1.3 µs per recipient after a single encode.
 - The trust is by provenance, so the guarantee is only as good as the store's write path. The type system carries the part it can: a store receives an `Event`, and the only producer of stored bytes is `EncodedEvent::of()`. The rest is the store's obligation, stated at `fromOwnStore()` and at the port, and a store that imports, migrates or restores rows must write them through the same `store(Event)` path or re-encode them before they are read.
 - A frame's event bytes are the canonical event encoding, which leaves U+2028 and U+2029 unescaped where an `EventMessage` would escape them. Both are the same JSON value, and the event encoding is the one its id is computed over.
-- A store implementation must now return `StoredEvent`s, built from its own indexed columns and bytes. That is a breaking change for any host store.
+- A store implementation must now return `StoredEvent`s, built from its own indexed columns and bytes, newest first and the lower id first at a tie. That is a breaking change for any host store.
 - Do not parse in `fromOwnStore()` "to be safe", and do not build the frame by decoding and re-encoding it. Either reintroduces the cost this record removes and checks nothing the write path did not already guarantee. A store that cannot make the write-path guarantee must parse and re-encode its rows itself, and hand `of()` the result. `EncodedEventTest` and `StoredEventStreamerTest` pin that stored bytes reach the wire untouched.
 - Do not construct an `EventMessage` for delivery. The messenger refuses it, and the one framing path is what keeps what the relay counts and what it sends the same.
+- Shared decisions: nostr-adrs ADR-0009 and ADR-0034.

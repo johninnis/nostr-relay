@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Integration\Application\Service;
 
+use Amp\DeferredFuture;
 use Innis\Nostr\Core\Application\Service\Nip42Validator;
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Service\EventValidator;
@@ -42,11 +44,14 @@ use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\ClientVerbHandlers;
+use Innis\Nostr\Relay\Application\Service\DeliveryGate;
+use Innis\Nostr\Relay\Application\Service\EventAcceptance;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventAudience;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\EventValidityGate;
+use Innis\Nostr\Relay\Application\Service\HeldSubscriptionSender;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
@@ -54,13 +59,14 @@ use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
 use Innis\Nostr\Relay\Application\Service\PublishingGate;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
+use Innis\Nostr\Relay\Application\Service\ReadableEventCounter;
+use Innis\Nostr\Relay\Application\Service\ReadScopeGate;
 use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
-use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
@@ -69,13 +75,19 @@ use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
+use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
+use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\EventStore\InMemoryEventStore;
+use Innis\Nostr\Relay\Tests\Support\EventMother;
+use Innis\Nostr\Relay\Tests\Support\KeyMother;
+use Innis\Nostr\Relay\Tests\Support\RecordingClientConnection;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
+use Innis\Nostr\Relay\Tests\Support\TestDoubleException;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -119,7 +131,7 @@ final class MessageRouterTest extends TestCase
         $messenger = new ClientMessenger($this->clientRegistry);
 
         $distributor = new EventDistributor(
-            new EventAudience($this->policy, $this->subscriptionRegistry, $this->clientRegistry),
+            new EventAudience(new DeliveryGate($this->policy, new GiftWrapFilterRules()), $this->subscriptionRegistry, $this->clientRegistry),
             $messenger,
             $logger,
         );
@@ -132,7 +144,11 @@ final class MessageRouterTest extends TestCase
 
         $rateLimitGate = new RateLimitGate($rateLimiter, $this->policy);
 
-        $admission = new SubscriptionAdmission($this->policy, $rateLimitGate, $this->subscriptionRegistry);
+        $admission = new SubscriptionAdmission(
+            $rateLimitGate,
+            new ReadScopeGate($this->policy, $this->authenticationRegistry, new GiftWrapFilterRules()),
+            $this->subscriptionRegistry,
+        );
 
         $eventAdmission = new EventAdmission(
             $rateLimitGate,
@@ -150,13 +166,12 @@ final class MessageRouterTest extends TestCase
             new EventDeletionProcessor($this->eventStore, $logger),
         );
 
-        $storedEventStreamer = new StoredEventStreamer(
-            new StoredEventReadGate($this->eventStore, $this->policy, new SystemClock()),
-            $messenger,
-            $logger,
-        );
+        $subscriptionAnswers = new SubscriptionAnswers($this->subscriptionRegistry, $authChallengeIssuer, $logger);
 
-        $subscriptionAnswers = new SubscriptionAnswers($this->subscriptionRegistry, $authChallengeIssuer);
+        $storedEventStreamer = new StoredEventStreamer(
+            new StoredEventReadGate($this->eventStore, new DeliveryGate($this->policy, new GiftWrapFilterRules()), new SystemClock()),
+            new HeldSubscriptionSender($messenger, $this->subscriptionRegistry, $subscriptionAnswers),
+        );
 
         $subscriptionActivator = new SubscriptionActivator(
             $admission,
@@ -169,7 +184,7 @@ final class MessageRouterTest extends TestCase
 
         $dispatcher = new ClientMessageDispatcher(
             new ClientVerbHandlers(
-                new ProcessEventSubmissionUseCase($eventAdmission, $acceptedEventPipeline, $logger),
+                new ProcessEventSubmissionUseCase($eventAdmission, new EventAcceptance($acceptedEventPipeline, $authChallengeIssuer), $logger),
                 new CreateSubscriptionUseCase($subscriptionActivator),
                 new CloseSubscriptionUseCase($this->subscriptionRegistry),
                 new ProcessAuthUseCase(
@@ -179,9 +194,8 @@ final class MessageRouterTest extends TestCase
                         $authChallengeIssuer,
                     ),
                     $validityGate,
-                    new SubscriptionReevaluator($this->subscriptionRegistry, $subscriptionActivator),
                 ),
-                new CountSubscriptionUseCase($this->eventStore, $admission, $subscriptionAnswers),
+                new CountSubscriptionUseCase(new ReadableEventCounter($this->eventStore, new GiftWrapFilterRules()), $admission, $subscriptionAnswers),
             ),
             $this->clientRegistry,
             $logger,
@@ -255,8 +269,13 @@ final class MessageRouterTest extends TestCase
 
     public function testRoutesAuthMessage(): void
     {
-        $keyPair = KeyPair::generate($this->signatureService());
+        $client = $this->routeAValidAuthMessage($this->createStub(ClientConnectionInterface::class));
 
+        $this->assertTrue($this->authenticationRegistry->isAuthenticated($client->getId()));
+    }
+
+    public function testAnAuthenticatingAuthMessageIsAnsweredWithAnAcceptingOk(): void
+    {
         $connection = $this->createMock(ClientConnectionInterface::class);
         $connection->expects($this->once())->method('sendText')
             ->with($this->callback(static function (string $json): bool {
@@ -265,6 +284,13 @@ final class MessageRouterTest extends TestCase
 
                 return 'OK' === $data[0] && true === $data[2];
             }));
+
+        $this->routeAValidAuthMessage($connection);
+    }
+
+    private function routeAValidAuthMessage(ClientConnectionInterface $connection): RelayClient
+    {
+        $keyPair = KeyPair::generate($this->signatureService());
         $client = $this->makeClient($connection);
         $challenge = $this->authenticationRegistry->getOrCreateChallenge($client->getId());
 
@@ -280,13 +306,13 @@ final class MessageRouterTest extends TestCase
 
         $this->router->route($client, AuthMessage::fromEvent($event)->toJson());
 
-        $this->assertTrue($this->authenticationRegistry->isAuthenticated($client->getId()));
+        return $client;
     }
 
     public function testRoutesCountMessage(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
-        $filters = new FilterCollection([Filter::from()]);
+        $filters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]);
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(42));
@@ -332,33 +358,53 @@ final class MessageRouterTest extends TestCase
         $this->assertSame(['["CLOSED","sub-1","blocked: too many filters (max 5)"]'], $sent);
     }
 
+    public function testACountWhoseFiltersCannotMatchDrawsOneAnswer(): void
+    {
+        $this->routeAgainstAStoreHoldingOneNote();
+
+        $this->assertCount(1, $this->framesSentInAnswerTo('["COUNT","count-1",{"kinds":[]}]'));
+    }
+
     public function testACountWhoseFiltersCannotMatchIsAnsweredWithZero(): void
     {
         $this->routeAgainstAStoreHoldingOneNote();
-        $sent = [];
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
-            $sent[] = $json;
-        });
 
-        $this->router->route($this->makeClient($connection), '["COUNT","count-1",{"kinds":[]}]');
+        $sent = $this->framesSentInAnswerTo('["COUNT","count-1",{"kinds":[]}]');
 
-        $this->assertCount(1, $sent);
-        $this->assertSame(0, RelayCountMessage::tryFromJson($sent[0])?->getCount()->toInt());
+        $this->assertSame(0, RelayCountMessage::tryFromJson($sent[0] ?? '')?->getCount()->toInt());
+    }
+
+    public function testAReqWhosePubkeyConditionIsNotLowercaseHexDrawsOneAnswer(): void
+    {
+        $this->assertCount(1, $this->framesSentInAnswerTo(self::reqWithAnUppercasePubkeyCondition()));
     }
 
     public function testAReqWhosePubkeyConditionIsNotLowercaseHexIsAnsweredWithANotice(): void
     {
+        $sent = $this->framesSentInAnswerTo(self::reqWithAnUppercasePubkeyCondition());
+
+        $this->assertNotNull(NoticeMessage::tryFromJson($sent[0] ?? ''));
+    }
+
+    private static function reqWithAnUppercasePubkeyCondition(): string
+    {
+        return '["REQ","sub-1",{"kinds":[24133],"#p":["'.str_repeat('A', 64).'"]}]';
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function framesSentInAnswerTo(string $message): array
+    {
         $sent = [];
         $connection = $this->createStub(ClientConnectionInterface::class);
         $connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
             $sent[] = $json;
         });
 
-        $this->router->route($this->makeClient($connection), '["REQ","sub-1",{"kinds":[24133],"#p":["'.str_repeat('A', 64).'"]}]');
+        $this->router->route($this->makeClient($connection), $message);
 
-        $this->assertCount(1, $sent);
-        $this->assertNotNull(NoticeMessage::tryFromJson($sent[0]));
+        return $sent;
     }
 
     private function routeAgainstAStoreHoldingOneNote(): void
@@ -370,6 +416,125 @@ final class MessageRouterTest extends TestCase
         $this->policy->method('filterForClient')->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturnCallback($store->findByFilters(...));
         $this->eventStore->method('countByFilters')->willReturnCallback($store->countByFilters(...));
+    }
+
+    public function testAFaultOnAReadAReplacingReqOvertookSendsNoClosed(): void
+    {
+        [$replaced, $replacement] = [new DeferredFuture(), new DeferredFuture()];
+        $connection = new RecordingClientConnection();
+        $client = $this->makeClient($connection);
+        $this->storeAnsweringInTurn($replaced, $replacement);
+
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        self::failRead($replaced);
+        self::answerRead($replacement, new StoredEventCollection([]));
+
+        $this->assertSame(['["EOSE","x"]'], $connection->sentFrames());
+    }
+
+    public function testAFaultOnAReadAReplacingReqOvertookLeavesTheReplacementOpen(): void
+    {
+        [$replaced, $replacement] = [new DeferredFuture(), new DeferredFuture()];
+        $client = $this->makeClient(new RecordingClientConnection());
+        $this->storeAnsweringInTurn($replaced, $replacement);
+
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        self::failRead($replaced);
+
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($client->getId()));
+    }
+
+    public function testAReadAReplacingReqOvertookSendsNothingOfItsOwn(): void
+    {
+        [$replaced, $replacement] = [new DeferredFuture(), new DeferredFuture()];
+        $connection = new RecordingClientConnection();
+        $client = $this->makeClient($connection);
+        $this->storeAnsweringInTurn($replaced, $replacement);
+
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        self::answerRead($replaced, new StoredEventCollection([self::storedNote()]));
+        self::answerRead($replacement, new StoredEventCollection([]));
+
+        $this->assertSame(['["EOSE","x"]'], $connection->sentFrames());
+    }
+
+    public function testAReadOfASubscriptionTheClientClosedSendsNothing(): void
+    {
+        $read = new DeferredFuture();
+        $connection = new RecordingClientConnection();
+        $client = $this->makeClient($connection);
+        $this->storeAnsweringInTurn($read);
+
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        $this->router->route($client, '["CLOSE","x"]');
+        self::answerRead($read, new StoredEventCollection([self::storedNote()]));
+
+        $this->assertSame([], $connection->sentFrames());
+    }
+
+    public function testAFaultOnAReadOfASubscriptionTheClientClosedSendsNothing(): void
+    {
+        $read = new DeferredFuture();
+        $connection = new RecordingClientConnection();
+        $client = $this->makeClient($connection);
+        $this->storeAnsweringInTurn($read);
+
+        $this->routeAndLetTheReadStart($client, '["REQ","x",{"kinds":[1]}]');
+        $this->router->route($client, '["CLOSE","x"]');
+        self::failRead($read);
+
+        $this->assertSame([], $connection->sentFrames());
+    }
+
+    /**
+     * @param DeferredFuture<mixed> ...$reads
+     */
+    private function storeAnsweringInTurn(DeferredFuture ...$reads): void
+    {
+        $this->policy->method('filterForClient')->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
+        $this->policy->method('canClientReceiveEvent')->willReturn(true);
+        $this->eventStore->method('findByFilters')->willReturnCallback(static function () use (&$reads): StoredEventCollection {
+            $read = array_shift($reads) ?? throw new RuntimeException('the store was read more often than the test expects');
+            $answer = $read->getFuture()->await();
+
+            return $answer instanceof StoredEventCollection ? $answer : throw new RuntimeException('a read was answered with something other than stored events');
+        });
+    }
+
+    private function routeAndLetTheReadStart(RelayClient $client, string $message): void
+    {
+        $this->router->route($client, $message);
+        delay(0.01);
+    }
+
+    /**
+     * @param DeferredFuture<mixed> $read
+     */
+    private static function answerRead(DeferredFuture $read, StoredEventCollection $events): void
+    {
+        $read->complete($events);
+        delay(0.01);
+    }
+
+    /**
+     * @param DeferredFuture<mixed> $read
+     */
+    private static function failRead(DeferredFuture $read): void
+    {
+        $read->error(new TestDoubleException('store unavailable'));
+        delay(0.01);
+    }
+
+    private static function storedNote(): StoredEvent
+    {
+        return StoredEvent::of(EventMother::fromRumour(Rumour::draft(
+            KeyMother::alicePublicKey(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
+            EventContent::fromString('stored before the replacement'),
+        )));
     }
 
     public function testSendsNoticeForInvalidMessage(): void

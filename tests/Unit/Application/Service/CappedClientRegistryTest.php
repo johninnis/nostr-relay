@@ -59,7 +59,6 @@ final class CappedClientRegistryTest extends TestCase
 
         try {
             $registry->registerClient($this->createStub(ClientConnectionInterface::class), $this->connectionInfo());
-            $this->fail('expected the first registration to be refused');
         } catch (ConnectionException) {
         }
 

@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
@@ -47,17 +45,10 @@ final readonly class AuthChallengeIssuer
     }
 
     /**
-     * @return list<RelayMessage>
+     * @return list<AuthMessage>
      */
     public function offerForScope(ScopedFilters $scopedFilters, ClientId $clientId): array
     {
-        if (!$scopedFilters->isBeyondScope()) {
-            return [];
-        }
-
-        return [
-            NoticeMessage::fromString('limited to readable scope: authenticate for full access'),
-            $this->issue($clientId),
-        ];
+        return $scopedFilters->isBeyondScope() ? [$this->issue($clientId)] : [];
     }
 }

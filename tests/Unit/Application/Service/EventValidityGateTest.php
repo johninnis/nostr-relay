@@ -14,7 +14,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Service\EventValidityGate;
-use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use PHPUnit\Framework\TestCase;
@@ -32,8 +31,7 @@ final class EventValidityGateTest extends TestCase
     {
         $outcome = $this->gate()->admit($this->eventExpiringAt(self::NOW - 1));
 
-        $this->assertInstanceOf(PolicyRejection::class, $outcome);
-        $this->assertSame('invalid: event has expired', $outcome->toWireReason());
+        $this->assertSame('invalid: event has expired', $outcome?->toWireReason());
     }
 
     public function testTheValidatorIsAskedAtTheInjectedInstant(): void

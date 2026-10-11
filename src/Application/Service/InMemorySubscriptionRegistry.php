@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\SubscriptionCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\Enum\SubscriptionState;
@@ -21,14 +20,14 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
 {
     /** @var array<string, Subscription> */
     private array $subscriptions = [];
+    /** @var array<string, Subscription> */
+    private array $registered = [];
     /** @var array<string, ClientId> */
     private array $clientIdByKey = [];
     /** @var array<int|string, array<string, true>> */
     private array $subscriptionsByKind = [];
     /** @var array<string, array<string, true>> */
     private array $subscriptionsByClient = [];
-    /** @var array<string, FilterCollection> */
-    private array $originalFiltersByKey = [];
 
     public function __construct(
         private readonly MetricsCollectorInterface $metrics,
@@ -37,7 +36,7 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
     }
 
     #[Override]
-    public function addSubscription(ClientId $clientId, Subscription $subscription, ?FilterCollection $originalFilters = null): void
+    public function addSubscription(ClientId $clientId, Subscription $subscription): void
     {
         $key = $this->compositeKey($clientId, $subscription->getId());
         $clientIdStr = (string) $clientId;
@@ -47,8 +46,8 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
         }
 
         $this->subscriptions[$key] = $subscription;
+        $this->registered[$key] = $subscription;
         $this->clientIdByKey[$key] = $clientId;
-        $this->originalFiltersByKey[$key] = $originalFilters ?? new FilterCollection();
         $this->addToKindIndex($subscription, $key);
         $this->subscriptionsByClient[$clientIdStr][$key] = true;
 
@@ -98,8 +97,17 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
     {
         $key = $this->compositeKey($clientId, $subscriptionId);
 
-        if (isset($this->subscriptions[$key])) {
-            $this->subscriptions[$key] = $this->subscriptions[$key]->withState($state);
+        if (!isset($this->subscriptions[$key])) {
+            return;
+        }
+
+        $this->subscriptions[$key] = $this->subscriptions[$key]->withState($state);
+
+        if (SubscriptionState::Live === $state) {
+            $this->logger->debug('Subscription now live', [
+                'subscription_id' => (string) $subscriptionId,
+                'client_id' => (string) $clientId,
+            ]);
         }
     }
 
@@ -135,16 +143,17 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
         return new SubscriptionCollection($subscriptions);
     }
 
+    // Deliberate: compared with the instance its REQ registered, never by id or by value, so a REQ replacing it on the same id, even with the same filters, is not mistaken for it — see ADR-0034
+    #[Override]
+    public function holds(ClientId $clientId, Subscription $subscription): bool
+    {
+        return ($this->registered[$this->compositeKey($clientId, $subscription->getId())] ?? null) === $subscription;
+    }
+
     #[Override]
     public function getSubscriptionCountForClient(ClientId $clientId): int
     {
         return count($this->subscriptionsByClient[(string) $clientId] ?? []);
-    }
-
-    #[Override]
-    public function getOriginalFilters(ClientId $clientId, SubscriptionId $subscriptionId): FilterCollection
-    {
-        return $this->originalFiltersByKey[$this->compositeKey($clientId, $subscriptionId)] ?? new FilterCollection();
     }
 
     public function getAllSubscriptions(): SubscriptionCollection
@@ -164,7 +173,7 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
         }
 
         $this->removeFromKindIndex($this->subscriptions[$key], $key);
-        unset($this->subscriptions[$key], $this->clientIdByKey[$key], $this->originalFiltersByKey[$key]);
+        unset($this->subscriptions[$key], $this->registered[$key], $this->clientIdByKey[$key]);
         $this->metrics->decrementSubscriptions();
     }
 

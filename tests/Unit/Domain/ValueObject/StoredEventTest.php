@@ -9,6 +9,7 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\Service\ExpirationDerivation;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
+use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
@@ -19,6 +20,7 @@ use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 final class StoredEventTest extends TestCase
 {
@@ -36,6 +38,26 @@ final class StoredEventTest extends TestCase
         $event = self::event([]);
 
         self::assertSame($event->toJson(), StoredEvent::of($event)->getEncoded()->toJson());
+    }
+
+    public function testANewerEventIsListedBeforeAnOlderOne(): void
+    {
+        self::assertTrue(self::storedAt(self::NOW, 'b')->precedes(self::storedAt(self::NOW - 1, 'a')));
+    }
+
+    public function testAnOlderEventIsListedAfterANewerOne(): void
+    {
+        self::assertFalse(self::storedAt(self::NOW - 1, 'a')->precedes(self::storedAt(self::NOW, 'b')));
+    }
+
+    public function testOfTwoEventsCreatedAtOnceTheLowerIdIsListedFirst(): void
+    {
+        self::assertTrue(self::storedAt(self::NOW, 'a')->precedes(self::storedAt(self::NOW, 'b')));
+    }
+
+    public function testOfTwoEventsCreatedAtOnceTheHigherIdIsListedAfter(): void
+    {
+        self::assertFalse(self::storedAt(self::NOW, 'b')->precedes(self::storedAt(self::NOW, 'a')));
     }
 
     /**
@@ -58,7 +80,7 @@ final class StoredEventTest extends TestCase
     {
         $event = self::event($expiries);
         $now = Timestamp::fromInt(self::NOW);
-        $fromIndex = new StoredEvent(EventHeader::of($event), ExpirationDerivation::earliestStated($expiries), EncodedEvent::of($event));
+        $fromIndex = new StoredEvent(EventHeader::of($event), $event->getCreatedAt(), ExpirationDerivation::earliestStated($expiries), EncodedEvent::of($event));
 
         self::assertSame($event->isExpiredAt($now), $fromIndex->isExpiredAt($now));
     }
@@ -99,5 +121,16 @@ final class StoredEventTest extends TestCase
             new TagCollection(array_map(static fn (string $value): ?Tag => Tag::tryFromArray(['expiration', $value]), $expiries)),
             Timestamp::fromInt(self::NOW - 7200),
         ));
+    }
+
+    private static function storedAt(int $createdAt, string $idDigit): StoredEvent
+    {
+        $header = new EventHeader(
+            EventId::tryFromHex(str_repeat($idDigit, 64)) ?? throw new RuntimeException('event id did not parse'),
+            KeyMother::alicePublicKey(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
+        );
+
+        return new StoredEvent($header, Timestamp::fromInt($createdAt), null, EncodedEvent::fromOwnStore('{}'));
     }
 }

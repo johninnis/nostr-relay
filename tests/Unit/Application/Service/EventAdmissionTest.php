@@ -47,8 +47,7 @@ final class EventAdmissionTest extends TestCase
     {
         $rejection = $this->admit($this->event(self::NOW - 1))->getRejection();
 
-        $this->assertNotNull($rejection);
-        $this->assertSame('invalid: event has expired', $rejection->toWireReason());
+        $this->assertSame('invalid: event has expired', $rejection?->toWireReason());
     }
 
     public function testAnEventIsRefusedAtTheExpiryInstant(): void

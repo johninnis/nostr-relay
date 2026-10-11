@@ -31,11 +31,7 @@ final readonly class PublishingGate
             return PublishingAnswer::refused($rejection, $challenges[0] ?? null);
         }
 
-        $challenge = $this->policy->offersAuthChallenge($client, $event)
-            ? $this->authChallengeIssuer->issue($client->getId())
-            : null;
-
-        return PublishingAnswer::admitted($challenge);
+        return PublishingAnswer::admitted($this->policy->offersAuthChallenge($client, $event));
     }
 
     // Deliberate: applied after every policy, so no policy's bypass can admit a protected event from anyone but its authenticated author — see ADR-0023

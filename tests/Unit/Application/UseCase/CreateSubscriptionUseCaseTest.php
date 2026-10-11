@@ -6,10 +6,10 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
@@ -21,10 +21,13 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\DeliveryGate;
+use Innis\Nostr\Relay\Application\Service\HeldSubscriptionSender;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
+use Innis\Nostr\Relay\Application\Service\ReadScopeGate;
 use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
@@ -34,6 +37,7 @@ use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
@@ -69,16 +73,21 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->clientRegistry = new InMemoryClientRegistry($metrics, new NativeRandomBytesGenerator(), $logger);
         $messenger = new ClientMessenger($this->clientRegistry);
         $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
-        $admission = new SubscriptionAdmission($this->policy, new RateLimitGate($this->rateLimiter, $this->policy), $this->subscriptionRegistry);
+        $giftWrapRules = new GiftWrapFilterRules();
+        $admission = new SubscriptionAdmission(
+            new RateLimitGate($this->rateLimiter, $this->policy),
+            new ReadScopeGate($this->policy, $this->authenticationRegistry, $giftWrapRules),
+            $this->subscriptionRegistry,
+        );
+        $answers = new SubscriptionAnswers($this->subscriptionRegistry, new AuthChallengeIssuer($this->authenticationRegistry), $logger);
         $storedEventStreamer = new StoredEventStreamer(
-            new StoredEventReadGate($this->eventStore, $this->policy, new SystemClock()),
-            $messenger,
-            $logger,
+            new StoredEventReadGate($this->eventStore, new DeliveryGate($this->policy, $giftWrapRules), new SystemClock()),
+            new HeldSubscriptionSender($messenger, $this->subscriptionRegistry, $answers),
         );
         $activator = new SubscriptionActivator(
             $admission,
             new RegisteringStoredEventStreamer(new AmphpDeferredExecutor(), $storedEventStreamer, $this->subscriptionRegistry),
-            new SubscriptionAnswers($this->subscriptionRegistry, new AuthChallengeIssuer($this->authenticationRegistry)),
+            $answers,
         );
 
         $this->useCase = new CreateSubscriptionUseCase($activator);
@@ -94,106 +103,90 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         );
     }
 
-    public function testSuccessfulSubscriptionCreation(): void
+    public function testASuccessfulSubscriptionSendsNoImmediateReply(): void
     {
-        $subId = SubscriptionIdMother::from('sub-1');
-        $filters = new FilterCollection([Filter::from()]);
+        $this->assertSame([], $this->subscribeWithinScope());
+    }
 
-        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
-        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
+    public function testASuccessfulSubscriptionIsRegistered(): void
+    {
+        $this->subscribeWithinScope();
 
-        $replies = $this->useCase->execute($this->client, $subId, $filters);
-
-        $this->assertSame([], $replies);
         $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
-    public function testBeyondScopeReturnsNoticeAndChallenge(): void
+    public function testABeyondScopeSubscriptionSendsNoImmediateReply(): void
     {
-        $subId = SubscriptionIdMother::from('sub-1');
-
-        $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
-        );
-        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
-
-        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([Filter::from()]));
-
-        $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
-        $this->assertInstanceOf(AuthMessage::class, $replies[1]);
+        $this->assertSame([], $this->subscribeBeyondScope());
     }
 
-    public function testBeyondScopeReissuesChallengeEvenWhenOneAlreadyExists(): void
+    public function testABeyondScopeSubscriptionIsRegistered(): void
     {
-        $subId = SubscriptionIdMother::from('sub-1');
+        $this->subscribeBeyondScope();
 
-        $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
-        );
-        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
-
-        $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
-
-        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([Filter::from()]));
-
-        $this->assertInstanceOf(AuthMessage::class, $replies[1], 'a beyond-scope request must re-issue an AUTH challenge even if one was already issued earlier');
-    }
-
-    public function testFullyOutOfScopeSubscriptionIsCreatedNotRejected(): void
-    {
-        $subId = SubscriptionIdMother::from('sub-1');
-
-        $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), new FilterCollection(), true));
-        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
-
-        $replies = $this->useCase->execute($this->client, $subId, new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues(['ff']))]));
-
-        // A fully-out-of-scope request is scoped down and offered a challenge, not rejected: the subscription is still created.
-        $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
-        $this->assertInstanceOf(AuthMessage::class, $replies[1]);
         $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
+    }
+
+    public function testASubscriptionNarrowedToNothingIsRefusedAfterAChallenge(): void
+    {
+        $this->assertSame([AuthMessage::class, ClosedMessage::class], self::messageTypes($this->subscribeFullyOutOfScope()));
+    }
+
+    public function testASubscriptionNarrowedToNothingIsClosedAsAuthRequired(): void
+    {
+        $this->assertStringStartsWith('auth-required:', self::replyOfType($this->subscribeFullyOutOfScope(), ClosedMessage::class)?->getMessage() ?? '');
+    }
+
+    public function testASubscriptionNarrowedToNothingRegistersNoSubscription(): void
+    {
+        $this->subscribeFullyOutOfScope();
+
+        $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testPolicyViolationReturnsClosedMessage(): void
     {
-        $subId = SubscriptionIdMother::from('sub-1');
-        $filters = new FilterCollection([Filter::from()]);
+        $this->assertEquals(
+            [ClosedMessage::closed(SubscriptionIdMother::from('sub-1'), ReasonPrefix::Blocked, 'subscription not allowed')],
+            $this->subscribeAgainstPolicy(),
+        );
+    }
 
-        $this->policy->method('allowSubscription')
-            ->willReturn(PolicyRejection::blocked('subscription not allowed'));
+    public function testAPolicyViolationRegistersNoSubscription(): void
+    {
+        $this->subscribeAgainstPolicy();
 
-        $replies = $this->useCase->execute($this->client, $subId, $filters);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
-        $this->assertStringContainsString('blocked', $replies[0]->getMessage());
         $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testAnAuthRequiredRefusalIsPrecededByAnAuthChallenge(): void
     {
-        $this->policy->method('allowSubscription')
-            ->willReturn(PolicyRejection::authRequired('we only serve DMs to their parties'));
+        $this->assertSame([AuthMessage::class, ClosedMessage::class], self::messageTypes($this->subscribeRefusedAsAuthRequired()));
+    }
 
-        $replies = $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
+    public function testAnAuthRequiredRefusalIsClosedAsAuthRequired(): void
+    {
+        $this->assertEquals(
+            ClosedMessage::closed(SubscriptionIdMother::from('sub-1'), ReasonPrefix::AuthRequired, 'we only serve DMs to their parties'),
+            $this->subscribeRefusedAsAuthRequired()[1],
+        );
+    }
 
-        $this->assertCount(2, $replies);
-        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[1]);
-        $this->assertStringStartsWith('auth-required:', $replies[1]->getMessage());
+    public function testAnAuthRequiredRefusalRegistersNoSubscription(): void
+    {
+        $this->subscribeRefusedAsAuthRequired();
+
         $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
     }
 
     public function testAnAuthRequiredRefusalDoesNotReissueAChallengeTheClientAlreadyHolds(): void
     {
-        $this->policy->method('allowSubscription')
-            ->willReturn(PolicyRejection::authRequired('we only serve DMs to their parties'));
         $this->authenticationRegistry->getOrCreateChallenge($this->client->getId());
 
-        $replies = $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
+        $this->assertEquals(
+            [ClosedMessage::closed(SubscriptionIdMother::from('sub-1'), ReasonPrefix::AuthRequired, 'we only serve DMs to their parties')],
+            $this->subscribeRefusedAsAuthRequired(),
+        );
     }
 
     public function testRateLimitReturnsClosedMessage(): void
@@ -205,12 +198,120 @@ final class CreateSubscriptionUseCaseTest extends TestCase
 
         $replies = $this->useCase->execute($this->client, $subId, $filters);
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
-        $this->assertStringContainsString('rate-limited', $replies[0]->getMessage());
+        $this->assertEquals([ClosedMessage::closed(SubscriptionIdMother::from('sub-1'), ReasonPrefix::RateLimited, 'slow down')], $replies);
     }
 
     public function testSubscriptionLimitReturnsClosedMessage(): void
+    {
+        $this->assertEquals(
+            [ClosedMessage::closed(SubscriptionIdMother::from('sub-2'), ReasonPrefix::Blocked, 'too many subscriptions (max 1)')],
+            $this->subscribeTwiceUnderALimitOfOne($this->makeClient()),
+        );
+    }
+
+    public function testSubscriptionLimitKeepsOnlyTheSubscriptionWithinIt(): void
+    {
+        $client = $this->makeClient();
+
+        $this->subscribeTwiceUnderALimitOfOne($client);
+
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($client->getId()));
+    }
+
+    public function testASubscriptionReplacingOneTheClientHoldsAtTheCapIsAdmitted(): void
+    {
+        $client = $this->makeClient();
+
+        $this->assertSame([], $this->subscribeTwiceUnderALimitOfOne($client, 'sub-1'));
+    }
+
+    public function testASubscriptionReplacingOneTheClientHoldsAtTheCapKeepsOneSubscription(): void
+    {
+        $client = $this->makeClient();
+
+        $this->subscribeTwiceUnderALimitOfOne($client, 'sub-1');
+
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($client->getId()));
+    }
+
+    /**
+     * @template T of RelayMessage
+     *
+     * @param list<RelayMessage> $replies
+     * @param class-string<T>    $type
+     *
+     * @return T|null
+     */
+    private static function replyOfType(array $replies, string $type): ?RelayMessage
+    {
+        $reply = array_find($replies, static fn (RelayMessage $reply): bool => $reply instanceof $type);
+
+        return $reply instanceof $type ? $reply : null;
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function subscribeWithinScope(): array
+    {
+        $filters = new FilterCollection([Filter::from()]);
+
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
+
+        return $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), $filters);
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function subscribeBeyondScope(): array
+    {
+        $this->policy->method('filterForClient')->willReturn(
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
+        );
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
+
+        return $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function subscribeFullyOutOfScope(): array
+    {
+        $this->policy->method('filterForClient')->willReturn(ScopedFilters::scoped(new FilterCollection(), true));
+        $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
+
+        return $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from(authors: PublicKeyCollection::fromHexValues(['ff']))]));
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function subscribeAgainstPolicy(): array
+    {
+        $this->policy->method('allowSubscription')
+            ->willReturn(PolicyRejection::blocked('subscription not allowed'));
+
+        return $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function subscribeRefusedAsAuthRequired(): array
+    {
+        $this->policy->method('allowSubscription')
+            ->willReturn(PolicyRejection::authRequired('we only serve DMs to their parties'));
+
+        return $this->useCase->execute($this->client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function subscribeTwiceUnderALimitOfOne(RelayClient $client, string $secondId = 'sub-2'): array
     {
         $this->policy->method('allowSubscription')
             ->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters, int $currentSubscriptionCount): ?PolicyRejection => $currentSubscriptionCount >= 1
@@ -220,16 +321,19 @@ final class CreateSubscriptionUseCaseTest extends TestCase
             ->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
         $this->eventStore->method('findByFilters')->willReturn(new StoredEventCollection([]));
 
-        $client = $this->makeClient();
-
-        $replies = [
+        return [
             ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()])),
-            ...$this->useCase->execute($client, SubscriptionIdMother::from('sub-2'), new FilterCollection([Filter::from()])),
+            ...$this->useCase->execute($client, SubscriptionIdMother::from($secondId), new FilterCollection([Filter::from()])),
         ];
+    }
 
-        $closed = array_values(array_filter($replies, static fn (RelayMessage $message): bool => $message instanceof ClosedMessage));
-        $this->assertCount(1, $closed);
-        $this->assertStringContainsString('blocked', $closed[0]->getMessage());
-        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($client->getId()));
+    /**
+     * @param list<RelayMessage> $replies
+     *
+     * @return list<class-string<RelayMessage>>
+     */
+    private static function messageTypes(array $replies): array
+    {
+        return array_map(static fn (RelayMessage $reply): string => $reply::class, $replies);
     }
 }

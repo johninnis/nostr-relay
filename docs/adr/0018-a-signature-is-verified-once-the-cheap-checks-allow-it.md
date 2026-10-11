@@ -16,9 +16,11 @@ The order of the remaining two matters for a different reason. It is tempting to
 
 An AUTH frame is answered in three steps, cheapest first, and each is only reached if the one before it passed.
 
-1. The challenge the relay issued this connection is looked up. Without one, a fresh challenge is issued and nothing else happens.
+1. The challenge the relay issued this connection is looked up. Without one, a fresh challenge is issued and the frame is answered `OK false` `auth-required: challenge issued, please retry`, so the client answers the new challenge; nothing else is checked.
 2. `AuthEventVerifier::verifyClaim()` runs the NIP-42 checks against the event as it stands. These read the event and nothing else, so they are safe to ask before the signature is known and they gate everything after.
-3. The signature is verified, and only then does `AuthEventVerifier::verifyIdentity()` ask the policy whether this key may authenticate.
+3. The event is validated by `EventValidityGate` — its structure and signature, its `created_at` window and its expiry, against the injected clock (ADR-0014, ADR-0020) — and only then does `AuthEventVerifier::verifyIdentity()` ask the policy whether this key may authenticate.
+
+A refusal at step 2 is answered under the prefix the NIP-42 failure names (ADR-0015): `auth-required:` for a challenge the relay has since replaced, `invalid:` for any other. A refusal at step 3, a malformed event, a bad signature or an expired event, is answered `invalid:`, and the frame ends there: an expired `AUTH` event authenticates nothing.
 
 ## Consequences
 
@@ -26,4 +28,5 @@ An AUTH frame is answered in three steps, cheapest first, and each is only reach
 - A refusal never tells an unauthenticated sender whose keys the relay trusts, because the policy is not consulted until the sender has proved the key is theirs.
 - The NIP-42 checks run against an event whose signature is unknown. That reads like trusting unverified input and is not: nothing is granted on the strength of those checks, they only decide whether the event is worth verifying.
 - Do not move the policy check back alongside the protocol checks to save a step. The two are separated by the verification precisely so that one cannot answer questions about the operator's keys to someone who has proved nothing.
-- No budget is imposed on authenticating clients. A client that authenticates is one the policy admits, and the work it then causes, re-streaming its own subscriptions, is work it is entitled to.
+- No budget is imposed on authenticating clients. A client that authenticates is one the policy admits, and authenticating causes no further work: open subscriptions are left as they were admitted (ADR-0033).
+- Shared decisions: nostr-adrs ADR-0026 and ADR-0028.

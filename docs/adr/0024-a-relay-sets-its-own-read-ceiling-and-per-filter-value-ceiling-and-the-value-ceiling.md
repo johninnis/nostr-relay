@@ -31,3 +31,4 @@ The value ceiling bounds one store query, like the read ceiling bounds one reply
 - A host implementing `RelayPolicyInterface` itself applies both ceilings in its own policy, as it does every other limit.
 - Do not move the value check below the tenant check: a tenant's oversized filter breaks the store as surely as a guest's.
 - Do not reintroduce an upper bound on `max_query_limit` from the library; the relay's own figure is the only one.
+- Shared decision: nostr-adrs ADR-0033.

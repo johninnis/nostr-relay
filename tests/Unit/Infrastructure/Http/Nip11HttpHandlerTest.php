@@ -26,18 +26,12 @@ final class Nip11HttpHandlerTest extends TestCase
 
     public function testTheDocumentCarriesTheProvidedRelayInformation(): void
     {
-        $response = $this->handler()->handleRequest($this->request());
-
-        $this->assertNotNull($response);
-        $this->assertStringContainsString('Test Relay', buffer($response->getBody()));
+        $this->assertThat($this->servedBody($this->handler()), $this->stringContains('Test Relay'));
     }
 
     public function testServesAnEmptyDocumentAsAJsonObject(): void
     {
-        $response = $this->handler([])->handleRequest($this->request());
-
-        $this->assertNotNull($response);
-        $this->assertSame('{}', buffer($response->getBody()));
+        $this->assertSame('{}', $this->servedBody($this->handler([])));
     }
 
     public function testIgnoresARequestWithoutTheNostrAcceptHeader(): void
@@ -91,6 +85,13 @@ final class Nip11HttpHandlerTest extends TestCase
         $this->assertNull($this->handler()->handleRequest(
             $this->request(headers: ['accept' => 'application/nostr+json-ld']),
         ));
+    }
+
+    private function servedBody(Nip11HttpHandler $handler): ?string
+    {
+        $response = $handler->handleRequest($this->request());
+
+        return null === $response ? null : buffer($response->getBody());
     }
 
     /**

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\Concurrency;
 
+use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -40,6 +41,37 @@ final class AmphpDeferredExecutorTest extends TestCase
         async(static function () use ($executor): void {
             $executor->defer(static function (): void {
                 throw new RuntimeException('the deferred work failed');
+            });
+            delay(0);
+        })->await();
+    }
+
+    public function testADeferredTaskEndedByADisconnectedPeerIsRecordedAsRoutine(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('debug')->with(
+            'Deferred task ended: its peer disconnected',
+            ['reason' => 'Peer disconnected'],
+        );
+
+        $this->runATaskEndedByADisconnectedPeer($logger);
+    }
+
+    public function testADeferredTaskEndedByADisconnectedPeerIsNotReportedAsAFailure(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('error');
+
+        $this->runATaskEndedByADisconnectedPeer($logger);
+    }
+
+    private function runATaskEndedByADisconnectedPeer(LoggerInterface $logger): void
+    {
+        $executor = new AmphpDeferredExecutor($logger);
+
+        async(static function () use ($executor): void {
+            $executor->defer(static function (): void {
+                throw ConnectionException::peerDisconnected();
             });
             delay(0);
         })->await();

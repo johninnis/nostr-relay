@@ -50,10 +50,15 @@ final class RelayPolicyTest extends TestCase
     public function testAFilterHoldingTooManyValuesIsRefusedForATenantToo(): void
     {
         $policy = $this->policyWithGuestRules(['max_filter_values' => 1]);
-        $filters = new FilterCollection([Filter::tryFromArray(['kinds' => [1, 7]]) ?? self::fail('filter did not parse')]);
 
-        $this->assertSame('blocked: too many values in one filter (max 1)', $policy->allowSubscription($this->tenantClient(), $filters, 0)?->toWireReason());
-        $this->assertSame('blocked: too many values in one filter (max 1)', $policy->allowSubscription($this->guestClient(), $filters, 0)?->toWireReason());
+        $this->assertSame('blocked: too many values in one filter (max 1)', $policy->allowSubscription($this->tenantClient(), $this->twoKindFilters(), 0)?->toWireReason());
+    }
+
+    public function testAFilterHoldingTooManyValuesIsRefusedForAGuest(): void
+    {
+        $policy = $this->policyWithGuestRules(['max_filter_values' => 1]);
+
+        $this->assertSame('blocked: too many values in one filter (max 1)', $policy->allowSubscription($this->guestClient(), $this->twoKindFilters(), 0)?->toWireReason());
     }
 
     public function testOpenRelayStillEnforcesSubscriptionCap(): void
@@ -62,8 +67,7 @@ final class RelayPolicyTest extends TestCase
 
         $rejection = $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
 
-        $this->assertNotNull($rejection);
-        $this->assertStringContainsString('too many subscriptions (max 2)', $rejection->toWireReason());
+        $this->assertSame('blocked: too many subscriptions (max 2)', $rejection?->toWireReason());
     }
 
     public function testOpenRelayRateLimitsAnonymousClients(): void
@@ -79,8 +83,7 @@ final class RelayPolicyTest extends TestCase
 
         $rejection = $policy->allowSubscription($this->guestClient(), new FilterCollection(), 2);
 
-        $this->assertNotNull($rejection);
-        $this->assertStringContainsString('too many subscriptions (max 2)', $rejection->toWireReason());
+        $this->assertSame('blocked: too many subscriptions (max 2)', $rejection?->toWireReason());
     }
 
     public function testGuestMayPublishConfiguredWriteKind(): void
@@ -96,8 +99,7 @@ final class RelayPolicyTest extends TestCase
 
         $rejection = $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::TEXT_NOTE, 'x'));
 
-        $this->assertNotNull($rejection);
-        $this->assertTrue($rejection->isAuthRequired());
+        $this->assertTrue($rejection?->isAuthRequired());
     }
 
     public function testGuestWriteRequiringTenantTagIsRejectedWhenUntagged(): void
@@ -106,8 +108,7 @@ final class RelayPolicyTest extends TestCase
 
         $rejection = $policy->allowEventSubmission($this->guestClient(), $this->event(EventKind::ZAP_RECEIPT, 'x'));
 
-        $this->assertNotNull($rejection);
-        $this->assertStringContainsString('event must be tagged to a relay tenant', $rejection->toWireReason());
+        $this->assertSame('blocked: event must be tagged to a relay tenant', $rejection?->toWireReason());
     }
 
     public function testGuestWriteRequiringTenantTagIsAcceptedWhenTagged(): void
@@ -179,24 +180,35 @@ final class RelayPolicyTest extends TestCase
         $this->assertSame([7], array_map(static fn (Filter $filter): ?int => $filter->getLimit(), $scoped->getFilters()->toArray()));
     }
 
-    public function testAllowsAuthenticationOnlyForTenantPubkeys(): void
+    public function testAllowsAuthenticationForATenantPubkey(): void
     {
         $policy = $this->policyWithGuestRules();
 
         $this->assertNull($policy->allowsAuthentication($this->publicKey(self::TENANT_HEX)));
-
-        $refusal = $policy->allowsAuthentication($this->publicKey(self::STRANGER_HEX));
-
-        $this->assertNotNull($refusal);
-        $this->assertSame('restricted: authentication is limited to relay tenants', $refusal->toWireReason());
     }
 
-    public function testRateLimitExemptionTracksTenancy(): void
+    public function testRestrictsAuthenticationForAPubkeyThatIsNoTenant(): void
     {
         $policy = $this->policyWithGuestRules();
 
-        $this->assertTrue($policy->isRateLimitExempt($this->tenantClient()));
-        $this->assertFalse($policy->isRateLimitExempt($this->guestClient()));
+        $refusal = $policy->allowsAuthentication($this->publicKey(self::STRANGER_HEX));
+
+        $this->assertSame('restricted: authentication is limited to relay tenants', $refusal?->toWireReason());
+    }
+
+    public function testATenantIsRateLimitExempt(): void
+    {
+        $this->assertTrue($this->policyWithGuestRules()->isRateLimitExempt($this->tenantClient()));
+    }
+
+    public function testAGuestIsNotRateLimitExempt(): void
+    {
+        $this->assertFalse($this->policyWithGuestRules()->isRateLimitExempt($this->guestClient()));
+    }
+
+    private function twoKindFilters(): FilterCollection
+    {
+        return new FilterCollection([Filter::tryFromArray(['kinds' => [1, 7]]) ?? self::fail('filter did not parse')]);
     }
 
     /**

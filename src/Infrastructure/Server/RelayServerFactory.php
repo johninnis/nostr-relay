@@ -37,11 +37,14 @@ use Innis\Nostr\Relay\Application\Service\ClientMessageDispatcher;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
 use Innis\Nostr\Relay\Application\Service\ClientSessionCoordinator;
 use Innis\Nostr\Relay\Application\Service\ClientVerbHandlers;
+use Innis\Nostr\Relay\Application\Service\DeliveryGate;
+use Innis\Nostr\Relay\Application\Service\EventAcceptance;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventAudience;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\EventValidityGate;
+use Innis\Nostr\Relay\Application\Service\HeldSubscriptionSender;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
@@ -50,19 +53,21 @@ use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
 use Innis\Nostr\Relay\Application\Service\PublishingGate;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
+use Innis\Nostr\Relay\Application\Service\ReadableEventCounter;
+use Innis\Nostr\Relay\Application\Service\ReadScopeGate;
 use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionActivator;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
-use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Application\UseCase\CloseSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
+use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\EventStore\LoggingEventStore;
@@ -186,8 +191,11 @@ final class RelayServerFactory
         $clientMessenger = new LiveMarkingClientMessenger(new ClientMessenger($clientRegistry), $subscriptionRegistry);
         $disconnectionHandler = new ClientDisconnectionHandler($clientRegistry, $subscriptionRegistry, $authenticationRegistry);
 
+        $giftWrapRules = new GiftWrapFilterRules();
+        $deliveryGate = new DeliveryGate($this->policy, $giftWrapRules);
+
         $eventDistributor = new EventDistributor(
-            new EventAudience($this->policy, $subscriptionRegistry, $clientRegistry),
+            new EventAudience($deliveryGate, $subscriptionRegistry, $clientRegistry),
             $clientMessenger,
             $logger,
         );
@@ -211,8 +219,12 @@ final class RelayServerFactory
             $validityGate,
             new PublishingGate($this->policy, $authenticationRegistry, $authChallengeIssuer),
         );
-        $subscriptionAdmission = new SubscriptionAdmission($this->policy, $subscriptionRateLimitGate, $subscriptionRegistry);
-        $subscriptionAnswers = new SubscriptionAnswers($subscriptionRegistry, $authChallengeIssuer);
+        $subscriptionAdmission = new SubscriptionAdmission(
+            $subscriptionRateLimitGate,
+            new ReadScopeGate($this->policy, $authenticationRegistry, $giftWrapRules),
+            $subscriptionRegistry,
+        );
+        $subscriptionAnswers = new SubscriptionAnswers($subscriptionRegistry, $authChallengeIssuer, $logger);
 
         $acceptedEventPipeline = new AcceptedEventPipeline(
             $eventStore,
@@ -221,20 +233,18 @@ final class RelayServerFactory
         );
 
         $storedEventStreamer = new StoredEventStreamer(
-            new StoredEventReadGate($eventStore, $this->policy, $clock),
-            $clientMessenger,
-            $logger,
+            new StoredEventReadGate($eventStore, $deliveryGate, $clock),
+            new HeldSubscriptionSender($clientMessenger, $subscriptionRegistry, $subscriptionAnswers),
         );
         $subscriptionActivator = new SubscriptionActivator(
             $subscriptionAdmission,
             new RegisteringStoredEventStreamer($deferredExecutor, $storedEventStreamer, $subscriptionRegistry),
             $subscriptionAnswers,
         );
-        $subscriptionReevaluator = new SubscriptionReevaluator($subscriptionRegistry, $subscriptionActivator);
 
         $messageDispatcher = new ClientMessageDispatcher(
             new ClientVerbHandlers(
-                new ProcessEventSubmissionUseCase($eventAdmission, $acceptedEventPipeline, $logger),
+                new ProcessEventSubmissionUseCase($eventAdmission, new EventAcceptance($acceptedEventPipeline, $authChallengeIssuer), $logger),
                 new CreateSubscriptionUseCase($subscriptionActivator),
                 new CloseSubscriptionUseCase($subscriptionRegistry),
                 new ProcessAuthUseCase(
@@ -244,9 +254,8 @@ final class RelayServerFactory
                         $authChallengeIssuer,
                     ),
                     $validityGate,
-                    $subscriptionReevaluator,
                 ),
-                new CountSubscriptionUseCase($eventStore, $subscriptionAdmission, $subscriptionAnswers),
+                new CountSubscriptionUseCase(new ReadableEventCounter($eventStore, $giftWrapRules), $subscriptionAdmission, $subscriptionAnswers),
             ),
             $clientRegistry,
             $logger,

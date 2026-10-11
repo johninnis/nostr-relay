@@ -19,3 +19,4 @@ Both callers hand the validator the instant their injected `ClockInterface` repo
 - A test can pin the `created_at` window at a fixed instant, for a submitted event and for an AUTH event alike.
 - `ProcessAuthUseCase` takes one more collaborator. It is a distinct one, the source of time, and is covered by the same fence as the rest of its constructor.
 - Do not replace the clock with `Timestamp::now()` at either call site to save the argument: the relay would then hold two notions of now, and the validity window could disagree with the expiry check and with the NIP-42 `created_at` check made moments before.
+- Shared decision: nostr-adrs ADR-0034.

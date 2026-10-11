@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Domain\ValueObject;
 
+use Innis\Nostr\Core\Domain\Failure\Nip42ValidationFailure;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
@@ -24,6 +25,16 @@ final class PolicyRejectionTest extends TestCase
         $message = PolicyRejection::rateLimited('slow down')->toClosedMessage(SubscriptionIdMother::from('sub-1'));
 
         $this->assertSame(['CLOSED', 'sub-1', 'rate-limited: slow down'], $message->toArray());
+    }
+
+    public function testANip42FailureIsRefusedUnderThePrefixItNames(): void
+    {
+        $this->assertSame('invalid: Event timestamp is outside tolerance', PolicyRejection::fromNip42Failure(Nip42ValidationFailure::TimestampOutsideTolerance)->toWireReason());
+    }
+
+    public function testAReplacedChallengeIsRefusedAsAuthRequired(): void
+    {
+        $this->assertSame('auth-required: Challenge does not match the one issued', PolicyRejection::fromNip42Failure(Nip42ValidationFailure::ChallengeMismatch)->toWireReason());
     }
 
     private static function eventId(): EventId

@@ -24,50 +24,42 @@ final class RelayPolicyConfigTest extends TestCase
 
     public function testParsesValidHexTenantKey(): void
     {
-        $config = RelayPolicyConfig::tryFromArray(['tenants' => [str_repeat('a', 64)]]);
+        $this->assertNotNull(RelayPolicyConfig::tryFromArray(['tenants' => [str_repeat('a', 64)]]));
+    }
 
-        $this->assertNotNull($config);
-        $this->assertCount(1, $config->getTenants());
+    public function testAValidHexTenantKeyIsTheOneTenant(): void
+    {
+        $this->assertSame(1, RelayPolicyConfig::tryFromArray(['tenants' => [str_repeat('a', 64)]])?->getTenants()->count());
+    }
+
+    public function testAGuestSectionWithNoReadSectionParses(): void
+    {
+        $this->assertNotNull(RelayPolicyConfig::tryFromArray(['guest' => ['write' => [['kinds' => [1]]]]]));
     }
 
     public function testReadableKindsAreUnrestrictedOnlyWhenThereIsNoReadSection(): void
     {
-        $config = RelayPolicyConfig::tryFromArray(['guest' => ['write' => [['kinds' => [1]]]]]);
-
-        $this->assertNotNull($config);
-        $this->assertNull($config->getGuest()->getReadableKinds());
+        $this->assertNull(RelayPolicyConfig::tryFromArray(['guest' => ['write' => [['kinds' => [1]]]]])?->getGuest()->getReadableKinds());
     }
 
     public function testAReadSectionListingNoKindsReadsNothing(): void
     {
-        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => []]]]]);
-
-        $this->assertNotNull($config);
-        $this->assertSame([], $config->getGuest()->getReadableKinds()?->toInts());
+        $this->assertSame([], RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => []]]]])?->getGuest()->getReadableKinds()?->toInts());
     }
 
     public function testAnEmptyReadSectionReadsNothing(): void
     {
-        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => []]]);
-
-        $this->assertNotNull($config);
-        $this->assertSame([], $config->getGuest()->getReadableKinds()?->toInts());
+        $this->assertSame([], RelayPolicyConfig::tryFromArray(['guest' => ['read' => []]])?->getGuest()->getReadableKinds()?->toInts());
     }
 
     public function testReadableKindsAreTheKindsTheReadRulesList(): void
     {
-        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => [1]], ['kinds' => [7]]]]]);
-
-        $this->assertNotNull($config);
-        $this->assertSame([1, 7], $config->getGuest()->getReadableKinds()?->toInts());
+        $this->assertSame([1, 7], RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => [1]], ['kinds' => [7]]]]])?->getGuest()->getReadableKinds()?->toInts());
     }
 
     public function testReadRulesListingOnlyMalformedKindsReadNothing(): void
     {
-        $config = RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => ['one']]]]]);
-
-        $this->assertNotNull($config);
-        $this->assertSame([], $config->getGuest()->getReadableKinds()?->toInts());
+        $this->assertSame([], RelayPolicyConfig::tryFromArray(['guest' => ['read' => [['kinds' => ['one']]]]])?->getGuest()->getReadableKinds()?->toInts());
     }
 
     #[DataProvider('unusableQueryLimits')]

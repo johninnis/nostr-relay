@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Acceptance;
 
 use Amp\Http\Client\HttpClientBuilder;
 use Amp\Http\Client\Request;
+use Amp\Http\Client\Response;
 use Amp\Http\Server\DefaultErrorHandler;
 use Amp\Http\Server\SocketHttpServer;
 use Amp\Socket\InternetAddress;
@@ -22,6 +23,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage as ClientEventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\ReqMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EventMessage as RelayEventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Nip11Info;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\RelayUrl;
@@ -55,63 +57,129 @@ final class RelayServerAcceptanceTest extends TestCase
         $this->httpServer = null;
     }
 
-    public function testSignedEventIsAcceptedAndStreamedBackToASubscriber(): void
+    public function testSignedEventIsAccepted(): void
     {
-        $base = $this->startRelay();
-        $connection = connect("ws://{$base}/");
+        self::assertTrue($this->answerToPublishing($this->signedTextNote('hello from acceptance'))?->isAccepted());
+    }
 
+    public function testTheAcceptanceNamesTheSignedEvent(): void
+    {
         $event = $this->signedTextNote('hello from acceptance');
-        $connection->sendText(new ClientEventMessage($event)->toJson());
 
-        $ok = OkMessage::tryFromJson($this->nextFrame($connection));
-        self::assertNotNull($ok);
-        self::assertTrue($ok->isAccepted(), 'relay should accept a valid signed event');
-        self::assertSame($event->getId()->toHex(), $ok->getEventId()->toHex());
+        self::assertSame($event->getId()->toHex(), $this->answerToPublishing($event)?->getEventId()->toHex());
+    }
 
-        $subscriptionId = SubscriptionId::tryFromString('acc-sub') ?? throw new RuntimeException('bad subscription id');
-        $connection->sendText(ReqMessage::from($subscriptionId, new FilterCollection([Filter::from()]))->toJson());
+    public function testAnAcceptedEventIsStreamedBackToASubscriberAsAnEventFrame(): void
+    {
+        [$eventFrame] = $this->framesStreamedToASubscriberAfterPublishing($this->signedTextNote('hello from acceptance'));
 
-        $eventFrame = $this->decodeFrame($this->nextFrame($connection));
-        self::assertSame('EVENT', $eventFrame[0]);
-        self::assertSame('acc-sub', $eventFrame[1]);
-        self::assertIsArray($eventFrame[2]);
-        self::assertSame($event->getId()->toHex(), $eventFrame[2]['id']);
+        self::assertSame('EVENT', $this->decodeFrame($eventFrame)[0]);
+    }
 
-        $eoseFrame = $this->decodeFrame($this->nextFrame($connection));
-        self::assertSame('EOSE', $eoseFrame[0]);
-        self::assertSame('acc-sub', $eoseFrame[1]);
+    public function testTheStreamedEventFrameCarriesTheSubscriptionId(): void
+    {
+        [$eventFrame] = $this->framesStreamedToASubscriberAfterPublishing($this->signedTextNote('hello from acceptance'));
 
-        $connection->close();
+        self::assertSame('acc-sub', $this->decodeFrame($eventFrame)[1]);
+    }
+
+    public function testTheStreamedEventIsTheOneThatWasPublished(): void
+    {
+        $event = $this->signedTextNote('hello from acceptance');
+
+        [$eventFrame] = $this->framesStreamedToASubscriberAfterPublishing($event);
+
+        self::assertSame($event->getId()->toHex(), RelayEventMessage::tryFromJson($eventFrame)?->getEvent()->getId()->toHex());
+    }
+
+    public function testTheStoredEventsAreFollowedByAnEndOfStoredEventsFrame(): void
+    {
+        [, $endOfStoredEventsFrame] = $this->framesStreamedToASubscriberAfterPublishing($this->signedTextNote('hello from acceptance'));
+
+        self::assertSame('EOSE', $this->decodeFrame($endOfStoredEventsFrame)[0]);
+    }
+
+    public function testTheEndOfStoredEventsFrameCarriesTheSubscriptionId(): void
+    {
+        [, $endOfStoredEventsFrame] = $this->framesStreamedToASubscriberAfterPublishing($this->signedTextNote('hello from acceptance'));
+
+        self::assertSame('acc-sub', $this->decodeFrame($endOfStoredEventsFrame)[1]);
+    }
+
+    public function testRefusesAnEventLongerThanTheConfiguredContentLength(): void
+    {
+        $answer = $this->answerToPublishing($this->signedTextNote('too long'), new EventLimits(maxContentLength: 5));
+
+        self::assertFalse($answer?->isAccepted());
     }
 
     public function testRefusesAnEventLongerThanTheConfiguredContentLengthAsInvalid(): void
     {
-        $base = $this->startRelay(new EventLimits(maxContentLength: 5));
-        $connection = connect("ws://{$base}/");
+        $answer = $this->answerToPublishing($this->signedTextNote('too long'), new EventLimits(maxContentLength: 5));
 
-        $connection->sendText(new ClientEventMessage($this->signedTextNote('too long'))->toJson());
-
-        $ok = OkMessage::tryFromJson($this->nextFrame($connection));
-        self::assertNotNull($ok);
-        self::assertSame([false, 'invalid: Event content exceeds maximum length'], [$ok->isAccepted(), $ok->getMessage()]);
-
-        $connection->close();
+        self::assertSame('invalid: Event content exceeds maximum length', $answer?->getMessage());
     }
 
     public function testServesNip11DocumentOverHttp(): void
     {
-        $base = $this->startRelay();
+        self::assertSame(200, $this->nip11Response()->getStatus());
+    }
 
-        $request = new Request("http://{$base}/");
+    public function testServesTheNip11DocumentAsNostrJson(): void
+    {
+        self::assertStringContainsString('application/nostr+json', $this->nip11Response()->getHeader('content-type') ?? '');
+    }
+
+    public function testTheNip11DocumentCarriesTheConfiguredName(): void
+    {
+        self::assertSame('Acceptance Relay', $this->nip11Document()['name'] ?? null);
+    }
+
+    private function answerToPublishing(Event $event, EventLimits $eventLimits = new EventLimits()): ?OkMessage
+    {
+        $connection = connect("ws://{$this->startRelay($eventLimits)}/");
+        $connection->sendText(new ClientEventMessage($event)->toJson());
+
+        $answer = OkMessage::tryFromJson($this->nextFrame($connection));
+        $connection->close();
+
+        return $answer;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function framesStreamedToASubscriberAfterPublishing(Event $event): array
+    {
+        $connection = connect("ws://{$this->startRelay()}/");
+        $connection->sendText(new ClientEventMessage($event)->toJson());
+        $this->nextFrame($connection);
+
+        $subscriptionId = SubscriptionId::tryFromString('acc-sub') ?? throw new RuntimeException('bad subscription id');
+        $connection->sendText(ReqMessage::from($subscriptionId, new FilterCollection([Filter::from()]))->toJson());
+
+        $frames = [$this->nextFrame($connection), $this->nextFrame($connection)];
+        $connection->close();
+
+        return $frames;
+    }
+
+    private function nip11Response(): Response
+    {
+        $request = new Request("http://{$this->startRelay()}/");
         $request->setHeader('accept', 'application/nostr+json');
-        $response = HttpClientBuilder::buildDefault()->request($request, new TimeoutCancellation(5));
 
-        self::assertSame(200, $response->getStatus());
-        self::assertStringContainsString('application/nostr+json', $response->getHeader('content-type') ?? '');
+        return HttpClientBuilder::buildDefault()->request($request, new TimeoutCancellation(5));
+    }
 
-        $document = json_decode($response->getBody()->buffer(new TimeoutCancellation(5)), true);
-        self::assertIsArray($document);
-        self::assertSame('Acceptance Relay', $document['name']);
+    /**
+     * @return array<mixed>
+     */
+    private function nip11Document(): array
+    {
+        $document = json_decode($this->nip11Response()->getBody()->buffer(new TimeoutCancellation(5)), true);
+
+        return is_array($document) ? $document : throw new RuntimeException('the NIP-11 document is not a JSON object');
     }
 
     private function startRelay(EventLimits $eventLimits = new EventLimits()): string
@@ -165,9 +233,8 @@ final class RelayServerAcceptanceTest extends TestCase
     private function decodeFrame(string $frame): array
     {
         $decoded = json_decode($frame, true);
-        self::assertIsArray($decoded);
 
-        return array_values($decoded);
+        return is_array($decoded) ? array_values($decoded) : throw new RuntimeException('frame is not a JSON array');
     }
 
     private function signedTextNote(string $content): Event

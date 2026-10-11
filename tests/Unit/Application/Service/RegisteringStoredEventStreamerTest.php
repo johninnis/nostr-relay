@@ -10,26 +10,33 @@ use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
+use Innis\Nostr\Relay\Application\Service\DeliveryGate;
+use Innis\Nostr\Relay\Application\Service\HeldSubscriptionSender;
+use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
 use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
+use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Tests\Support\RecordingClientMessenger;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
+use Innis\Nostr\Relay\Tests\Support\TestDoubleException;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use RuntimeException;
 
 final class RegisteringStoredEventStreamerTest extends TestCase
 {
@@ -52,33 +59,31 @@ final class RegisteringStoredEventStreamerTest extends TestCase
         );
     }
 
-    public function testTheSubscriptionIsRegisteredWithTheRequestedFilters(): void
+    public function testTheSubscriptionIsRegisteredWithTheGrantedFilters(): void
     {
-        $requested = new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]);
-        $scoped = new FilterCollection([Filter::tryFromArray(['kinds' => [4]])]);
+        $granted = new FilterCollection([Filter::tryFromArray(['kinds' => [4]])]);
 
         $this->streamer($this->synchronousExecutor())->stream(
             $this->client,
-            Subscription::create(SubscriptionIdMother::from('sub-1'), $scoped),
-            ScopedFilters::scoped($requested, $scoped, false),
+            Subscription::create(SubscriptionIdMother::from('sub-1'), $granted),
+            ScopedFilters::scoped($granted, false),
         );
 
-        $this->assertSame($requested, $this->subscriptionRegistry->getOriginalFilters($this->client->getId(), SubscriptionIdMother::from('sub-1')));
+        $this->assertSame($granted, $this->subscriptionRegistry->getSubscriptionsForClient($this->client->getId())->get(SubscriptionIdMother::from('sub-1'))?->getFilters());
     }
 
-    public function testTheScopedFiltersAreWhatGetStreamed(): void
+    public function testTheGrantedFiltersAreWhatGetStreamed(): void
     {
-        $requested = new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]);
-        $scoped = new FilterCollection([Filter::tryFromArray(['kinds' => [4]])]);
+        $granted = new FilterCollection([Filter::tryFromArray(['kinds' => [4]])]);
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->expects($this->once())->method('findByFilters')->with($scoped)->willReturn(new StoredEventCollection([]));
+        $eventStore->expects($this->once())->method('findByFilters')->with($granted)->willReturn(new StoredEventCollection([]));
         $this->eventStore = $eventStore;
 
         $this->streamer($this->synchronousExecutor())->stream(
             $this->client,
-            Subscription::create(SubscriptionIdMother::from('sub-1'), $scoped),
-            ScopedFilters::scoped($requested, $scoped, false),
+            Subscription::create(SubscriptionIdMother::from('sub-1'), $granted),
+            ScopedFilters::scoped($granted, false),
         );
     }
 
@@ -96,9 +101,9 @@ final class RegisteringStoredEventStreamerTest extends TestCase
     public function testADeferralFailureIsRethrown(): void
     {
         $executor = $this->createStub(DeferredExecutorInterface::class);
-        $executor->method('defer')->willThrowException(new RuntimeException('deferral unavailable'));
+        $executor->method('defer')->willThrowException(new TestDoubleException('deferral unavailable'));
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(TestDoubleException::class);
 
         $this->streamer($executor)->stream(
             $this->client,
@@ -110,7 +115,7 @@ final class RegisteringStoredEventStreamerTest extends TestCase
     public function testADeferralFailureWithdrawsTheRegistration(): void
     {
         $executor = $this->createStub(DeferredExecutorInterface::class);
-        $executor->method('defer')->willThrowException(new RuntimeException('deferral unavailable'));
+        $executor->method('defer')->willThrowException(new TestDoubleException('deferral unavailable'));
 
         try {
             $this->streamer($executor)->stream(
@@ -118,7 +123,7 @@ final class RegisteringStoredEventStreamerTest extends TestCase
                 Subscription::create(SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()])),
                 ScopedFilters::unchanged(new FilterCollection([Filter::from()])),
             );
-        } catch (RuntimeException) {
+        } catch (TestDoubleException) {
         }
 
         $this->assertSame(0, $this->subscriptionRegistry->getSubscriptionCountForClient($this->client->getId()));
@@ -132,9 +137,18 @@ final class RegisteringStoredEventStreamerTest extends TestCase
         $clock = $this->createStub(ClockInterface::class);
         $clock->method('now')->willReturn(Timestamp::fromInt(self::NOW));
 
+        $answers = new SubscriptionAnswers(
+            $this->subscriptionRegistry,
+            new AuthChallengeIssuer(new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator())),
+            new NullLogger(),
+        );
+
         return new RegisteringStoredEventStreamer(
             $executor,
-            new StoredEventStreamer(new StoredEventReadGate($this->eventStore, $policy, $clock), $this->messenger, new NullLogger()),
+            new StoredEventStreamer(
+                new StoredEventReadGate($this->eventStore, new DeliveryGate($policy, new GiftWrapFilterRules()), $clock),
+                new HeldSubscriptionSender($this->messenger, $this->subscriptionRegistry, $answers),
+            ),
             $this->subscriptionRegistry,
         );
     }

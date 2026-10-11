@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 use Innis\Nostr\Core\Application\Service\Nip42ValidatorInterface;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\Failure\Nip42ValidationFailure;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
@@ -20,6 +21,7 @@ use Innis\Nostr\Relay\Application\Service\AuthEventVerifier;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 
 final class AuthEventVerifierTest extends TestCase
@@ -33,14 +35,13 @@ final class AuthEventVerifierTest extends TestCase
         $this->assertNull($verifier->verifyClaim($this->authEvent(), self::challenge()) ?? $verifier->verifyIdentity($this->authEvent()));
     }
 
-    public function testAProtocolFailureIsReportedAsAuthRequiredCarryingItsReason(): void
+    public function testAReplacedChallengeIsReportedAsAuthRequiredCarryingItsReason(): void
     {
         $verifier = $this->verifier(protocolFailure: Nip42ValidationFailure::ChallengeMismatch, allowsAuthentication: true);
 
         $rejection = $verifier->verifyClaim($this->authEvent(), self::challenge()) ?? $verifier->verifyIdentity($this->authEvent());
 
-        $this->assertInstanceOf(PolicyRejection::class, $rejection);
-        $this->assertSame('auth-required: Challenge does not match the one issued', $rejection->toWireReason());
+        $this->assertSame('auth-required: Challenge does not match the one issued', $rejection?->toWireReason());
     }
 
     public function testAProtocolFailureIsReportedInTheProtocolsOwnWords(): void
@@ -49,8 +50,26 @@ final class AuthEventVerifierTest extends TestCase
 
         $rejection = $verifier->verifyClaim($this->authEvent(), self::challenge()) ?? $verifier->verifyIdentity($this->authEvent());
 
-        $this->assertInstanceOf(PolicyRejection::class, $rejection);
-        $this->assertSame('auth-required: Relay URL does not match this relay', $rejection->toWireReason());
+        $this->assertSame('invalid: Relay URL does not match this relay', $rejection?->toWireReason());
+    }
+
+    #[DataProvider('failuresAnsweringAgainCannotFix')]
+    public function testAFailureThatAnsweringTheCurrentChallengeCannotFixIsReportedInvalid(Nip42ValidationFailure $failure): void
+    {
+        $verifier = $this->verifier(protocolFailure: $failure, allowsAuthentication: true);
+
+        $this->assertSame(ReasonPrefix::Invalid, ReasonPrefix::tryFromMessage($verifier->verifyClaim($this->authEvent(), self::challenge())?->toWireReason() ?? ''));
+    }
+
+    /**
+     * @return iterable<string, array{Nip42ValidationFailure}>
+     */
+    public static function failuresAnsweringAgainCannotFix(): iterable
+    {
+        yield 'wrong kind' => [Nip42ValidationFailure::WrongKind];
+        yield 'timestamp outside tolerance' => [Nip42ValidationFailure::TimestampOutsideTolerance];
+        yield 'challenge unstated' => [Nip42ValidationFailure::ChallengeUnstated];
+        yield 'relay mismatch' => [Nip42ValidationFailure::RelayMismatch];
     }
 
     public function testThePolicysOwnRefusalIsPassedThroughUnchanged(): void
@@ -59,8 +78,7 @@ final class AuthEventVerifierTest extends TestCase
 
         $rejection = $verifier->verifyClaim($this->authEvent(), self::challenge()) ?? $verifier->verifyIdentity($this->authEvent());
 
-        $this->assertInstanceOf(PolicyRejection::class, $rejection);
-        $this->assertSame('restricted: not a tenant here', $rejection->toWireReason());
+        $this->assertSame('restricted: not a tenant here', $rejection?->toWireReason());
     }
 
     public function testTheConfiguredRelayUrlAndChallengeReachTheValidator(): void
@@ -75,7 +93,14 @@ final class AuthEventVerifierTest extends TestCase
         $validator = $this->createMock(Nip42ValidatorInterface::class);
         $validator->expects($this->once())->method('validate')->with($event, new RelayChallenge($relayUrl, self::challenge()))->willReturn(null);
 
-        $this->assertNull(new AuthEventVerifier($config, $policy, $validator)->verifyClaim($event, self::challenge()));
+        new AuthEventVerifier($config, $policy, $validator)->verifyClaim($event, self::challenge());
+    }
+
+    public function testAClaimTheProtocolAcceptsIsNotRefused(): void
+    {
+        $verifier = $this->verifier(protocolFailure: null, allowsAuthentication: true);
+
+        $this->assertNull($verifier->verifyClaim($this->authEvent(), self::challenge()));
     }
 
     private static function challenge(): Challenge

@@ -15,7 +15,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Relay\Application\Service\ClientVerbHandlerInterface;
 use Innis\Nostr\Relay\Application\Service\EventValidityGate;
 use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
-use Innis\Nostr\Relay\Application\Service\SubscriptionReevaluator;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use InvalidArgumentException;
@@ -27,7 +26,6 @@ final readonly class ProcessAuthUseCase implements ClientVerbHandlerInterface
     public function __construct(
         private Nip42Handshake $handshake,
         private EventValidityGate $validityGate,
-        private SubscriptionReevaluator $subscriptionReevaluator,
     ) {
     }
 
@@ -71,17 +69,17 @@ final readonly class ProcessAuthUseCase implements ClientVerbHandlerInterface
         }
 
         try {
-            $this->validityGate->admit($event);
+            $validityRefusal = $this->validityGate->admit($event);
         } catch (InvalidEventException $e) {
             return [OkMessage::refused($event->getId(), ReasonPrefix::Invalid, $e->getMessage())];
         }
 
-        $authentication = $this->handshake->authenticate($client, $event);
+        $authentication = $validityRefusal ?? $this->handshake->authenticate($client, $event);
 
         if ($authentication instanceof PolicyRejection) {
             return [$authentication->toOkMessage($event->getId())];
         }
 
-        return [...$this->subscriptionReevaluator->reevaluate($client), OkMessage::accepted($event->getId())];
+        return [OkMessage::accepted($event->getId())];
     }
 }

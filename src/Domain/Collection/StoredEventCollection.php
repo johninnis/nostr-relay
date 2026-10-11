@@ -18,4 +18,12 @@ final class StoredEventCollection extends TypedCollection
     {
         return StoredEvent::class;
     }
+
+    public function newestFirst(): self
+    {
+        $events = $this->items;
+        usort($events, static fn (StoredEvent $a, StoredEvent $b): int => $a->precedes($b) ? -1 : (int) $b->precedes($a));
+
+        return $this->withItems($events);
+    }
 }

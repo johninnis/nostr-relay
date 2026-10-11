@@ -17,6 +17,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Identity\KeyPair;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
@@ -33,6 +34,8 @@ use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\AcceptedEventPublisher;
 use Innis\Nostr\Relay\Application\Service\AuthChallengeIssuer;
 use Innis\Nostr\Relay\Application\Service\ClientMessenger;
+use Innis\Nostr\Relay\Application\Service\DeliveryGate;
+use Innis\Nostr\Relay\Application\Service\EventAcceptance;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Application\Service\EventAudience;
 use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
@@ -47,11 +50,13 @@ use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
+use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\Stub;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -61,6 +66,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
     private RelayPolicyInterface&Stub $policy;
     private RateLimiterInterface&Stub $rateLimiter;
     private InMemoryClientRegistry $clientRegistry;
+    private InMemoryAuthenticationRegistry $authenticationRegistry;
     private ProcessEventSubmissionUseCase $useCase;
     private RelayClient $client;
     private SignatureServiceInterface $sigService;
@@ -95,7 +101,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $messenger = new ClientMessenger($this->clientRegistry);
 
         $distributor = new EventDistributor(
-            new EventAudience($this->policy, $subscriptionRegistry, $this->clientRegistry),
+            new EventAudience(new DeliveryGate($this->policy, new GiftWrapFilterRules()), $subscriptionRegistry, $this->clientRegistry),
             $messenger,
             $logger,
         );
@@ -110,7 +116,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             new EventDeletionProcessor($eventStore, $logger),
         );
 
-        $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
+        $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
         return new ProcessEventSubmissionUseCase(
             new EventAdmission(
@@ -119,9 +125,9 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
                     new EventValidator($this->signatureService(), new NipComplianceValidator($this->signatureService())),
                     new SystemClock(),
                 ),
-                new PublishingGate($this->policy, $authenticationRegistry, new AuthChallengeIssuer($authenticationRegistry)),
+                new PublishingGate($this->policy, $this->authenticationRegistry, new AuthChallengeIssuer($this->authenticationRegistry)),
             ),
-            $pipeline,
+            new EventAcceptance($pipeline, new AuthChallengeIssuer($this->authenticationRegistry)),
             $logger,
         );
     }
@@ -158,72 +164,509 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         )->sign($keyPair, $this->signatureService());
     }
 
-    public function testSuccessfulEventStoreAndDistribute(): void
+    /**
+     * @return iterable<string, array{EventStoreOutcome}>
+     */
+    public static function storeOutcomes(): iterable
     {
-        $event = $this->createSignedEvent();
-
-        $eventStore = $this->createStub(RelayEventStoreInterface::class);
-        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->makeClient(), $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertTrue($replies[0]->isAccepted());
+        yield 'stored' => [EventStoreOutcome::Stored];
+        yield 'duplicate' => [EventStoreOutcome::Duplicate];
+        yield 'superseded' => [EventStoreOutcome::Superseded];
     }
 
-    public function testDuplicateEventReturnsNotOk(): void
+    #[DataProvider('storeOutcomes')]
+    public function testEachStoreOutcomeIsAnsweredWithOneOk(EventStoreOutcome $outcome): void
     {
-        $event = $this->createSignedEvent();
-
-        $eventStore = $this->createStub(RelayEventStoreInterface::class);
-        $eventStore->method('store')->willReturn(EventStoreOutcome::Duplicate);
-
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->makeClient(), $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertFalse($replies[0]->isAccepted());
-        $this->assertSame('duplicate: event already exists', $replies[0]->getMessage());
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $this->repliesWhenTheStoreAnswers($outcome)));
     }
 
-    public function testSupersededEventReturnsNotOkWithNewerVersionMessage(): void
+    public function testAStoredEventIsAccepted(): void
     {
-        $event = $this->createSignedEvent();
-
-        $eventStore = $this->createStub(RelayEventStoreInterface::class);
-        $eventStore->method('store')->willReturn(EventStoreOutcome::Superseded);
-
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->makeClient(), $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertFalse($replies[0]->isAccepted());
-        $this->assertSame('duplicate: newer version already exists', $replies[0]->getMessage());
+        $this->assertTrue(self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Stored))?->isAccepted());
     }
 
-    public function testPolicyViolationReturnsBlockedMessage(): void
+    public function testADuplicateIsRefused(): void
     {
-        $event = $this->createSignedEvent();
+        $this->assertFalse(self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Duplicate))?->isAccepted());
+    }
 
-        $this->policy->method('allowEventSubmission')
-            ->willReturn(PolicyRejection::blocked('not allowed'));
+    public function testADuplicateIsAnsweredThatTheEventAlreadyExists(): void
+    {
+        $this->assertSame(
+            'duplicate: event already exists',
+            self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Duplicate))?->getMessage(),
+        );
+    }
 
-        $replies = $this->useCase->execute($this->client, $event);
+    public function testASupersededEventIsRefused(): void
+    {
+        $this->assertFalse(self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Superseded))?->isAccepted());
+    }
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertFalse($replies[0]->isAccepted());
-        $this->assertStringContainsString('blocked', $replies[0]->getMessage());
+    public function testASupersededEventIsAnsweredThatANewerVersionExists(): void
+    {
+        $this->assertSame(
+            'duplicate: newer version already exists',
+            self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Superseded))?->getMessage(),
+        );
+    }
+
+    public function testAnEventThePolicyBlocksIsAnsweredWithOneOk(): void
+    {
+        $replies = $this->repliesUnderAPolicyRefusal(PolicyRejection::blocked('not allowed'));
+
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testAnEventThePolicyBlocksIsRefused(): void
+    {
+        $replies = $this->repliesUnderAPolicyRefusal(PolicyRejection::blocked('not allowed'));
+
+        $this->assertFalse(self::okReply($replies)?->isAccepted());
+    }
+
+    public function testAnEventThePolicyBlocksIsAnsweredBlocked(): void
+    {
+        $replies = $this->repliesUnderAPolicyRefusal(PolicyRejection::blocked('not allowed'));
+
+        $this->assertStringContainsString('blocked', self::okReply($replies)?->getMessage() ?? '');
+    }
+
+    public function testAnAlreadyExpiredEventIsNeverStored(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('store');
+
+        $this->repliesToAnAlreadyExpiredEvent($eventStore);
+    }
+
+    public function testAnAlreadyExpiredEventIsAnsweredWithOneOk(): void
+    {
+        $replies = $this->repliesToAnAlreadyExpiredEvent($this->createStub(RelayEventStoreInterface::class));
+
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testAnAlreadyExpiredEventIsRefused(): void
+    {
+        $replies = $this->repliesToAnAlreadyExpiredEvent($this->createStub(RelayEventStoreInterface::class));
+
+        $this->assertFalse(self::okReply($replies)?->isAccepted());
     }
 
     public function testAnAlreadyExpiredEventIsRefusedAsInvalid(): void
+    {
+        $replies = $this->repliesToAnAlreadyExpiredEvent($this->createStub(RelayEventStoreInterface::class));
+
+        $this->assertSame('invalid: event has expired', self::okReply($replies)?->getMessage());
+    }
+
+    public function testAnAddressableEventWhoseDTagsDisagreeIsNeverStored(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('store');
+
+        $this->repliesToAnAddressableEventWhoseDTagsDisagree($eventStore);
+    }
+
+    public function testAnAddressableEventWhoseDTagsDisagreeIsRefused(): void
+    {
+        $replies = $this->repliesToAnAddressableEventWhoseDTagsDisagree($this->createStub(RelayEventStoreInterface::class));
+
+        $this->assertFalse(self::okReply($replies)?->isAccepted());
+    }
+
+    public function testAnAddressableEventWhoseDTagsDisagreeIsRefusedAsInvalid(): void
+    {
+        $replies = $this->repliesToAnAddressableEventWhoseDTagsDisagree($this->createStub(RelayEventStoreInterface::class));
+
+        $this->assertStringStartsWith('invalid:', self::okReply($replies)?->getMessage() ?? '');
+    }
+
+    public function testARateLimitedEventIsAnsweredWithOneOk(): void
+    {
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $this->repliesWhenRateLimited()));
+    }
+
+    public function testARateLimitedEventIsRefused(): void
+    {
+        $this->assertFalse(self::okReply($this->repliesWhenRateLimited())?->isAccepted());
+    }
+
+    public function testARateLimitedEventIsAnsweredRateLimited(): void
+    {
+        $this->assertStringContainsString('rate-limited', self::okReply($this->repliesWhenRateLimited())?->getMessage() ?? '');
+    }
+
+    public function testEphemeralEventSkipsStorage(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->expects($this->never())->method('store');
+
+        $this->repliesToAnEphemeralEvent($eventStore);
+    }
+
+    public function testAnEphemeralEventIsAnsweredWithOneOk(): void
+    {
+        $replies = $this->repliesToAnEphemeralEvent($this->createStub(RelayEventStoreInterface::class));
+
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testAnEphemeralEventIsAccepted(): void
+    {
+        $replies = $this->repliesToAnEphemeralEvent($this->createStub(RelayEventStoreInterface::class));
+
+        $this->assertTrue(self::okReply($replies)?->isAccepted());
+    }
+
+    public function testAnAuthRequiredRefusalIsAnsweredWithAChallengeThenAnOk(): void
+    {
+        $replies = $this->repliesUnderAPolicyRefusal(PolicyRejection::authRequired('auth needed'));
+
+        $this->assertSame([AuthMessage::class, OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testAnAuthRequiredRefusalIsRefused(): void
+    {
+        $replies = $this->repliesUnderAPolicyRefusal(PolicyRejection::authRequired('auth needed'));
+
+        $this->assertFalse(self::okReply($replies)?->isAccepted());
+    }
+
+    public function testAnAuthRequiredRefusalIsAnsweredAuthRequired(): void
+    {
+        $replies = $this->repliesUnderAPolicyRefusal(PolicyRejection::authRequired('auth needed'));
+
+        $this->assertStringContainsString('auth-required', self::okReply($replies)?->getMessage() ?? '');
+    }
+
+    public function testAProtectedEventFromAnUnauthenticatedClientIsAnsweredWithAChallengeThenAnOk(): void
+    {
+        $replies = $this->repliesToAProtectedEventFromAnUnauthenticatedClient();
+
+        $this->assertSame([AuthMessage::class, OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testAProtectedEventFromAnUnauthenticatedClientIsRefused(): void
+    {
+        $this->assertFalse(self::okReply($this->repliesToAProtectedEventFromAnUnauthenticatedClient())?->isAccepted());
+    }
+
+    public function testAProtectedEventFromAnUnauthenticatedClientIsAnsweredAuthRequired(): void
+    {
+        $this->assertSame(
+            'auth-required: this event may only be published by its author',
+            self::okReply($this->repliesToAProtectedEventFromAnUnauthenticatedClient())?->getMessage(),
+        );
+    }
+
+    public function testOfferedAuthChallengeIsReturnedToTheAdmittedClient(): void
+    {
+        $replies = $this->repliesToAnEventThePolicyOffersAChallengeFor();
+
+        $this->assertSame([AuthMessage::class, OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testAnEventOfferedAChallengeIsStillAccepted(): void
+    {
+        $this->assertTrue(self::okReply($this->repliesToAnEventThePolicyOffersAChallengeFor())?->isAccepted());
+    }
+
+    public function testADuplicateThePolicyOffersAChallengeForIsAnsweredWithOneOk(): void
+    {
+        $replies = $this->repliesToADuplicateThePolicyOffersAChallengeFor();
+
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testADuplicateThePolicyOffersAChallengeForIsAnsweredDuplicate(): void
+    {
+        $replies = $this->repliesToADuplicateThePolicyOffersAChallengeFor();
+
+        $this->assertSame('duplicate: event already exists', self::okReply($replies)?->getMessage());
+    }
+
+    public function testADuplicateThePolicyOffersAChallengeForIssuesNoChallenge(): void
+    {
+        $this->repliesToADuplicateThePolicyOffersAChallengeFor();
+
+        $this->assertNull($this->authenticationRegistry->getChallenge($this->client->getId()));
+    }
+
+    public function testAnEphemeralEventThePolicyOffersAChallengeForIsAnsweredWithAChallengeThenAnOk(): void
+    {
+        $this->policy->method('offersAuthChallenge')->willReturn(true);
+
+        $replies = $this->useCase->execute($this->client, $this->createSignedEvent(EventKind::fromInt(20001)));
+
+        $this->assertSame([AuthMessage::class, OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testADeletionLooksUpTheEventsItNamesById(): void
+    {
+        $author = KeyPair::generate($this->signatureService());
+        $target = $this->noteBy($author);
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->once())
+            ->method('findByFilters')
+            ->willReturn(new StoredEventCollection([StoredEvent::of($target)]));
+        $eventStore->method('deleteByEventIds')->willReturn(1);
+
+        $this->repliesToADeletionById($target, $author, $eventStore);
+    }
+
+    public function testDeletionEventTriggersDeleteByEventIds(): void
+    {
+        $author = KeyPair::generate($this->signatureService());
+        $target = $this->noteBy($author);
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($target)]));
+        $eventStore->expects($this->once())
+            ->method('deleteByEventIds')
+            ->with(
+                $this->callback(static function (EventIdCollection $eventIds) use ($target): bool {
+                    return 1 === $eventIds->count() && $target->getId()->toHex() === $eventIds->toArray()[0]->toHex();
+                }),
+                $this->callback(static function (PublicKey $deleter) use ($author): bool {
+                    return $deleter->equals($author->getPublicKey());
+                }),
+            )
+            ->willReturn(1);
+
+        $this->repliesToADeletionById($target, $author, $eventStore);
+    }
+
+    public function testADeletionOfTheAuthorsOwnEventIsAnsweredWithOneOk(): void
+    {
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $this->repliesToADeletionOfTheAuthorsOwnEvent()));
+    }
+
+    public function testADeletionOfTheAuthorsOwnEventIsAccepted(): void
+    {
+        $this->assertTrue(self::okReply($this->repliesToADeletionOfTheAuthorsOwnEvent())?->isAccepted());
+    }
+
+    public function testADeletionLooksUpAnotherAuthorsEventItNamesById(): void
+    {
+        $victimEvent = $this->noteBy(KeyPair::generate($this->signatureService()));
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->once())
+            ->method('findByFilters')
+            ->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
+
+        $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
+    }
+
+    public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
+    {
+        $victimEvent = $this->noteBy(KeyPair::generate($this->signatureService()));
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+
+        $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
+    }
+
+    public function testADeletionOfAnotherAuthorsEventDeletesNoCoordinates(): void
+    {
+        $victimEvent = $this->noteBy(KeyPair::generate($this->signatureService()));
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
+        $eventStore->expects($this->never())->method('deleteByCoordinates');
+
+        $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
+    }
+
+    public function testADeletionOfAnotherAuthorsEventIsAnsweredWithOneOk(): void
+    {
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $this->repliesToADeletionOfAnotherAuthorsEvent()));
+    }
+
+    public function testADeletionOfAnotherAuthorsEventIsAccepted(): void
+    {
+        $this->assertTrue(self::okReply($this->repliesToADeletionOfAnotherAuthorsEvent())?->isAccepted());
+    }
+
+    public function testADeletionByCoordinateDeletesNoEventsById(): void
+    {
+        $author = KeyPair::generate($this->signatureService());
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+        $eventStore->method('deleteByCoordinates')->willReturn(1);
+
+        $this->makeUseCase($eventStore)->execute($this->makeClient(), $this->deletionOfCoordinate(self::articleCoordinate($author), $author));
+    }
+
+    public function testDeletionEventTriggersDeleteByCoordinates(): void
+    {
+        $author = KeyPair::generate($this->signatureService());
+        $coordinate = self::articleCoordinate($author);
+        $deletion = $this->deletionOfCoordinate($coordinate, $author);
+
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->once())
+            ->method('deleteByCoordinates')
+            ->with(
+                $this->callback(static function (EventCoordinateCollection $coordinates) use ($coordinate): bool {
+                    return 1 === $coordinates->count() && $coordinate === (string) $coordinates->toArray()[0];
+                }),
+                $this->callback(static function (PublicKey $deleter) use ($author): bool {
+                    return $deleter->equals($author->getPublicKey());
+                }),
+                $this->callback(static fn (Timestamp $until): bool => $until->equals($deletion->getCreatedAt())),
+            )
+            ->willReturn(1);
+
+        $this->makeUseCase($eventStore)->execute($this->makeClient(), $deletion);
+    }
+
+    public function testADeletionOfTheAuthorsOwnCoordinateIsAnsweredWithOneOk(): void
+    {
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $this->repliesToADeletionOfTheAuthorsOwnCoordinate()));
+    }
+
+    public function testADeletionOfTheAuthorsOwnCoordinateIsAccepted(): void
+    {
+        $this->assertTrue(self::okReply($this->repliesToADeletionOfTheAuthorsOwnCoordinate())?->isAccepted());
+    }
+
+    public function testADeletionOfAnotherAuthorsCoordinateLooksNothingUp(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('findByFilters');
+
+        $this->repliesToADeletionOfAnotherAuthorsCoordinate($eventStore);
+    }
+
+    public function testADeletionOfAnotherAuthorsCoordinateDeletesNoEventsById(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+
+        $this->repliesToADeletionOfAnotherAuthorsCoordinate($eventStore);
+    }
+
+    public function testDeletionEventSkipsCoordinatesOwnedBySomeoneElse(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('deleteByCoordinates');
+
+        $this->repliesToADeletionOfAnotherAuthorsCoordinate($eventStore);
+    }
+
+    public function testADeletionOfAnotherAuthorsCoordinateIsAnsweredWithOneOk(): void
+    {
+        $replies = $this->repliesToADeletionOfAnotherAuthorsCoordinate($this->storeThatStores());
+
+        $this->assertSame([OkMessage::class], array_map(get_class(...), $replies));
+    }
+
+    public function testADeletionOfAnotherAuthorsCoordinateIsAccepted(): void
+    {
+        $this->assertTrue(self::okReply($this->repliesToADeletionOfAnotherAuthorsCoordinate($this->storeThatStores()))?->isAccepted());
+    }
+
+    public function testANonDeletionEventDeletesNoEventsById(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('deleteByEventIds');
+
+        $this->makeUseCase($eventStore)->execute($this->makeClient(), $this->createSignedEvent());
+    }
+
+    public function testANonDeletionEventDeletesNoCoordinates(): void
+    {
+        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+        $eventStore->expects($this->never())->method('deleteByCoordinates');
+
+        $this->makeUseCase($eventStore)->execute($this->makeClient(), $this->createSignedEvent());
+    }
+
+    /**
+     * @param list<RelayMessage> $replies
+     */
+    private static function okReply(array $replies): ?OkMessage
+    {
+        $reply = array_find($replies, static fn (RelayMessage $reply): bool => $reply instanceof OkMessage);
+
+        return $reply instanceof OkMessage ? $reply : null;
+    }
+
+    private static function articleCoordinate(KeyPair $author): string
+    {
+        return '30023:'.$author->getPublicKey()->toHex().':my-article';
+    }
+
+    private function storeThatStores(): RelayEventStoreInterface
+    {
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
+
+        return $eventStore;
+    }
+
+    private function noteBy(KeyPair $author): Event
+    {
+        return Rumour::draft(
+            $author->getPublicKey(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
+            EventContent::fromString('target'),
+            new TagCollection(),
+        )->sign($author, $this->signatureService());
+    }
+
+    private function deletionOfCoordinate(string $coordinate, KeyPair $deleter): Event
+    {
+        return $this->createSignedDeletionEvent(new TagCollection([
+            Tag::tryFromArray(['a', $coordinate]),
+            Tag::tryFromArray(['k', '30023']),
+        ]), $deleter);
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesWhenTheStoreAnswers(EventStoreOutcome $outcome): array
+    {
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn($outcome);
+
+        return $this->makeUseCase($eventStore)->execute($this->makeClient(), $this->createSignedEvent());
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesUnderAPolicyRefusal(PolicyRejection $rejection): array
+    {
+        $this->policy->method('allowEventSubmission')->willReturn($rejection);
+
+        return $this->useCase->execute($this->client, $this->createSignedEvent());
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToAnAlreadyExpiredEvent(RelayEventStoreInterface $eventStore): array
     {
         $keyPair = KeyPair::generate($this->signatureService());
         $event = Rumour::draft(
@@ -232,19 +675,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             EventContent::fromString('too late'),
             new TagCollection([Tag::tryFromArray(['expiration', '1'])]),
         )->sign($keyPair, $this->signatureService());
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->expects($this->never())->method('store');
-        $useCase = $this->makeUseCase($eventStore);
 
-        $replies = $useCase->execute($this->makeClient(), $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertFalse($replies[0]->isAccepted());
-        $this->assertSame('invalid: event has expired', $replies[0]->getMessage());
+        return $this->makeUseCase($eventStore)->execute($this->makeClient(), $event);
     }
 
-    public function testAnAddressableEventWhoseDTagsDisagreeIsRefusedAsInvalid(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToAnAddressableEventWhoseDTagsDisagree(RelayEventStoreInterface $eventStore): array
     {
         $keyPair = KeyPair::generate($this->signatureService());
         $event = Rumour::draft(
@@ -253,64 +691,32 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             EventContent::fromString('which article?'),
             new TagCollection([Tag::identifier('first'), Tag::identifier('second')]),
         )->sign($keyPair, $this->signatureService());
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->expects($this->never())->method('store');
-        $useCase = $this->makeUseCase($eventStore);
 
-        $replies = $useCase->execute($this->makeClient(), $event);
-
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertFalse($replies[0]->isAccepted());
-        $this->assertStringStartsWith('invalid:', $replies[0]->getMessage());
+        return $this->makeUseCase($eventStore)->execute($this->makeClient(), $event);
     }
 
-    public function testRateLimitReturnsRateLimitedMessage(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesWhenRateLimited(): array
     {
-        $event = $this->createSignedEvent();
-
         $this->rateLimited = true;
 
-        $replies = $this->useCase->execute($this->client, $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertFalse($replies[0]->isAccepted());
-        $this->assertStringContainsString('rate-limited', $replies[0]->getMessage());
+        return $this->useCase->execute($this->client, $this->createSignedEvent());
     }
 
-    public function testEphemeralEventSkipsStorageAndReturnsOk(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToAnEphemeralEvent(RelayEventStoreInterface $eventStore): array
     {
-        $event = $this->createSignedEvent(EventKind::fromInt(20001));
-
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->expects($this->never())->method('store');
-
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->makeClient(), $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertTrue($replies[0]->isAccepted());
+        return $this->makeUseCase($eventStore)->execute($this->makeClient(), $this->createSignedEvent(EventKind::fromInt(20001)));
     }
 
-    public function testAuthRequiredReturnsAuthChallengeAndOk(): void
-    {
-        $event = $this->createSignedEvent();
-
-        $this->policy->method('allowEventSubmission')
-            ->willReturn(PolicyRejection::authRequired('auth needed'));
-
-        $replies = $this->useCase->execute($this->client, $event);
-
-        $this->assertCount(2, $replies);
-        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
-        $this->assertInstanceOf(OkMessage::class, $replies[1]);
-        $this->assertFalse($replies[1]->isAccepted());
-        $this->assertStringContainsString('auth-required', $replies[1]->getMessage());
-    }
-
-    public function testAProtectedEventFromAnUnauthenticatedClientIsAnsweredWithAChallengeAndAuthRequired(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToAProtectedEventFromAnUnauthenticatedClient(): array
     {
         $keyPair = KeyPair::generate($this->signatureService());
         $event = Rumour::draft(
@@ -320,185 +726,99 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
             new TagCollection([Tag::fromArray([TagType::PROTECTED])]),
         )->sign($keyPair, $this->signatureService());
 
-        $replies = $this->useCase->execute($this->client, $event);
-
-        $this->assertCount(2, $replies);
-        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
-        $this->assertInstanceOf(OkMessage::class, $replies[1]);
-        $this->assertFalse($replies[1]->isAccepted());
-        $this->assertSame('auth-required: this event may only be published by its author', $replies[1]->getMessage());
+        return $this->useCase->execute($this->client, $event);
     }
 
-    public function testOfferedAuthChallengeIsReturnedToTheAdmittedClient(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToAnEventThePolicyOffersAChallengeFor(): array
     {
-        $event = $this->createSignedEvent();
+        $useCase = $this->makeUseCase($this->storeThatStores());
+        $this->policy->method('offersAuthChallenge')->willReturn(true);
+
+        return $useCase->execute($this->makeClient(), $this->createSignedEvent());
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToADuplicateThePolicyOffersAChallengeFor(): array
+    {
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
+        $eventStore->method('store')->willReturn(EventStoreOutcome::Duplicate);
+        $this->useCase = $this->makeUseCase($eventStore);
+        $this->client = $this->makeClient();
+        $this->policy->method('offersAuthChallenge')->willReturn(true);
+
+        return $this->useCase->execute($this->client, $this->createSignedEvent());
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToADeletionById(Event $target, KeyPair $deleter, RelayEventStoreInterface $eventStore): array
+    {
+        $deletion = $this->createSignedDeletionEvent(new TagCollection([
+            Tag::event($target->getId()),
+            Tag::tryFromArray(['k', '1']),
+        ]), $deleter);
+
+        return $this->makeUseCase($eventStore)->execute($this->makeClient(), $deletion);
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToADeletionOfTheAuthorsOwnEvent(): array
+    {
+        $author = KeyPair::generate($this->signatureService());
+        $target = $this->noteBy($author);
 
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $useCase = $this->makeUseCase($eventStore);
+        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($target)]));
+        $eventStore->method('deleteByEventIds')->willReturn(1);
 
-        $this->policy->method('offersAuthChallenge')->willReturn(true);
-
-        $replies = $useCase->execute($this->makeClient(), $event);
-
-        // The challenge is offered only after allowEventSubmission admits the event, so its presence alongside an accepting OK proves admission (not rejection).
-        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
-        $this->assertInstanceOf(OkMessage::class, $replies[1]);
-        $this->assertTrue($replies[1]->isAccepted());
+        return $this->repliesToADeletionById($target, $author, $eventStore);
     }
 
-    public function testDeletionEventTriggersDeleteByEventIds(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToADeletionOfAnotherAuthorsEvent(): array
     {
-        $keyPair = KeyPair::generate($this->signatureService());
-        $targetEvent = Rumour::draft(
-            $keyPair->getPublicKey(),
-            EventKind::fromInt(EventKind::TEXT_NOTE),
-            EventContent::fromString('target'),
-            new TagCollection(),
-        )->sign($keyPair, $this->signatureService());
+        $victimEvent = $this->noteBy(KeyPair::generate($this->signatureService()));
 
-        $tags = new TagCollection([
-            Tag::event($targetEvent->getId()),
-            Tag::tryFromArray(['k', '1']),
-        ]);
-        $deletionEvent = $this->createSignedDeletionEvent($tags, $keyPair);
-
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->expects($this->once())
-            ->method('findByFilters')
-            ->willReturn(new StoredEventCollection([StoredEvent::of($targetEvent)]));
-        $eventStore->expects($this->once())
-            ->method('deleteByEventIds')
-            ->with(
-                $this->callback(static function (EventIdCollection $eventIds) use ($targetEvent): bool {
-                    return 1 === $eventIds->count() && $targetEvent->getId()->toHex() === $eventIds->toArray()[0]->toHex();
-                }),
-                $this->callback(static function (PublicKey $author) use ($keyPair): bool {
-                    return $author->equals($keyPair->getPublicKey());
-                }),
-            )
-            ->willReturn(1);
+        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
 
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->makeClient(), $deletionEvent);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertTrue($replies[0]->isAccepted());
+        return $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
     }
 
-    public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToADeletionOfTheAuthorsOwnCoordinate(): array
     {
-        $victimKeyPair = KeyPair::generate($this->signatureService());
-        $victimEvent = Rumour::draft(
-            $victimKeyPair->getPublicKey(),
-            EventKind::fromInt(EventKind::TEXT_NOTE),
-            EventContent::fromString('victim'),
-            new TagCollection(),
-        )->sign($victimKeyPair, $this->signatureService());
+        $author = KeyPair::generate($this->signatureService());
 
-        $attackerKeyPair = KeyPair::generate($this->signatureService());
-        $tags = new TagCollection([
-            Tag::event($victimEvent->getId()),
-            Tag::tryFromArray(['k', '1']),
-        ]);
-        $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
-
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
+        $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->expects($this->once())
-            ->method('findByFilters')
-            ->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
-        $eventStore->expects($this->never())->method('deleteByEventIds');
-        $eventStore->expects($this->never())->method('deleteByCoordinates');
+        $eventStore->method('deleteByCoordinates')->willReturn(1);
 
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->client, $deletionEvent);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertTrue($replies[0]->isAccepted());
+        return $this->makeUseCase($eventStore)->execute($this->makeClient(), $this->deletionOfCoordinate(self::articleCoordinate($author), $author));
     }
 
-    public function testDeletionEventTriggersDeleteByCoordinates(): void
+    /**
+     * @return list<RelayMessage>
+     */
+    private function repliesToADeletionOfAnotherAuthorsCoordinate(RelayEventStoreInterface $eventStore): array
     {
-        $keyPair = KeyPair::generate($this->signatureService());
-        $coordinate = '30023:'.$keyPair->getPublicKey()->toHex().':my-article';
-        $tags = new TagCollection([
-            Tag::tryFromArray(['a', $coordinate]),
-            Tag::tryFromArray(['k', '30023']),
-        ]);
-        $event = $this->createSignedDeletionEvent($tags, $keyPair);
+        $victim = KeyPair::generate($this->signatureService());
+        $deletion = $this->deletionOfCoordinate(self::articleCoordinate($victim), KeyPair::generate($this->signatureService()));
 
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->expects($this->never())->method('deleteByEventIds');
-        $eventStore->expects($this->once())
-            ->method('deleteByCoordinates')
-            ->with(
-                $this->callback(static function (EventCoordinateCollection $coordinates) use ($coordinate): bool {
-                    return 1 === $coordinates->count() && $coordinate === (string) $coordinates->toArray()[0];
-                }),
-                $this->callback(static function (PublicKey $author) use ($keyPair): bool {
-                    return $author->equals($keyPair->getPublicKey());
-                }),
-                $this->callback(static fn (Timestamp $until): bool => $until->equals($event->getCreatedAt())),
-            )
-            ->willReturn(1);
-
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->client, $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertTrue($replies[0]->isAccepted());
-    }
-
-    public function testDeletionEventSkipsCoordinatesOwnedBySomeoneElse(): void
-    {
-        $victimKeyPair = KeyPair::generate($this->signatureService());
-        $attackerKeyPair = KeyPair::generate($this->signatureService());
-        $victimCoordinate = '30023:'.$victimKeyPair->getPublicKey()->toHex().':target-article';
-        $tags = new TagCollection([
-            Tag::tryFromArray(['a', $victimCoordinate]),
-            Tag::tryFromArray(['k', '30023']),
-        ]);
-        $deletionEvent = $this->createSignedDeletionEvent($tags, $attackerKeyPair);
-
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->expects($this->never())->method('findByFilters');
-        $eventStore->expects($this->never())->method('deleteByEventIds');
-        $eventStore->expects($this->never())->method('deleteByCoordinates');
-
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->client, $deletionEvent);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertTrue($replies[0]->isAccepted());
-    }
-
-    public function testNonDeletionEventDoesNotTriggerDeletion(): void
-    {
-        $event = $this->createSignedEvent();
-
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->expects($this->never())->method('deleteByEventIds');
-        $eventStore->expects($this->never())->method('deleteByCoordinates');
-
-        $useCase = $this->makeUseCase($eventStore);
-
-        $replies = $useCase->execute($this->client, $event);
-
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertTrue($replies[0]->isAccepted());
+        return $this->makeUseCase($eventStore)->execute($this->makeClient(), $deletion);
     }
 }

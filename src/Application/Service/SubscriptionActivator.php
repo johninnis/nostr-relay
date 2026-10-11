@@ -11,7 +11,6 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
-use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class SubscriptionActivator
 {
@@ -27,38 +26,14 @@ final readonly class SubscriptionActivator
      */
     public function activate(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): array
     {
-        $admission = $this->admission->admit($client, $filters);
+        $admission = $this->admission->admitSubscription($client, $subscriptionId, $filters);
 
         if ($admission instanceof PolicyRejection) {
             return $this->subscriptionAnswers->settleRefusal($client, $subscriptionId, $admission);
         }
 
-        return $this->register($client, $subscriptionId, $admission);
-    }
+        $this->storedEventStreamer->stream($client, Subscription::create($subscriptionId, $admission->getFilters(), SubscriptionState::Active), $admission);
 
-    /**
-     * @return list<RelayMessage>
-     */
-    public function reactivate(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): array
-    {
-        $admission = $this->admission->readmit($client, $filters);
-
-        if ($admission instanceof PolicyRejection) {
-            return $this->subscriptionAnswers->settleRefusal($client, $subscriptionId, $admission);
-        }
-
-        return $this->register($client, $subscriptionId, $admission);
-    }
-
-    /**
-     * @return list<RelayMessage>
-     */
-    private function register(RelayClient $client, SubscriptionId $subscriptionId, ScopedFilters $admission): array
-    {
-        $subscription = Subscription::create($subscriptionId, $admission->getFilters(), SubscriptionState::Active);
-
-        $this->storedEventStreamer->stream($client, $subscription, $admission);
-
-        return $this->subscriptionAnswers->forScope($client, $admission);
+        return [];
     }
 }

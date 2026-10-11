@@ -16,7 +16,7 @@ A reviewer who reads "COUNT is rejected when the client is already at the subscr
 
 ## Decision
 
-COUNT and REQ share the single per-client subscription cap as one combined load-shedding signal. Both are admitted through the same check (`SubscriptionAdmission::admit` calling the policy's subscription check), so a client already holding `max_subscriptions` open subscriptions has a COUNT rejected with the same `too many subscriptions` reason a REQ would receive, framed as `CLOSED` (`blocked: too many subscriptions`).
+COUNT and REQ share the single per-client subscription cap as one combined load-shedding signal. Both are admitted through the same check (`SubscriptionAdmission::admitCount` and `::admitSubscription`, each calling the policy's subscription check), so a client already holding `max_subscriptions` open subscriptions has a COUNT rejected with the same `too many subscriptions` reason a REQ would receive, framed as `CLOSED` (`blocked: too many subscriptions`). A COUNT is counted against every subscription the client holds; a REQ on an id the client already holds replaces that subscription and is counted once, as the one it replaces (ADR-0033).
 
 The cap is not modelling "number of long-lived subscription objects" — it is modelling "how many store-querying requests this client may have the relay service". A client at the cap has already been granted as much store-querying work as the relay is willing to do for it; letting it additionally fire COUNTs would hand it more of the exact resource the cap exists to ration, through a second door.
 

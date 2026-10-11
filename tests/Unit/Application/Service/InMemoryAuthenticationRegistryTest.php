@@ -101,16 +101,26 @@ final class InMemoryAuthenticationRegistryTest extends TestCase
         $this->assertCount(0, $this->authenticationRegistry->getAuthenticatedPubkeys(ClientId::fromString('unknown')));
     }
 
-    public function testRemoveClientClearsAuthStateAndChallenge(): void
+    public function testRemoveClientClearsAuthState(): void
     {
-        $pubkey = self::createPubkey();
-        $this->authenticationRegistry->getOrCreateChallenge($this->clientId);
-        $this->authenticationRegistry->authenticate($this->clientId, $pubkey);
-
-        $this->authenticationRegistry->removeClient($this->clientId);
+        $this->authenticateAndRemoveClient();
 
         $this->assertFalse($this->authenticationRegistry->isAuthenticated($this->clientId));
+    }
+
+    public function testRemoveClientClearsChallenge(): void
+    {
+        $this->authenticateAndRemoveClient();
+
         $this->assertNull($this->authenticationRegistry->getChallenge($this->clientId));
+    }
+
+    private function authenticateAndRemoveClient(): void
+    {
+        $this->authenticationRegistry->getOrCreateChallenge($this->clientId);
+        $this->authenticationRegistry->authenticate($this->clientId, self::createPubkey());
+
+        $this->authenticationRegistry->removeClient($this->clientId);
     }
 
     private static function createPubkey(): PublicKey

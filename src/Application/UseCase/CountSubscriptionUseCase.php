@@ -10,8 +10,8 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage as RelayCountMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
-use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Application\Service\ClientVerbHandlerInterface;
+use Innis\Nostr\Relay\Application\Service\ReadableEventCounter;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
@@ -22,7 +22,7 @@ use Override;
 final readonly class CountSubscriptionUseCase implements ClientVerbHandlerInterface
 {
     public function __construct(
-        private RelayEventStoreInterface $eventStore,
+        private ReadableEventCounter $counter,
         private SubscriptionAdmission $admission,
         private SubscriptionAnswers $subscriptionAnswers,
     ) {
@@ -54,15 +54,15 @@ final readonly class CountSubscriptionUseCase implements ClientVerbHandlerInterf
      */
     public function execute(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): array
     {
-        $admission = $this->admission->admit($client, $filters);
+        $admission = $this->admission->admitCount($client, $filters);
 
         if ($admission instanceof PolicyRejection) {
-            return $this->subscriptionAnswers->settleRefusal($client, $subscriptionId, $admission);
+            return $this->subscriptionAnswers->refuseCount($client, $subscriptionId, $admission);
         }
 
         return [
             ...$this->subscriptionAnswers->forScope($client, $admission),
-            new RelayCountMessage($subscriptionId, $this->eventStore->countByFilters($admission->getFilters())),
+            new RelayCountMessage($subscriptionId, $this->counter->count($admission->getFilters())),
         ];
     }
 }

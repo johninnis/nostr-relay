@@ -9,7 +9,6 @@ use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\TagType;
@@ -34,20 +33,32 @@ use Psr\Log\NullLogger;
 
 final class PublishingGateTest extends TestCase
 {
+    public function testAProtectedEventFromAnUnauthenticatedConnectionIsRefused(): void
+    {
+        $answer = $this->admit($this->protectedEventBy(KeyMother::alicePublicKey()));
+
+        $this->assertFalse($answer->isAdmitted());
+    }
+
     public function testAProtectedEventFromAnUnauthenticatedConnectionIsAnsweredAuthRequired(): void
     {
         $rejection = $this->admit($this->protectedEventBy(KeyMother::alicePublicKey()))->getRejection();
 
-        $this->assertNotNull($rejection);
-        $this->assertSame('auth-required: this event may only be published by its author', $rejection->toWireReason());
+        $this->assertSame('auth-required: this event may only be published by its author', $rejection?->toWireReason());
+    }
+
+    public function testAProtectedEventFromAConnectionAuthenticatedAsAnotherKeyIsRefused(): void
+    {
+        $answer = $this->admit($this->protectedEventBy(KeyMother::alicePublicKey()), KeyMother::bobPublicKey());
+
+        $this->assertFalse($answer->isAdmitted());
     }
 
     public function testAProtectedEventFromAConnectionAuthenticatedAsAnotherKeyIsRestricted(): void
     {
         $rejection = $this->admit($this->protectedEventBy(KeyMother::alicePublicKey()), KeyMother::bobPublicKey())->getRejection();
 
-        $this->assertNotNull($rejection);
-        $this->assertSame('restricted: this event may only be published by its author', $rejection->toWireReason());
+        $this->assertSame('restricted: this event may only be published by its author', $rejection?->toWireReason());
     }
 
     public function testAProtectedEventFromItsAuthenticatedAuthorIsAdmitted(): void
@@ -57,11 +68,21 @@ final class PublishingGateTest extends TestCase
         $this->assertTrue($answer->isAdmitted());
     }
 
-    public function testAnEventWhoseDashTagCarriesAValueIsNotProtected(): void
+    public function testAnEventWhoseDashTagCarriesAValueFromAnUnauthenticatedConnectionIsAnsweredAuthRequired(): void
     {
         $event = $this->eventBy(KeyMother::alicePublicKey(), [Tag::fromArray([TagType::PROTECTED, 'x'])]);
 
-        $this->assertTrue($this->admit($event)->isAdmitted());
+        $this->assertSame('auth-required: this event may only be published by its author', $this->admit($event)->getRejection()?->toWireReason());
+    }
+
+    public function testAnEventThePolicyRefusesIsRefused(): void
+    {
+        $answer = $this->admit(
+            $this->protectedEventBy(KeyMother::alicePublicKey()),
+            policyRejection: PolicyRejection::blocked('event too large'),
+        );
+
+        $this->assertFalse($answer->isAdmitted());
     }
 
     public function testAPolicyRefusalIsAnsweredBeforeTheAuthorRule(): void
@@ -71,16 +92,28 @@ final class PublishingGateTest extends TestCase
             policyRejection: PolicyRejection::blocked('event too large'),
         )->getRejection();
 
-        $this->assertNotNull($rejection);
-        $this->assertSame('blocked: event too large', $rejection->toWireReason());
+        $this->assertSame('blocked: event too large', $rejection?->toWireReason());
+    }
+
+    public function testAnEventThePolicyOffersAChallengeForIsAdmitted(): void
+    {
+        $answer = $this->admit($this->eventBy(KeyMother::alicePublicKey(), []), offersChallenge: true);
+
+        $this->assertTrue($answer->isAdmitted());
     }
 
     public function testAnAdmittedEventCarriesThePolicysChallengeOffer(): void
     {
         $answer = $this->admit($this->eventBy(KeyMother::alicePublicKey(), []), offersChallenge: true);
 
-        $this->assertTrue($answer->isAdmitted());
-        $this->assertInstanceOf(AuthMessage::class, $answer->getChallenge());
+        $this->assertTrue($answer->offersChallenge());
+    }
+
+    public function testAnAdmittedEventIsGivenNoChallengeBeforeTheStoreHasAcceptedIt(): void
+    {
+        $answer = $this->admit($this->eventBy(KeyMother::alicePublicKey(), []), offersChallenge: true);
+
+        $this->assertNull($answer->getChallenge());
     }
 
     private function admit(

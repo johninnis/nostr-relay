@@ -28,6 +28,12 @@ final class RelayClientCollectionTest extends TestCase
         $collection = new RelayClientCollection();
 
         $this->assertSame(0, $collection->count());
+    }
+
+    public function testEmptyCollectionIsEmpty(): void
+    {
+        $collection = new RelayClientCollection();
+
         $this->assertTrue($collection->isEmpty());
     }
 
@@ -43,10 +49,7 @@ final class RelayClientCollectionTest extends TestCase
         $client = $this->createClient('client-1');
         $collection = new RelayClientCollection([$client]);
 
-        $found = $collection->get(ClientId::fromString('client-1'));
-
-        $this->assertNotNull($found);
-        $this->assertTrue($found->getId()->equals(ClientId::fromString('client-1')));
+        $this->assertTrue($collection->get(ClientId::fromString('client-1'))?->getId()->equals(ClientId::fromString('client-1')));
     }
 
     public function testGetReturnsNullForMissingClient(): void

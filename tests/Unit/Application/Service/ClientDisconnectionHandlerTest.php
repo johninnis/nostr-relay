@@ -12,6 +12,7 @@ use Innis\Nostr\Relay\Application\Service\ClientDisconnectionHandler;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
+use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
@@ -43,15 +44,21 @@ final class ClientDisconnectionHandlerTest extends TestCase
         );
     }
 
-    public function testDisconnectRemovesClientAndSubscriptions(): void
+    public function testDisconnectRemovesTheClient(): void
     {
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connectionInfo = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
-        $client = $this->clientRegistry->registerClient($connection, $connectionInfo);
+        $client = $this->registerClient();
 
         $this->handler->disconnect($client->getId());
 
         $this->assertNull($this->clientRegistry->getClient($client->getId()));
+    }
+
+    public function testDisconnectLeavesNoClientCounted(): void
+    {
+        $client = $this->registerClient();
+
+        $this->handler->disconnect($client->getId());
+
         $this->assertSame(0, $this->clientRegistry->getClientCount());
     }
 
@@ -60,5 +67,13 @@ final class ClientDisconnectionHandlerTest extends TestCase
         $this->handler->disconnect(ClientId::fromString('unknown'));
 
         $this->assertSame(0, $this->clientRegistry->getClientCount());
+    }
+
+    private function registerClient(): RelayClient
+    {
+        return $this->clientRegistry->registerClient(
+            $this->createStub(ClientConnectionInterface::class),
+            new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
+        );
     }
 }

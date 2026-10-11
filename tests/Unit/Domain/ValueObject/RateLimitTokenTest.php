@@ -9,12 +9,14 @@ use PHPUnit\Framework\TestCase;
 
 final class RateLimitTokenTest extends TestCase
 {
-    public function testGettersReturnConstructorValues(): void
+    public function testKeepsItsTokens(): void
     {
-        $token = new RateLimitToken(5.0, 1000.0);
+        $this->assertSame(5.0, new RateLimitToken(5.0, 1000.0)->getTokens());
+    }
 
-        $this->assertSame(5.0, $token->getTokens());
-        $this->assertSame(1000.0, $token->getLastRefill());
+    public function testKeepsItsLastRefill(): void
+    {
+        $this->assertSame(1000.0, new RateLimitToken(5.0, 1000.0)->getLastRefill());
     }
 
     public function testHasTokensReturnsTrueWhenSufficient(): void
@@ -45,25 +47,40 @@ final class RateLimitTokenTest extends TestCase
         $this->assertFalse($token->hasTokens());
     }
 
-    public function testWithConsumedTokenReturnsNewInstance(): void
+    public function testWithConsumedTokenLeavesTheOriginalUnchanged(): void
     {
         $token = new RateLimitToken(3.0, 100.0);
-        $consumed = $token->withConsumedToken();
+        $token->withConsumedToken();
 
         $this->assertSame(3.0, $token->getTokens());
-        $this->assertSame(2.0, $consumed->getTokens());
-        $this->assertSame(100.0, $consumed->getLastRefill());
+    }
+
+    public function testWithConsumedTokenSpendsOneToken(): void
+    {
+        $this->assertSame(2.0, new RateLimitToken(3.0, 100.0)->withConsumedToken()->getTokens());
+    }
+
+    public function testWithConsumedTokenKeepsTheLastRefill(): void
+    {
+        $this->assertSame(100.0, new RateLimitToken(3.0, 100.0)->withConsumedToken()->getLastRefill());
+    }
+
+    public function testRefilledLeavesTheOriginalUnchanged(): void
+    {
+        $token = new RateLimitToken(2.0, 100.0);
+        $token->refilled(now: 110.0, capacity: 30.0);
+
+        $this->assertSame(2.0, $token->getTokens());
     }
 
     public function testRefilledAddsTokensProportionalToElapsedTime(): void
     {
-        $token = new RateLimitToken(2.0, 100.0);
+        $this->assertSame(7.0, new RateLimitToken(2.0, 100.0)->refilled(now: 110.0, capacity: 30.0)->getTokens());
+    }
 
-        $refilled = $token->refilled(now: 110.0, capacity: 30.0);
-
-        $this->assertSame(2.0, $token->getTokens());
-        $this->assertSame(7.0, $refilled->getTokens());
-        $this->assertSame(110.0, $refilled->getLastRefill());
+    public function testRefilledMovesTheLastRefillToNow(): void
+    {
+        $this->assertSame(110.0, new RateLimitToken(2.0, 100.0)->refilled(now: 110.0, capacity: 30.0)->getLastRefill());
     }
 
     public function testRefilledCapsAtCapacity(): void

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by ADR-0033
 
 Supersedes ADR-0007, which decided that authentication re-streams a client's already-open subscriptions and described the mechanism as running the subscription-creation path again. The re-streaming decision is carried forward below unchanged; what is revised is that re-evaluation is now a readmission with its own rules, because running it as a creation charged the client twice and left a refused subscription open.
 

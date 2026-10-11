@@ -65,6 +65,12 @@ final class Nip42HandshakeTest extends TestCase
         $claim = $this->handshake->verifyClaim($this->client, $this->authEvent());
 
         $this->assertInstanceOf(AuthMessage::class, $claim);
+    }
+
+    public function testAClaimNamingNoStoredChallengeStoresTheFreshChallenge(): void
+    {
+        $this->handshake->verifyClaim($this->client, $this->authEvent());
+
         $this->assertNotNull($this->authRegistry->getChallenge($this->client->getId()));
     }
 
@@ -75,8 +81,7 @@ final class Nip42HandshakeTest extends TestCase
 
         $claim = $this->handshake->verifyClaim($this->client, $this->authEvent());
 
-        $this->assertInstanceOf(PolicyRejection::class, $claim);
-        $this->assertSame('auth-required: Challenge does not match the one issued', $claim->toWireReason());
+        $this->assertEquals(PolicyRejection::authRequired('Challenge does not match the one issued'), $claim);
     }
 
     public function testAMatchingClaimPasses(): void
@@ -94,18 +99,34 @@ final class Nip42HandshakeTest extends TestCase
         $result = $this->handshake->authenticate($this->client, $this->authEvent());
 
         $this->assertInstanceOf(PolicyRejection::class, $result);
+    }
+
+    public function testAuthenticateLeavesAnIdentityThePolicyRejectsUnregistered(): void
+    {
+        $this->policy->method('allowsAuthentication')->willReturn(PolicyRejection::restricted('tenants only'));
+
+        $this->handshake->authenticate($this->client, $this->authEvent());
+
         $this->assertFalse($this->authRegistry->isAuthenticated($this->client->getId()));
     }
 
-    public function testAuthenticateRegistersAndReturnsThePubkey(): void
+    public function testAuthenticateReturnsThePubkey(): void
     {
         $this->policy->method('allowsAuthentication')->willReturn(null);
         $event = $this->authEvent();
 
         $result = $this->handshake->authenticate($this->client, $event);
 
-        $this->assertNotInstanceOf(PolicyRejection::class, $result);
-        $this->assertTrue($event->getPubkey()->equals($result));
+        $this->assertEquals($event->getPubkey(), $result);
+    }
+
+    public function testAuthenticateRegistersThePubkey(): void
+    {
+        $this->policy->method('allowsAuthentication')->willReturn(null);
+        $event = $this->authEvent();
+
+        $this->handshake->authenticate($this->client, $event);
+
         $this->assertTrue($this->authRegistry->isAuthenticatedAs($this->client->getId(), $event->getPubkey()));
     }
 

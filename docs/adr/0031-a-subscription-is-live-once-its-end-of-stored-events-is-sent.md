@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-A subscription has two phases: the stored events matching its filters are streamed, and from some moment on it receives live events as they arrive. The registry tracks that transition as a state (`Active` → `Live`), and the state matters: distribution and re-evaluation treat a live subscription differently from one still catching up.
+A subscription has two phases: the stored events matching its filters are streamed, and from some moment on it receives live events as they arrive. The registry tracks that transition as a state (`Active` → `Live`), and reports it for every subscription it holds, so it must not call a subscription still catching up live.
 
 The transition used to be flipped by `StoredEventStreamer`, immediately after it sent the `EOSE` frame. That is the right *moment* — NIP-01 defines EOSE as "the end of stored events", after which "all events all subsequent events will be sent" — but the wrong *place*: the streamer had to hold the subscription registry solely for the flip, and any other code path that ever sent an EOSE would have to remember to flip it too. A state transition that depends on every caller remembering it is one caller away from a lie.
 

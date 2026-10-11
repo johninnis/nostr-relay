@@ -16,9 +16,9 @@ The second gap was structural. The use cases paired outcomes with challenges the
 
 A challenge is part of the relay's answer, attached by the unit that decided the answer, never paired by a caller.
 
-- **An admitted write** whose policy offers a challenge carries the issued challenge in the returned `PublishingAnswer`, beside the outcome; a refusal carries one when it is `auth-required:` and the client holds no challenge yet. `PublishingGate` attaches both — it decided the answer, so it accompanies it.
+- **An accepted write** whose policy offers a challenge is answered with the challenge just before its `OK true`. `PublishingGate` records the policy's offer on the returned `PublishingAnswer` (`offersChallenge()`), and `EventAcceptance` issues the challenge only once `AcceptedEventPipeline` has acknowledged the event as accepted, so an event the store refuses as a duplicate is answered `OK false` `duplicate:` with no challenge. A refusal carries a challenge when it is `auth-required:` and the client holds none yet; `PublishingGate` decided that answer, so it attaches it.
 - **A refused read** (`REQ` or `COUNT` answered `auth-required:`) is preceded by a challenge when the client holds none, issued by `SubscriptionAnswers` as it settles the refusal; the client can authenticate and ask again.
-- **A scope-exceeding read** still draws the lazy `NOTICE` + challenge of ADR-0004, through the same `SubscriptionAnswers`.
+- **A scope-exceeding read** draws the lazy challenge of ADR-0004 through the same `SubscriptionAnswers`: a REQ's challenge is written just before its `EOSE`, which carries NIP-67's `"auth"` hint, and a COUNT's before its count.
 - **The NIP-42 handshake itself** issues a challenge when an `AUTH` arrives naming none (`Nip42Handshake`).
 - `AuthChallengeIssuer` remains the one home of challenge-frame building, and still **returns** messages: the challenge travels the reply list like every other wire frame (ADR-0003), never a side channel. What changes is who calls it: only the answer-deciding units, never the reply-framing use cases.
 
@@ -29,4 +29,5 @@ An offer that arrives when the client already holds a challenge does not re-issu
 - Any `auth-required:` answer from this relay is actionable: the client either already holds a challenge or receives one with the refusal. Do not answer `auth-required:` bare — a client that was never challenged cannot respond to it.
 - A policy can still admit a write and challenge the connection, and the default policy never offers, so the generic relay's behaviour is unchanged.
 - Use cases frame wire replies; they no longer know the challenge-pairing rules. A new auth-related answer attaches its challenge where it is decided, or it is a bug the pairing tests will catch.
-- The challenge is decided after validation and rate limiting on the write path, so a client is only ever challenged over an event that was validated and admitted, or refused for want of authentication.
+- A policy's challenge on the write path is issued after rate limiting, validation, policy and storage, so a client is only ever challenged over an event that was accepted, or refused for want of authentication.
+- Shared decision: nostr-adrs ADR-0027.

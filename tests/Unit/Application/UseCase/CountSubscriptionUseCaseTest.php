@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Application\UseCase;
 
+use Innis\Nostr\Core\Domain\Collection\EventKindCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Entity\Subscription;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\EventCount;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\ClosedMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\CountMessage;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\NoticeMessage;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Core\Infrastructure\Crypto\NativeRandomBytesGenerator;
 use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
@@ -23,10 +26,13 @@ use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
+use Innis\Nostr\Relay\Application\Service\ReadableEventCounter;
+use Innis\Nostr\Relay\Application\Service\ReadScopeGate;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Application\UseCase\CountSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
@@ -44,6 +50,7 @@ final class CountSubscriptionUseCaseTest extends TestCase
     private bool $rateLimited = false;
     private InMemoryClientRegistry $clientRegistry;
     private CountSubscriptionUseCase $useCase;
+    private InMemorySubscriptionRegistry $subscriptionRegistry;
 
     protected function setUp(): void
     {
@@ -59,16 +66,18 @@ final class CountSubscriptionUseCaseTest extends TestCase
             $logger,
         );
         $subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
+        $this->subscriptionRegistry = $subscriptionRegistry;
+        $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $admission = new SubscriptionAdmission(
-            $this->policy,
             new RateLimitGate($this->rateLimiter, $this->policy),
+            new ReadScopeGate($this->policy, $authenticationRegistry, new GiftWrapFilterRules()),
             $subscriptionRegistry,
         );
 
         $this->useCase = new CountSubscriptionUseCase(
-            $this->eventStore,
+            new ReadableEventCounter($this->eventStore, new GiftWrapFilterRules()),
             $admission,
-            new SubscriptionAnswers($subscriptionRegistry, new AuthChallengeIssuer(new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()))),
+            new SubscriptionAnswers($subscriptionRegistry, new AuthChallengeIssuer($authenticationRegistry), $logger),
         );
     }
 
@@ -83,50 +92,49 @@ final class CountSubscriptionUseCaseTest extends TestCase
     public function testSuccessfulCountReturnsCountMessage(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
-        $filters = new FilterCollection([Filter::from()]);
+        $filters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1]))]);
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(42));
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(CountMessage::class, $replies[0]);
-        $this->assertSame('count-1', (string) $replies[0]->getSubscriptionId());
-        $this->assertSame(42, $replies[0]->getCount()->toInt());
-        $this->assertFalse($replies[0]->getCount()->isApproximate());
+        $this->assertEquals([new CountMessage(SubscriptionIdMother::from('count-1'), EventCount::exact(42))], $replies);
     }
 
     public function testAnApproximateCountIsMarkedOnTheWire(): void
     {
         $subId = SubscriptionIdMother::from('count-1');
-        $filters = new FilterCollection([Filter::from()]);
+        $filters = new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([1]))]);
 
         $this->policy->method('filterForClient')->willReturn(ScopedFilters::unchanged($filters));
         $this->eventStore->method('countByFilters')->willReturn(EventCount::approximate(1000));
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
-        $this->assertInstanceOf(CountMessage::class, $replies[0]);
-        $this->assertSame(1000, $replies[0]->getCount()->toInt());
-        $this->assertTrue($replies[0]->getCount()->isApproximate());
+        $this->assertEquals([new CountMessage(SubscriptionIdMother::from('count-1'), EventCount::approximate(1000))], $replies);
     }
 
-    public function testBeyondScopeSendsNoticeAndChallengeThenReturnsCount(): void
+    public function testBeyondScopeSendsAChallengeThenReturnsCount(): void
     {
-        $subId = SubscriptionIdMother::from('count-1');
+        $this->assertSame([AuthMessage::class, CountMessage::class], self::messageTypes($this->countBeyondScope()));
+    }
 
-        $this->policy->method('filterForClient')->willReturn(
-            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
+    public function testBeyondScopeCountsTheScopedFilters(): void
+    {
+        $this->assertEquals(new CountMessage(SubscriptionIdMother::from('count-1'), EventCount::exact(7)), $this->countBeyondScope()[1]);
+    }
+
+    public function testACountNamingNoKindCountsNoGiftWraps(): void
+    {
+        $this->policy->method('filterForClient')->willReturnCallback(static fn (RelayClient $client, FilterCollection $filters): ScopedFilters => ScopedFilters::unchanged($filters));
+        $this->eventStore->method('countByFilters')->willReturnCallback(
+            static fn (FilterCollection $filters): EventCount => EventCount::exact(null === $filters->toArray()[0]->getKinds() ? 9 : 2),
         );
-        $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(7));
 
-        $replies = $this->useCase->execute($this->makeClient(), $subId, new FilterCollection([Filter::from()]));
+        $replies = $this->useCase->execute($this->makeClient(), SubscriptionIdMother::from('count-1'), new FilterCollection([Filter::from()]));
 
-        $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
-        $this->assertInstanceOf(AuthMessage::class, $replies[1]);
-        $this->assertInstanceOf(CountMessage::class, $replies[2]);
-        $this->assertSame(7, $replies[2]->getCount()->toInt());
+        $this->assertEquals([new CountMessage(SubscriptionIdMother::from('count-1'), EventCount::exact(7))], $replies);
     }
 
     public function testPolicyViolationReturnsClosedMessage(): void
@@ -139,22 +147,31 @@ final class CountSubscriptionUseCaseTest extends TestCase
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
-        $this->assertStringContainsString('blocked', $replies[0]->getMessage());
+        $this->assertEquals([ClosedMessage::closed(SubscriptionIdMother::from('count-1'), ReasonPrefix::Blocked, 'not allowed')], $replies);
     }
 
     public function testAnAuthRequiredRefusalIsPrecededByAnAuthChallenge(): void
     {
-        $this->policy->method('allowSubscription')
-            ->willReturn(PolicyRejection::authRequired('counts are for members'));
+        $this->assertSame([AuthMessage::class, ClosedMessage::class], self::messageTypes($this->countRefusedAsAuthRequired()));
+    }
 
-        $replies = $this->useCase->execute($this->makeClient(), SubscriptionIdMother::from('count-1'), new FilterCollection([Filter::from()]));
+    public function testAnAuthRequiredRefusalIsClosedAsAuthRequired(): void
+    {
+        $this->assertEquals(
+            ClosedMessage::closed(SubscriptionIdMother::from('count-1'), ReasonPrefix::AuthRequired, 'counts are for members'),
+            $this->countRefusedAsAuthRequired()[1],
+        );
+    }
 
-        $this->assertCount(2, $replies);
-        $this->assertInstanceOf(AuthMessage::class, $replies[0]);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[1]);
-        $this->assertStringStartsWith('auth-required:', $replies[1]->getMessage());
+    public function testARefusedCountLeavesASubscriptionOnTheSameIdOpen(): void
+    {
+        $client = $this->makeClient();
+        $this->subscriptionRegistry->addSubscription($client->getId(), Subscription::create(SubscriptionIdMother::from('shared'), new FilterCollection([Filter::from()])));
+        $this->policy->method('allowSubscription')->willReturn(PolicyRejection::blocked('not allowed'));
+
+        $this->useCase->execute($client, SubscriptionIdMother::from('shared'), new FilterCollection([Filter::from()]));
+
+        $this->assertSame(1, $this->subscriptionRegistry->getSubscriptionCountForClient($client->getId()));
     }
 
     public function testRateLimitReturnsClosedMessage(): void
@@ -166,8 +183,40 @@ final class CountSubscriptionUseCaseTest extends TestCase
 
         $replies = $this->useCase->execute($this->makeClient(), $subId, $filters);
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
-        $this->assertStringContainsString('rate-limited', $replies[0]->getMessage());
+        $this->assertEquals([ClosedMessage::closed(SubscriptionIdMother::from('count-1'), ReasonPrefix::RateLimited, 'slow down')], $replies);
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function countBeyondScope(): array
+    {
+        $this->policy->method('filterForClient')->willReturn(
+            ScopedFilters::scoped(new FilterCollection([Filter::tryFromArray(['kinds' => [1]])]), true),
+        );
+        $this->eventStore->method('countByFilters')->willReturn(EventCount::exact(7));
+
+        return $this->useCase->execute($this->makeClient(), SubscriptionIdMother::from('count-1'), new FilterCollection([Filter::from()]));
+    }
+
+    /**
+     * @return list<RelayMessage>
+     */
+    private function countRefusedAsAuthRequired(): array
+    {
+        $this->policy->method('allowSubscription')
+            ->willReturn(PolicyRejection::authRequired('counts are for members'));
+
+        return $this->useCase->execute($this->makeClient(), SubscriptionIdMother::from('count-1'), new FilterCollection([Filter::from()]));
+    }
+
+    /**
+     * @param list<RelayMessage> $replies
+     *
+     * @return list<class-string<RelayMessage>>
+     */
+    private static function messageTypes(array $replies): array
+    {
+        return array_map(static fn (RelayMessage $reply): string => $reply::class, $replies);
     }
 }

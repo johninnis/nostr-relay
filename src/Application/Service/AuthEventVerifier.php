@@ -26,7 +26,7 @@ final readonly class AuthEventVerifier
     {
         $failure = $this->validator->validate($event, new RelayChallenge($this->config->getRelayUrl(), $challenge));
 
-        return null === $failure ? null : PolicyRejection::authRequired($failure->message());
+        return null === $failure ? null : PolicyRejection::fromNip42Failure($failure);
     }
 
     // Deliberate: asked only once the signature has verified, so a refusal cannot tell an unauthenticated sender whose keys this relay trusts — see ADR-0018

@@ -21,9 +21,14 @@ final class ClientIdTest extends TestCase
     {
         $id = ClientId::fromBytes(str_repeat("\xab", 16));
 
-        $this->assertSame(32, strlen((string) $id));
-        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', (string) $id);
         $this->assertSame(str_repeat('ab', 16), (string) $id);
+    }
+
+    public function testFromBytesWritesLowercaseHexTwiceTheLengthOfTheBytes(): void
+    {
+        $id = ClientId::fromBytes("\x01\x23\x45\x67\x89\xab\xcd\xef\xfe\xdc\xba\x98\x76\x54\x32\x10");
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{32}$/', (string) $id);
     }
 
     public function testFromStringPreservesValue(): void

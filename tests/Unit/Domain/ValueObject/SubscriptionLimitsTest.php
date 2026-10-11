@@ -23,20 +23,14 @@ final class SubscriptionLimitsTest extends TestCase
     {
         $limits = new SubscriptionLimits(2, 5, 1000, 100);
 
-        $rejection = $limits->enforce(2, new FilterCollection());
-
-        $this->assertNotNull($rejection);
-        $this->assertStringContainsString('too many subscriptions (max 2)', $rejection->toWireReason());
+        $this->assertSame('blocked: too many subscriptions (max 2)', $limits->enforce(2, new FilterCollection())?->toWireReason());
     }
 
     public function testRejectsWhenTooManyFilters(): void
     {
         $limits = new SubscriptionLimits(20, 1, 1000, 100);
 
-        $rejection = $limits->enforce(0, new FilterCollection([Filter::from(), Filter::from()]));
-
-        $this->assertNotNull($rejection);
-        $this->assertStringContainsString('too many filters (max 1)', $rejection->toWireReason());
+        $this->assertSame('blocked: too many filters (max 1)', $limits->enforce(0, new FilterCollection([Filter::from(), Filter::from()]))?->toWireReason());
     }
 
     public function testAFilterLimitAboveTheCeilingIsClampedRatherThanRefused(): void
@@ -45,8 +39,14 @@ final class SubscriptionLimitsTest extends TestCase
 
         $bounded = $limits->bound(new FilterCollection([Filter::tryFromArray(['kinds' => [1], 'limit' => 5000])]));
 
-        $this->assertNull($limits->enforce(0, $bounded));
         $this->assertSame([100], array_map(static fn (Filter $filter): ?int => $filter->getLimit(), $bounded->toArray()));
+    }
+
+    public function testAFilterWhoseLimitWasClampedIsNotRefused(): void
+    {
+        $limits = new SubscriptionLimits(10, 5, 100, 100);
+
+        $this->assertNull($limits->enforce(0, $limits->bound(new FilterCollection([Filter::tryFromArray(['kinds' => [1], 'limit' => 5000])]))));
     }
 
     public function testACeilingAboveFiveThousandIsTheRelaysToChoose(): void

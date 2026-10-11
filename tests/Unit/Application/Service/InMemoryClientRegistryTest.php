@@ -12,6 +12,7 @@ use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Domain\ValueObject\SessionCounters;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
 
@@ -38,44 +39,63 @@ final class InMemoryClientRegistryTest extends TestCase
         return new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now());
     }
 
-    public function testRegisterClientReturnsRelayClient(): void
+    public function testRegisterClientIncrementsActiveConnections(): void
     {
         $metrics = $this->createMock(MetricsCollectorInterface::class);
         $metrics->expects($this->once())->method('incrementActiveConnections');
-        $manager = $this->makeManager($metrics);
 
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connectionInfo = $this->createConnectionInfo();
-
-        $client = $manager->registerClient($connection, $connectionInfo);
-
-        $this->assertSame($connectionInfo, $client->getConnectionInfo());
-        $this->assertSame(1, $manager->getClientCount());
+        $this->makeManager($metrics)->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
     }
 
-    public function testRemoveClientDecrementsCount(): void
+    public function testRegisterClientReturnsRelayClient(): void
+    {
+        $connectionInfo = $this->createConnectionInfo();
+
+        $client = $this->manager->registerClient($this->createStub(ClientConnectionInterface::class), $connectionInfo);
+
+        $this->assertSame($connectionInfo, $client->getConnectionInfo());
+    }
+
+    public function testRegisterClientCountsTheClient(): void
+    {
+        $this->manager->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
+
+        $this->assertSame(1, $this->manager->getClientCount());
+    }
+
+    public function testRemoveClientDecrementsActiveConnections(): void
     {
         $metrics = $this->createMock(MetricsCollectorInterface::class);
         $metrics->expects($this->once())->method('decrementActiveConnections');
         $manager = $this->makeManager($metrics);
 
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $client = $manager->registerClient($connection, $this->createConnectionInfo());
+        $client = $manager->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
 
         $manager->removeClient($client->getId());
+    }
 
-        $this->assertSame(0, $manager->getClientCount());
+    public function testRemoveClientDecrementsCount(): void
+    {
+        $client = $this->manager->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
+
+        $this->manager->removeClient($client->getId());
+
+        $this->assertSame(0, $this->manager->getClientCount());
+    }
+
+    public function testRemoveNonExistentClientLeavesActiveConnectionsAlone(): void
+    {
+        $metrics = $this->createMock(MetricsCollectorInterface::class);
+        $metrics->expects($this->never())->method('decrementActiveConnections');
+
+        $this->makeManager($metrics)->removeClient(ClientId::fromString('missing'));
     }
 
     public function testRemoveNonExistentClientIsNoOp(): void
     {
-        $metrics = $this->createMock(MetricsCollectorInterface::class);
-        $metrics->expects($this->never())->method('decrementActiveConnections');
-        $manager = $this->makeManager($metrics);
+        $this->manager->removeClient(ClientId::fromString('missing'));
 
-        $manager->removeClient(ClientId::fromString('missing'));
-
-        $this->assertSame(0, $manager->getClientCount());
+        $this->assertSame(0, $this->manager->getClientCount());
     }
 
     public function testGetClientReturnsRegisteredClient(): void
@@ -85,8 +105,7 @@ final class InMemoryClientRegistryTest extends TestCase
 
         $found = $this->manager->getClient($client->getId());
 
-        $this->assertNotNull($found);
-        $this->assertTrue($client->getId()->equals($found->getId()));
+        $this->assertEquals($client->getId(), $found?->getId());
     }
 
     public function testGetClientReturnsNullForUnknownId(): void
@@ -122,24 +141,17 @@ final class InMemoryClientRegistryTest extends TestCase
     {
         $client = $this->manager->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
 
-        $counters = $this->manager->getSessionCounters($client->getId());
-
-        $this->assertSame(0, $counters->getEventsReceived());
-        $this->assertSame(0, $counters->getEventsAccepted());
-        $this->assertSame(0, $counters->getEventsSent());
+        $this->assertEquals(SessionCounters::empty(), $this->manager->getSessionCounters($client->getId()));
     }
 
-    public function testRecordEventReceivedAndAcceptedUpdateCounters(): void
+    public function testRecordEventReceivedUpdatesItsCounter(): void
     {
-        $client = $this->manager->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
+        $this->assertSame(2, $this->countersAfterTwoReceiptsAndOneAcceptance()->getEventsReceived());
+    }
 
-        $this->manager->recordEventReceived($client->getId());
-        $this->manager->recordEventReceived($client->getId());
-        $this->manager->recordEventAccepted($client->getId());
-
-        $counters = $this->manager->getSessionCounters($client->getId());
-        $this->assertSame(2, $counters->getEventsReceived());
-        $this->assertSame(1, $counters->getEventsAccepted());
+    public function testRecordEventAcceptedUpdatesItsCounter(): void
+    {
+        $this->assertSame(1, $this->countersAfterTwoReceiptsAndOneAcceptance()->getEventsAccepted());
     }
 
     public function testRecordEventSentUpdatesCounter(): void
@@ -149,5 +161,16 @@ final class InMemoryClientRegistryTest extends TestCase
         $this->manager->recordEventSent($client->getId());
 
         $this->assertSame(1, $this->manager->getSessionCounters($client->getId())->getEventsSent());
+    }
+
+    private function countersAfterTwoReceiptsAndOneAcceptance(): SessionCounters
+    {
+        $client = $this->manager->registerClient($this->createStub(ClientConnectionInterface::class), $this->createConnectionInfo());
+
+        $this->manager->recordEventReceived($client->getId());
+        $this->manager->recordEventReceived($client->getId());
+        $this->manager->recordEventAccepted($client->getId());
+
+        return $this->manager->getSessionCounters($client->getId());
     }
 }

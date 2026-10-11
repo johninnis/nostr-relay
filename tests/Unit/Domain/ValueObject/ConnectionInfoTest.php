@@ -11,14 +11,21 @@ use PHPUnit\Framework\TestCase;
 
 final class ConnectionInfoTest extends TestCase
 {
-    public function testGettersReturnConstructorValues(): void
-    {
-        $timestamp = Timestamp::fromInt(1700000000);
-        $info = new ConnectionInfo(IpAddress::fromString('192.168.1.1'), 'TestAgent/1.0', $timestamp);
+    private const int CONNECTED_AT = 1700000000;
 
-        $this->assertSame('192.168.1.1', (string) $info->getIpAddress());
-        $this->assertSame('TestAgent/1.0', $info->getUserAgent());
-        $this->assertTrue($timestamp->equals($info->getConnectedAt()));
+    public function testKeepsTheIpAddress(): void
+    {
+        $this->assertSame('192.168.1.1', (string) $this->info()->getIpAddress());
+    }
+
+    public function testKeepsTheUserAgent(): void
+    {
+        $this->assertSame('TestAgent/1.0', $this->info()->getUserAgent());
+    }
+
+    public function testKeepsTheConnectionTime(): void
+    {
+        $this->assertTrue(Timestamp::fromInt(self::CONNECTED_AT)->equals($this->info()->getConnectedAt()));
     }
 
     public function testPreservesEmptyUserAgent(): void
@@ -26,5 +33,10 @@ final class ConnectionInfoTest extends TestCase
         $info = new ConnectionInfo(IpAddress::fromString('127.0.0.1'), '', Timestamp::now());
 
         $this->assertSame('', $info->getUserAgent());
+    }
+
+    private function info(): ConnectionInfo
+    {
+        return new ConnectionInfo(IpAddress::fromString('192.168.1.1'), 'TestAgent/1.0', Timestamp::fromInt(self::CONNECTED_AT));
     }
 }

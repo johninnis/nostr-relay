@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Infrastructure\EventStore;
 
-use Innis\Nostr\Core\Domain\Collection\EventCollection;
 use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
 use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
@@ -71,26 +70,26 @@ final class InMemoryEventStore implements RelayEventStoreInterface
 
         foreach ($filters as $filter) {
             foreach ($this->newestMatching($filter) as $event) {
-                $matched[$event->getId()->toHex()] = $event;
+                $matched[$event->getHeader()->getId()->toHex()] = $event;
             }
         }
 
-        return new StoredEventCollection(array_map(
-            fn (Event $event): StoredEvent => $this->encoded[$event->getId()->toHex()],
-            new EventCollection(array_values($matched))->sortByTimestamp(false)->toArray(),
-        ));
+        return new StoredEventCollection($matched)->newestFirst();
     }
 
-    private function newestMatching(Filter $filter): EventCollection
+    /**
+     * @return list<StoredEvent>
+     */
+    private function newestMatching(Filter $filter): array
     {
-        $matching = new EventCollection(array_values(array_filter(
-            $this->events,
-            static fn (Event $event): bool => $filter->matches($event),
-        )))->sortByTimestamp(false);
+        $matching = new StoredEventCollection(array_intersect_key(
+            $this->encoded,
+            array_filter($this->events, static fn (Event $event): bool => $filter->matches($event)),
+        ))->newestFirst()->toArray();
 
         $limit = $filter->getLimit();
 
-        return null === $limit ? $matching : $matching->slice(0, $limit);
+        return null === $limit ? $matching : array_slice($matching, 0, $limit);
     }
 
     // Deliberate: counts matches directly rather than reusing the read path, because a filter's limit bounds the reply to a REQ and not the number of events that match — see ADR-0013

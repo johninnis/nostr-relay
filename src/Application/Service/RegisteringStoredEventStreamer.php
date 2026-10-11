@@ -21,10 +21,10 @@ final readonly class RegisteringStoredEventStreamer
 
     public function stream(RelayClient $client, Subscription $subscription, ScopedFilters $admission): void
     {
-        $this->subscriptionRegistry->addSubscription($client->getId(), $subscription, $admission->getRequestedFilters());
+        $this->subscriptionRegistry->addSubscription($client->getId(), $subscription);
 
         try {
-            $this->deferredExecutor->defer(fn () => $this->storedEventStreamer->stream($client, $subscription, $admission->getFilters()));
+            $this->deferredExecutor->defer(fn () => $this->storedEventStreamer->stream($client, $subscription, $admission));
         } catch (Throwable $e) {
             $this->subscriptionRegistry->removeSubscription($client->getId(), $subscription->getId());
 

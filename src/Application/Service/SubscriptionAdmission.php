@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
-use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
+use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
@@ -13,37 +13,27 @@ use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 final readonly class SubscriptionAdmission
 {
     public function __construct(
-        private RelayPolicyInterface $policy,
         private RateLimitGate $rateLimitGate,
+        private ReadScopeGate $readScopeGate,
         private SubscriptionLookupInterface $subscriptionLookup,
     ) {
     }
 
-    public function admit(RelayClient $client, FilterCollection $filters): PolicyRejection|ScopedFilters
+    // Deliberate: a REQ on an id the client holds replaces that subscription, so it counts against the cap once, as the one it replaces — see ADR-0033
+    public function admitSubscription(RelayClient $client, SubscriptionId $subscriptionId, FilterCollection $filters): PolicyRejection|ScopedFilters
     {
-        $rateLimit = $this->rateLimitGate->admit($client);
+        $heldBeside = count($this->subscriptionLookup->getSubscriptionsForClient($client->getId())->remove($subscriptionId));
+        $admission = $this->rateLimitGate->admit($client) ?? $this->readScopeGate->admit($client, $filters, $heldBeside);
 
-        if (null !== $rateLimit) {
-            return $rateLimit;
-        }
-
-        return $this->scopeFor($client, $filters, $this->heldCount($client));
+        // Deliberate: a read narrowed to nothing is refused auth-required rather than served empty, as NIP-42 shows — see ADR-0004
+        return $admission instanceof ScopedFilters && $admission->isWhollyBeyondScope()
+            ? PolicyRejection::authRequired('authentication required to read what this subscription asks for')
+            : $admission;
     }
 
-    // Deliberate: no rate-limit token, and the client's own subscription discounted from the cap, because a re-evaluation replaces one it already holds rather than asking for another — see ADR-0016
-    public function readmit(RelayClient $client, FilterCollection $filters): PolicyRejection|ScopedFilters
+    public function admitCount(RelayClient $client, FilterCollection $filters): PolicyRejection|ScopedFilters
     {
-        return $this->scopeFor($client, $filters, max(0, $this->heldCount($client) - 1));
-    }
-
-    private function scopeFor(RelayClient $client, FilterCollection $filters, int $heldCount): PolicyRejection|ScopedFilters
-    {
-        return $this->policy->allowSubscription($client, $filters, $heldCount)
-            ?? $this->policy->filterForClient($client, $filters);
-    }
-
-    private function heldCount(RelayClient $client): int
-    {
-        return $this->subscriptionLookup->getSubscriptionCountForClient($client->getId());
+        return $this->rateLimitGate->admit($client)
+            ?? $this->readScopeGate->admit($client, $filters, $this->subscriptionLookup->getSubscriptionCountForClient($client->getId()));
     }
 }

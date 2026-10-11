@@ -11,8 +11,8 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Client\EventMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\ClientMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\OkMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
-use Innis\Nostr\Relay\Application\Service\AcceptedEventPipeline;
 use Innis\Nostr\Relay\Application\Service\ClientVerbHandlerInterface;
+use Innis\Nostr\Relay\Application\Service\EventAcceptance;
 use Innis\Nostr\Relay\Application\Service\EventAdmission;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\PublishingAnswer;
@@ -24,7 +24,7 @@ final class ProcessEventSubmissionUseCase implements ClientVerbHandlerInterface
 {
     public function __construct(
         private readonly EventAdmission $admission,
-        private readonly AcceptedEventPipeline $pipeline,
+        private readonly EventAcceptance $acceptance,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -71,13 +71,7 @@ final class ProcessEventSubmissionUseCase implements ClientVerbHandlerInterface
                 return $this->rejectionReplies($client, $event, $answer);
             }
 
-            $replies = $this->pipeline->accept($client, $event);
-
-            if (null !== $answer->getChallenge()) {
-                array_unshift($replies, $answer->getChallenge());
-            }
-
-            return $replies;
+            return $this->acceptance->accept($client, $event, $answer);
         } catch (InvalidEventException $e) {
             $this->logger->warning('Event invalid', ['event_id' => $event->getId()->toHex(), 'pubkey' => $event->getPubkey()->toHex(), 'reason' => $e->getMessage()]);
 

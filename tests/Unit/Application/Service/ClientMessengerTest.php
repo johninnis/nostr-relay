@@ -119,19 +119,33 @@ final class ClientMessengerTest extends TestCase
         $this->assertSame(0, $this->registry->getSessionCounters($client->getId())->getEventsSent());
     }
 
-    public function testFailedSendDoesNotIncrementEventsSent(): void
+    public function testAFailedSendRaisesTheConnectionFault(): void
     {
-        $connection = $this->createStub(ClientConnectionInterface::class);
-        $connection->method('sendText')->willThrowException(ConnectionException::peerDisconnected());
-        $client = $this->register($connection);
+        $client = $this->register($this->disconnectedConnection());
 
         $this->expectException(ConnectionException::class);
 
+        $this->messenger->sendEvent($client, SubscriptionIdMother::from('sub-1'), EncodedEvent::of($this->createEvent()));
+    }
+
+    public function testFailedSendDoesNotIncrementEventsSent(): void
+    {
+        $client = $this->register($this->disconnectedConnection());
+
         try {
             $this->messenger->sendEvent($client, SubscriptionIdMother::from('sub-1'), EncodedEvent::of($this->createEvent()));
-        } finally {
-            $this->assertSame(0, $this->registry->getSessionCounters($client->getId())->getEventsSent());
+        } catch (ConnectionException) {
         }
+
+        $this->assertSame(0, $this->registry->getSessionCounters($client->getId())->getEventsSent());
+    }
+
+    private function disconnectedConnection(): ClientConnectionInterface
+    {
+        $connection = $this->createStub(ClientConnectionInterface::class);
+        $connection->method('sendText')->willThrowException(ConnectionException::peerDisconnected());
+
+        return $connection;
     }
 
     private function createEvent(): Event

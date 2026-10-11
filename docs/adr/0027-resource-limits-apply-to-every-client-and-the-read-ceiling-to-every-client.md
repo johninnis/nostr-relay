@@ -34,3 +34,4 @@ Resource limits are decoupled from access openness. Whether the relay is open or
 - Do not move the bound below the tenant check to "finish" the tenant exemption. The exemption is deliberately partial, and an unbounded read is a fault whoever asks for it.
 - Do not re-add `isOpenRelay()` to `isRateLimitExempt()` or the subscription-cap check. Trust is proven by authenticating as a tenant, not by the relay's openness.
 - Do not relax the floor check back into a silent clamp: a ceiling the relay cannot apply is a configuration the operator needs told about. There is deliberately no upper validation bound — the ceiling is the relay's own number, and ADR-0024 clamps filters to it whatever they ask.
+- Shared decision: nostr-adrs ADR-0033.

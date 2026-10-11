@@ -7,6 +7,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Application\Service;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Enum\ReasonPrefix;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
@@ -77,29 +78,27 @@ final class ClientMessageDispatcherTest extends TestCase
         $replies = $this->dispatcher()
             ->dispatch($this->client, ReqMessage::from(SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]))->toJson());
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(NoticeMessage::class, $replies[0]);
-        $this->assertSame('Unknown message type', $replies[0]->getMessage());
+        $this->assertEquals([NoticeMessage::fromString('Unknown message type')], $replies);
     }
 
     public function testAFailingEventHandlerIsFramedAsAnOkError(): void
     {
-        $replies = $this->dispatcher($this->failingHandler(EventMessage::class))
-            ->dispatch($this->client, new EventMessage($this->event())->toJson());
+        $event = $this->event();
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertSame('error: could not process event', $replies[0]->getMessage());
+        $replies = $this->dispatcher($this->failingHandler(EventMessage::class))
+            ->dispatch($this->client, new EventMessage($event)->toJson());
+
+        $this->assertEquals([OkMessage::refused($event->getId(), ReasonPrefix::Error, 'could not process event')], $replies);
     }
 
     public function testAFailingAuthHandlerIsFramedAsAnOkError(): void
     {
-        $replies = $this->dispatcher($this->failingHandler(AuthMessage::class))
-            ->dispatch($this->client, AuthMessage::fromEvent($this->authEvent())->toJson());
+        $authEvent = $this->authEvent();
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(OkMessage::class, $replies[0]);
-        $this->assertSame('error: could not process authentication', $replies[0]->getMessage());
+        $replies = $this->dispatcher($this->failingHandler(AuthMessage::class))
+            ->dispatch($this->client, AuthMessage::fromEvent($authEvent)->toJson());
+
+        $this->assertEquals([OkMessage::refused($authEvent->getId(), ReasonPrefix::Error, 'could not process authentication')], $replies);
     }
 
     public function testAFailingReqHandlerIsFramedAsAClosedError(): void
@@ -107,9 +106,7 @@ final class ClientMessageDispatcherTest extends TestCase
         $replies = $this->dispatcher($this->failingHandler(ReqMessage::class))
             ->dispatch($this->client, ReqMessage::from(SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]))->toJson());
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
-        $this->assertSame('error: could not process subscription', $replies[0]->getMessage());
+        $this->assertEquals([ClosedMessage::closed(SubscriptionIdMother::from('sub-1'), ReasonPrefix::Error, 'could not process subscription')], $replies);
     }
 
     public function testAFailingCountHandlerIsFramedAsAClosedError(): void
@@ -117,9 +114,7 @@ final class ClientMessageDispatcherTest extends TestCase
         $replies = $this->dispatcher($this->failingHandler(CountMessage::class))
             ->dispatch($this->client, CountMessage::from(SubscriptionIdMother::from('count-1'), new FilterCollection([Filter::from()]))->toJson());
 
-        $this->assertCount(1, $replies);
-        $this->assertInstanceOf(ClosedMessage::class, $replies[0]);
-        $this->assertSame('error: could not count events', $replies[0]->getMessage());
+        $this->assertEquals([ClosedMessage::closed(SubscriptionIdMother::from('count-1'), ReasonPrefix::Error, 'could not count events')], $replies);
     }
 
     public function testAFailingCloseHandlerIsAnsweredWithSilence(): void

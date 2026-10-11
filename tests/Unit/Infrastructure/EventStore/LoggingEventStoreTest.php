@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\EventStore;
 
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
+use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventContent;
 use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\EventCount;
@@ -22,34 +23,42 @@ use Psr\Log\NullLogger;
 
 final class LoggingEventStoreTest extends TestCase
 {
-    public function testStoreForwardsAndReturnsTheOutcome(): void
+    public function testStoreForwardsTheEventToTheInnerStore(): void
     {
-        $event = EventMother::fromRumour(Rumour::draft(
-            KeyMother::alicePublicKey(),
-            EventKind::fromInt(EventKind::TEXT_NOTE),
-            EventContent::fromString('hello'),
-            new TagCollection(),
-        ));
+        $event = $this->event();
 
         $inner = $this->createMock(RelayEventStoreInterface::class);
         $inner->expects($this->once())->method('store')->with($event)->willReturn(EventStoreOutcome::Stored);
 
-        $store = new LoggingEventStore($inner, new NullLogger());
+        new LoggingEventStore($inner, new NullLogger())->store($event);
+    }
 
-        $this->assertSame(EventStoreOutcome::Stored, $store->store($event));
+    public function testStoreReturnsTheInnerStoresOutcome(): void
+    {
+        $inner = $this->createStub(RelayEventStoreInterface::class);
+        $inner->method('store')->willReturn(EventStoreOutcome::Stored);
+
+        $this->assertSame(EventStoreOutcome::Stored, new LoggingEventStore($inner, new NullLogger())->store($this->event()));
     }
 
     public function testFindByFiltersForwardsToTheInnerStore(): void
     {
         $filters = new FilterCollection([Filter::from()]);
-        $stored = new StoredEventCollection([]);
 
         $inner = $this->createMock(RelayEventStoreInterface::class);
-        $inner->expects($this->once())->method('findByFilters')->with($filters)->willReturn($stored);
+        $inner->expects($this->once())->method('findByFilters')->with($filters)->willReturn(new StoredEventCollection([]));
 
-        $store = new LoggingEventStore($inner, new NullLogger());
+        new LoggingEventStore($inner, new NullLogger())->findByFilters($filters);
+    }
 
-        $this->assertSame($stored, $store->findByFilters($filters));
+    public function testFindByFiltersReturnsTheInnerStoresEvents(): void
+    {
+        $stored = new StoredEventCollection([]);
+
+        $inner = $this->createStub(RelayEventStoreInterface::class);
+        $inner->method('findByFilters')->willReturn($stored);
+
+        $this->assertSame($stored, new LoggingEventStore($inner, new NullLogger())->findByFilters(new FilterCollection([Filter::from()])));
     }
 
     public function testCountByFiltersForwardsToTheInnerStore(): void
@@ -62,5 +71,15 @@ final class LoggingEventStoreTest extends TestCase
         $store = new LoggingEventStore($inner, new NullLogger());
 
         $this->assertSame(3, $store->countByFilters($filters)->toInt());
+    }
+
+    private function event(): Event
+    {
+        return EventMother::fromRumour(Rumour::draft(
+            KeyMother::alicePublicKey(),
+            EventKind::fromInt(EventKind::TEXT_NOTE),
+            EventContent::fromString('hello'),
+            new TagCollection(),
+        ));
     }
 }

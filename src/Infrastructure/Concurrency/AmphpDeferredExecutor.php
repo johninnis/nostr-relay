@@ -6,6 +6,7 @@ namespace Innis\Nostr\Relay\Infrastructure\Concurrency;
 
 use Closure;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
+use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Override;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
@@ -29,6 +30,12 @@ final readonly class AmphpDeferredExecutor implements DeferredExecutorInterface
 
     private function report(Throwable $error): void
     {
+        if ($error instanceof ConnectionException) {
+            $this->logger->debug('Deferred task ended: its peer disconnected', ['reason' => $error->getMessage()]);
+
+            return;
+        }
+
         $this->logger->error('Deferred task failed', [
             'error' => $error->getMessage(),
             'type' => $error::class,
