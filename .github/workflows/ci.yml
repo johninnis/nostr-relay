@@ -48,3 +48,6 @@ jobs:
 
       - name: Check Rector (8.4 modernisation)
         run: composer check-rector
+
+      - name: Check path lengths
+        run: composer check-path-lengths
