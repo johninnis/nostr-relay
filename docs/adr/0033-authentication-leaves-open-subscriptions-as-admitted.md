@@ -19,13 +19,13 @@ NIP-42 and NIP-67 give the flow instead. The relay says more may exist after `AU
 - A `REQ` on an id the client already holds counts against the subscription cap once, as the subscription it replaces: `SubscriptionAdmission::admitSubscription` hands the policy the count of the client's other subscriptions. A `COUNT` replaces nothing and is counted against every subscription the client holds (ADR-0006).
 - A replacing `REQ` is rate-limited like any other.
 - A refused `REQ` withdraws any subscription its id held (`SubscriptionAnswers::settleRefusal`), because the `REQ` replaces it, so the `CLOSED` it is answered with is true. A `COUNT` registers and replaces nothing, so a refused `COUNT` withdraws nothing (`SubscriptionAnswers::refuseCount`): a `REQ` open on the same id stays open.
-- The registry keeps only the filters a subscription was granted. `ScopedFilters` carries the granted filters and whether the read went beyond scope; the filters the client asked for are not kept, because nothing reads them again.
+- The registry keeps only the filters a subscription was granted, with the reader's acting keys it was granted for (ADR-0036). `ScopedFilters` carries the granted filters and whether the policy narrowed the read; the filters the client asked for are not kept, because nothing reads them again.
 
 ## Consequences
 
 - `EOSE` keeps NIP-01's meaning on every subscription: one per subscription, and nothing stored after it.
 - A client that never sends its `REQ` again keeps guest scope on that subscription, as a client that never authenticates does.
 - A host sizes its rate limit so that a client can send each open subscription again once after authenticating.
-- `SubscriptionReevaluator`, `SubscriptionActivator::reactivate()`, `SubscriptionAdmission::readmit()`, `ScopedFilters::getRequestedFilters()` and `SubscriptionLookupInterface::getOriginalFilters()` are gone. `ScopedFilters::scoped()` takes the granted filters and the beyond-scope flag, and `SubscriptionRegistryInterface::addSubscription()` takes the client and the subscription.
+- `SubscriptionReevaluator`, `SubscriptionActivator::reactivate()`, `SubscriptionAdmission::readmit()`, `ScopedFilters::getRequestedFilters()` and `SubscriptionLookupInterface::getOriginalFilters()` are gone. `ScopedFilters::scoped()` takes the granted filters and the beyond-scope flag, and `SubscriptionRegistryInterface::addSubscription()` takes the client, the subscription and the reader's acting keys it was admitted for (ADR-0036).
 - Do not stream stored events after an `EOSE`, and do not re-scope an open subscription when its connection authenticates.
 - Shared decision: nostr-adrs ADR-0029.

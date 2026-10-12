@@ -14,6 +14,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
+use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use Override;
 use Psr\Log\LoggerInterface;
 
@@ -40,21 +41,21 @@ final readonly class LoggingEventStore implements RelayEventStoreInterface
     }
 
     #[Override]
-    public function findByFilters(FilterCollection $filters): StoredEventCollection
+    public function findByFilters(FilterCollection $filters, ActingKeys $reader): StoredEventCollection
     {
-        return $this->eventStore->findByFilters($filters);
+        return $this->eventStore->findByFilters($filters, $reader);
     }
 
     #[Override]
-    public function countByFilters(FilterCollection $filters): EventCount
+    public function countByFilters(FilterCollection $filters, ActingKeys $reader): EventCount
     {
-        return $this->eventStore->countByFilters($filters);
+        return $this->eventStore->countByFilters($filters, $reader);
     }
 
     #[Override]
-    public function deleteByEventIds(EventIdCollection $eventIds, PublicKey $author): int
+    public function deleteByEventIds(EventIdCollection $eventIds, ActingKeys $deleter): int
     {
-        return $this->eventStore->deleteByEventIds($eventIds, $author);
+        return $this->eventStore->deleteByEventIds($eventIds, $deleter);
     }
 
     #[Override]

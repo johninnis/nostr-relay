@@ -23,6 +23,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\EncodedEvent;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\RecordingClientMessenger;
@@ -52,7 +53,7 @@ final class LiveMarkingClientMessengerTest extends TestCase
             new FilterCollection([Filter::from()]),
             SubscriptionState::Active,
         );
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, ActingKeysMother::anonymous());
     }
 
     public function testAnEoseMarksTheSubscriptionLiveAfterSending(): void

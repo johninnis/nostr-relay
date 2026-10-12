@@ -5,15 +5,11 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
-use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
-use Innis\Nostr\Core\Domain\Collection\FilterCollection;
+use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
-use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\EventId;
-use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
-use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
+use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use Psr\Log\LoggerInterface;
 
 final readonly class EventDeletionProcessor
@@ -27,35 +23,28 @@ final readonly class EventDeletionProcessor
     public function process(Event $event): void
     {
         $author = $event->getPubkey();
-        $deletedCount = 0;
 
-        $requestedEventIds = $event->getTags()->getEventIds()->toArray();
-        $requestedCoordinates = $event->getTags()->getCoordinates()->toArray();
+        $requestedEventIds = $event->getTags()->getEventIds();
+        $requestedCoordinates = $event->getTags()->getCoordinates();
         $requestedCount = count($requestedEventIds) + count($requestedCoordinates);
 
-        $verifiedEventIds = $this->verifyOwnedEventIds($requestedEventIds, $author);
-        $verifiedCoordinates = array_values(array_filter(
-            $requestedCoordinates,
-            static fn (EventCoordinate $coord) => $coord->getPubkey()->equals($author)
-        ));
-        $verifiedCount = count($verifiedEventIds) + count($verifiedCoordinates);
+        $ownCoordinates = new EventCoordinateCollection(array_values(array_filter(
+            $requestedCoordinates->toArray(),
+            static fn (EventCoordinate $coordinate): bool => $coordinate->getPubkey()->equals($author),
+        )));
 
-        if ($verifiedCount < $requestedCount) {
+        if (count($ownCoordinates) < count($requestedCoordinates)) {
             $this->logger->warning('Deletion event referenced events not owned by author', [
                 'deletion_event_id' => $event->getId()->toHex(),
                 'pubkey' => $author->toHex(),
-                'requested' => $requestedCount,
-                'verified' => $verifiedCount,
+                'requested' => count($requestedCoordinates),
+                'verified' => count($ownCoordinates),
             ]);
         }
 
-        if (!empty($verifiedEventIds)) {
-            $deletedCount += $this->eventStore->deleteByEventIds(new EventIdCollection($verifiedEventIds), $author);
-        }
-
-        if (!empty($verifiedCoordinates)) {
-            $deletedCount += $this->eventStore->deleteByCoordinates(new EventCoordinateCollection($verifiedCoordinates), $author, $event->getCreatedAt());
-        }
+        // Deliberate: the store judges each id itself, deleting what the signer signed and the gift wraps addressed to it, never a deletion, so no event is read back into the relay — see ADR-0038
+        $deletedCount = ($requestedEventIds->isEmpty() ? 0 : $this->eventStore->deleteByEventIds($requestedEventIds, new ActingKeys(new PublicKeyCollection([$author]))))
+            + ($ownCoordinates->isEmpty() ? 0 : $this->eventStore->deleteByCoordinates($ownCoordinates, $author, $event->getCreatedAt()));
 
         if ($deletedCount > 0) {
             $this->logger->debug('Deletion event processed', [
@@ -71,32 +60,5 @@ final readonly class EventDeletionProcessor
                 'referenced' => $requestedCount,
             ]);
         }
-    }
-
-    /**
-     * @param list<EventId> $eventIds
-     *
-     * @return list<EventId>
-     */
-    private function verifyOwnedEventIds(array $eventIds, PublicKey $author): array
-    {
-        if (empty($eventIds)) {
-            return [];
-        }
-
-        $storedEvents = $this->eventStore->findByFilters(new FilterCollection([
-            Filter::from(ids: new EventIdCollection($eventIds)),
-        ]));
-
-        $verified = [];
-        foreach ($storedEvents as $storedEvent) {
-            $header = $storedEvent->getHeader();
-
-            if ($header->getPubkey()->equals($author) && !$header->getKind()->is(EventKind::EVENT_DELETION)) {
-                $verified[] = $header->getId();
-            }
-        }
-
-        return $verified;
     }
 }

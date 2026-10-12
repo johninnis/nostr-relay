@@ -14,13 +14,13 @@ The obvious fix inside the library, counting at most a fixed number of rows in t
 
 ## Decision
 
-`RelayEventStoreInterface::countByFilters` returns nostr-core's `EventCount`, built through `EventCount::exact()` or `EventCount::approximate()`. `CountSubscriptionUseCase` frames as its `CountMessage` the `EventCount` that `ReadableEventCounter` gives for the filters the client was granted. Where no filter names no kind, that is the store's count unchanged. Where one does, it may not count the gift wraps only such a filter reaches (ADR-0035), so the counter builds the answer from two or three store counts: all the filters, less the gift wraps any of them matches, plus the gift wraps the filters naming a gift-wrap kind match, never below zero. That answer is approximate when any count it was built from is, so an approximate store count reaches the wire with `"approximate": true` however it was combined, and an exact one without the key. This library defines no count value of its own. The built-in `InMemoryEventStore` always answers exactly.
+`RelayEventStoreInterface::countByFilters` returns nostr-core's `EventCount`, built through `EventCount::exact()` or `EventCount::approximate()`. `CountSubscriptionUseCase` frames as its `CountMessage` the `EventCount` the store gives for the filters the client was granted and the reader's acting keys (ADR-0036), unchanged, so an approximate store count reaches the wire with `"approximate": true` and an exact one without the key. This library defines no count value of its own. The built-in `InMemoryEventStore` always answers exactly.
 
 A store that bounds the work of a count is expected to report the bounded result as approximate whenever it stopped at its ceiling, so that a client can never mistake a ceiling for a total.
 
 ## Consequences
 
 - A durable store can bound a COUNT to the same cost as the REQ it could have been, and stay honest on the wire.
-- The flag is the store's to set and the message's to serialise; the relay only carries it, and a count it combines from several is approximate whenever any of them is. Do not have the use case decide approximateness from the number, and do not drop the flag between the store and the reply: a capped count without the flag is a wrong answer, not a simpler one.
+- The flag is the store's to set and the message's to serialise; the relay only carries it. Do not have the use case decide approximateness from the number, and do not drop the flag between the store and the reply: a capped count without the flag is a wrong answer, not a simpler one.
 - A store that returns a bare number is a type error, so every implementation is forced to say which kind of count it gives.
 - Shared decision: nostr-adrs ADR-0033.

@@ -47,14 +47,12 @@ use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\PublishingGate;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
-use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
+use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
-use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\Stub;
@@ -101,7 +99,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $messenger = new ClientMessenger($this->clientRegistry);
 
         $distributor = new EventDistributor(
-            new EventAudience(new DeliveryGate($this->policy, new GiftWrapFilterRules()), $subscriptionRegistry, $this->clientRegistry),
+            new EventAudience(new DeliveryGate($this->policy), $subscriptionRegistry, $this->clientRegistry),
             $messenger,
             $logger,
         );
@@ -403,16 +401,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->assertSame([AuthMessage::class, OkMessage::class], array_map(get_class(...), $replies));
     }
 
-    public function testADeletionLooksUpTheEventsItNamesById(): void
+    public function testADeletionReadsNothingBackFromTheStore(): void
     {
         $author = KeyPair::generate($this->signatureService());
         $target = $this->noteBy($author);
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->expects($this->once())
-            ->method('findByFilters')
-            ->willReturn(new StoredEventCollection([StoredEvent::of($target)]));
+        $eventStore->expects($this->never())->method('findByFilters');
         $eventStore->method('deleteByEventIds')->willReturn(1);
 
         $this->repliesToADeletionById($target, $author, $eventStore);
@@ -425,15 +421,14 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($target)]));
         $eventStore->expects($this->once())
             ->method('deleteByEventIds')
             ->with(
                 $this->callback(static function (EventIdCollection $eventIds) use ($target): bool {
                     return 1 === $eventIds->count() && $target->getId()->toHex() === $eventIds->toArray()[0]->toHex();
                 }),
-                $this->callback(static function (PublicKey $deleter) use ($author): bool {
-                    return $deleter->equals($author->getPublicKey());
+                $this->callback(static function (ActingKeys $deleter) use ($author): bool {
+                    return [$author->getPublicKey()->toHex()] === $deleter->getKeys()->toHexes();
                 }),
             )
             ->willReturn(1);
@@ -451,27 +446,13 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->assertTrue(self::okReply($this->repliesToADeletionOfTheAuthorsOwnEvent())?->isAccepted());
     }
 
-    public function testADeletionLooksUpAnotherAuthorsEventItNamesById(): void
+    public function testADeletionOfAnotherAuthorsEventLeavesTheStoreToJudgeIt(): void
     {
         $victimEvent = $this->noteBy(KeyPair::generate($this->signatureService()));
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->expects($this->once())
-            ->method('findByFilters')
-            ->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
-
-        $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
-    }
-
-    public function testDeletionEventSkipsEventIdsAuthoredBySomeoneElse(): void
-    {
-        $victimEvent = $this->noteBy(KeyPair::generate($this->signatureService()));
-
-        $eventStore = $this->createMock(RelayEventStoreInterface::class);
-        $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
-        $eventStore->expects($this->never())->method('deleteByEventIds');
+        $eventStore->expects($this->once())->method('deleteByEventIds')->willReturn(0);
 
         $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
     }
@@ -482,7 +463,6 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $eventStore = $this->createMock(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
         $eventStore->expects($this->never())->method('deleteByCoordinates');
 
         $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
@@ -777,7 +757,6 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($target)]));
         $eventStore->method('deleteByEventIds')->willReturn(1);
 
         return $this->repliesToADeletionById($target, $author, $eventStore);
@@ -792,7 +771,6 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
 
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('store')->willReturn(EventStoreOutcome::Stored);
-        $eventStore->method('findByFilters')->willReturn(new StoredEventCollection([StoredEvent::of($victimEvent)]));
 
         return $this->repliesToADeletionById($victimEvent, KeyPair::generate($this->signatureService()), $eventStore);
     }

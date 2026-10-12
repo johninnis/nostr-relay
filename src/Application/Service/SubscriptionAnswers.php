@@ -12,8 +12,8 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\EoseMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\RelayMessage;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
-use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
@@ -74,21 +74,21 @@ final readonly class SubscriptionAnswers
     /**
      * @return list<RelayMessage>
      */
-    public function forScope(RelayClient $client, ScopedFilters $scopedFilters): array
+    public function forScope(RelayClient $client, AdmittedRead $read): array
     {
-        return $this->authChallengeIssuer->offerForScope($scopedFilters, $client->getId());
+        return $this->authChallengeIssuer->offerForScope($read, $client->getId());
     }
 
     // Deliberate: a narrowed read's EOSE carries NIP-67's auth hint, and its challenge is written just before it — see ADR-0004
     /**
      * @return list<RelayMessage>
      */
-    public function endOfStoredEvents(RelayClient $client, SubscriptionId $subscriptionId, ScopedFilters $scopedFilters): array
+    public function endOfStoredEvents(RelayClient $client, SubscriptionId $subscriptionId, AdmittedRead $read): array
     {
-        if (!$scopedFilters->isBeyondScope()) {
+        if (!$read->isBeyondScope()) {
             return [new EoseMessage($subscriptionId)];
         }
 
-        return [...$this->forScope($client, $scopedFilters), EoseMessage::hinting($subscriptionId, EoseHint::Auth)];
+        return [...$this->forScope($client, $read), EoseMessage::hinting($subscriptionId, EoseHint::Auth)];
     }
 }

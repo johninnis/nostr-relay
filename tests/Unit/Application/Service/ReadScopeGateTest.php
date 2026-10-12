@@ -13,7 +13,7 @@ use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\ReadScopeGate;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
@@ -25,26 +25,34 @@ use RuntimeException;
 
 final class ReadScopeGateTest extends TestCase
 {
-    public function testAGiftWrapRequestIsConfinedToTheReadersKeyEvenWhereThePolicyGrantsEverything(): void
+    public function testTheReadCarriesTheKeysTheConnectionAuthenticatedAs(): void
     {
         $sessions = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
         $sessions->authenticate(self::client()->getId(), KeyMother::alicePublicKey());
 
-        $scoped = new ReadScopeGate($this->policyGrantingEverything(), $sessions, new GiftWrapFilterRules())
+        $read = new ReadScopeGate($this->policyGrantingEverything(), $sessions)
             ->admit(self::client(), self::filters(['kinds' => [EventKind::GIFT_WRAP]]), 0);
 
         $this->assertSame(
-            [['kinds' => [EventKind::GIFT_WRAP], '#p' => [KeyMother::alicePublicKey()->toHex()]]],
-            $scoped instanceof ScopedFilters ? $scoped->getFilters()->toJsonArray() : null,
+            [KeyMother::alicePublicKey()->toHex()],
+            $read instanceof AdmittedRead ? $read->getReader()->getKeys()->toHexes() : null,
         );
+    }
+
+    public function testTheReadKeepsTheFiltersThePolicyGranted(): void
+    {
+        $read = new ReadScopeGate($this->policyGrantingEverything(), new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()))
+            ->admit(self::client(), self::filters(['kinds' => [EventKind::GIFT_WRAP]]), 0);
+
+        $this->assertSame([['kinds' => [EventKind::GIFT_WRAP]]], $read instanceof AdmittedRead ? $read->getFilters()->toJsonArray() : null);
     }
 
     public function testAGuestsGiftWrapRequestIsWhollyBeyondScopeEvenWhereThePolicyGrantsEverything(): void
     {
-        $scoped = new ReadScopeGate($this->policyGrantingEverything(), new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()), new GiftWrapFilterRules())
+        $read = new ReadScopeGate($this->policyGrantingEverything(), new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()))
             ->admit(self::client(), self::filters(['kinds' => [EventKind::GIFT_WRAP]]), 0);
 
-        $this->assertTrue($scoped instanceof ScopedFilters && $scoped->isWhollyBeyondScope());
+        $this->assertTrue($read instanceof AdmittedRead && $read->isWhollyBeyondScope());
     }
 
     public function testThePolicysRefusalIsTheAnswer(): void
@@ -53,7 +61,7 @@ final class ReadScopeGateTest extends TestCase
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('allowSubscription')->willReturn($refusal);
 
-        $answer = new ReadScopeGate($policy, new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()), new GiftWrapFilterRules())
+        $answer = new ReadScopeGate($policy, new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()))
             ->admit(self::client(), self::filters(['kinds' => [1]]), 1);
 
         $this->assertSame($refusal, $answer);
@@ -64,7 +72,7 @@ final class ReadScopeGateTest extends TestCase
         $policy = $this->createMock(RelayPolicyInterface::class);
         $policy->expects($this->once())->method('allowSubscription')->with(self::client(), self::filters(['kinds' => [1]]), 3)->willReturn(PolicyRejection::blocked('no'));
 
-        new ReadScopeGate($policy, new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()), new GiftWrapFilterRules())
+        new ReadScopeGate($policy, new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator()))
             ->admit(self::client(), self::filters(['kinds' => [1]]), 3);
     }
 

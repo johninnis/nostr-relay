@@ -31,7 +31,8 @@
     },
     "autoload": {
         "psr-4": {
-            "Innis\\Nostr\\Relay\\": "src/"
+            "Innis\\Nostr\\Relay\\": "src/",
+            "Innis\\Nostr\\Relay\\Tests\\Contract\\": "tests/Contract/"
         }
     },
     "autoload-dev": {

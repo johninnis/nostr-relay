@@ -19,13 +19,12 @@ use Innis\Nostr\Relay\Application\Service\RelayPolicy;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAdmission;
 use Innis\Nostr\Relay\Application\Service\SubscriptionLookupInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\RelayPolicyConfig;
-use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -44,7 +43,7 @@ final class SubscriptionAdmissionTest extends TestCase
     {
         $admission = $this->admissionFor(held: ['open']);
 
-        $this->assertInstanceOf(ScopedFilters::class, $admission->admitSubscription($this->client(), SubscriptionIdMother::from('open'), $this->filters()));
+        $this->assertInstanceOf(AdmittedRead::class, $admission->admitSubscription($this->client(), SubscriptionIdMother::from('open'), $this->filters()));
     }
 
     public function testAReplacingRequestIsRateLimitedLikeAnyOther(): void
@@ -73,7 +72,7 @@ final class SubscriptionAdmissionTest extends TestCase
 
     public function testACountWhoseNarrowedFiltersCanMatchNothingIsAnsweredForWhatItMayRead(): void
     {
-        $this->assertInstanceOf(ScopedFilters::class, $this->admissionFor(held: [])->admitCount($this->client(), $this->giftWrapFilters()));
+        $this->assertInstanceOf(AdmittedRead::class, $this->admissionFor(held: [])->admitCount($this->client(), $this->giftWrapFilters()));
     }
 
     /**
@@ -98,7 +97,7 @@ final class SubscriptionAdmissionTest extends TestCase
 
         return new SubscriptionAdmission(
             new RateLimitGate($rateLimiter ?? $this->alwaysAdmittingRateLimiter(), $policy),
-            new ReadScopeGate($policy, $sessions, new GiftWrapFilterRules()),
+            new ReadScopeGate($policy, $sessions),
             $lookup,
         );
     }

@@ -53,7 +53,6 @@ use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
 use Innis\Nostr\Relay\Application\Service\PublishingGate;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
-use Innis\Nostr\Relay\Application\Service\ReadableEventCounter;
 use Innis\Nostr\Relay\Application\Service\ReadScopeGate;
 use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
@@ -67,7 +66,6 @@ use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessAuthUseCase;
 use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Enum\RateLimitMetric;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\RateLimitConfig;
 use Innis\Nostr\Relay\Infrastructure\Concurrency\AmphpDeferredExecutor;
 use Innis\Nostr\Relay\Infrastructure\EventStore\LoggingEventStore;
@@ -191,8 +189,7 @@ final class RelayServerFactory
         $clientMessenger = new LiveMarkingClientMessenger(new ClientMessenger($clientRegistry), $subscriptionRegistry);
         $disconnectionHandler = new ClientDisconnectionHandler($clientRegistry, $subscriptionRegistry, $authenticationRegistry);
 
-        $giftWrapRules = new GiftWrapFilterRules();
-        $deliveryGate = new DeliveryGate($this->policy, $giftWrapRules);
+        $deliveryGate = new DeliveryGate($this->policy);
 
         $eventDistributor = new EventDistributor(
             new EventAudience($deliveryGate, $subscriptionRegistry, $clientRegistry),
@@ -221,7 +218,7 @@ final class RelayServerFactory
         );
         $subscriptionAdmission = new SubscriptionAdmission(
             $subscriptionRateLimitGate,
-            new ReadScopeGate($this->policy, $authenticationRegistry, $giftWrapRules),
+            new ReadScopeGate($this->policy, $authenticationRegistry),
             $subscriptionRegistry,
         );
         $subscriptionAnswers = new SubscriptionAnswers($subscriptionRegistry, $authChallengeIssuer, $logger);
@@ -255,7 +252,7 @@ final class RelayServerFactory
                     ),
                     $validityGate,
                 ),
-                new CountSubscriptionUseCase(new ReadableEventCounter($eventStore, $giftWrapRules), $subscriptionAdmission, $subscriptionAnswers),
+                new CountSubscriptionUseCase($eventStore, $subscriptionAdmission, $subscriptionAnswers),
             ),
             $clientRegistry,
             $logger,

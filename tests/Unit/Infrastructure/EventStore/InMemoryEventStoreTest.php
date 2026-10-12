@@ -20,6 +20,7 @@ use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
 use Innis\Nostr\Relay\Infrastructure\EventStore\InMemoryEventStore;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use PHPUnit\Framework\TestCase;
@@ -67,7 +68,7 @@ final class InMemoryEventStoreTest extends TestCase
         $store->store($this->article('one', 'first-slug', 100));
         $store->store($this->article('two', 'second-slug', 100));
 
-        $this->assertCount(2, $store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]])));
+        $this->assertCount(2, $store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]]), ActingKeysMother::anonymous()));
     }
 
     public function testAnAddressableEventReplacesTheSameIdentifier(): void
@@ -83,21 +84,21 @@ final class InMemoryEventStoreTest extends TestCase
         $store->store($this->note('first', 100));
         $store->store($this->note('second', 200));
 
-        $this->assertCount(2, $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]])));
+        $this->assertCount(2, $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]), ActingKeysMother::anonymous()));
     }
 
     public function testTheFiltersOwnLimitIsApplied(): void
     {
         $store = $this->storeWithNotes(5);
 
-        $this->assertCount(2, $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 2])));
+        $this->assertCount(2, $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 2]), ActingKeysMother::anonymous()));
     }
 
     public function testAFilterNamingNoLimitIsNotBoundedByTheStore(): void
     {
         $store = $this->storeWithNotes(5);
 
-        $this->assertCount(5, $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]])));
+        $this->assertCount(5, $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]), ActingKeysMother::anonymous()));
     }
 
     public function testEachFilterIsBoundedByItsOwnLimit(): void
@@ -109,14 +110,14 @@ final class InMemoryEventStoreTest extends TestCase
             Filter::tryFromArray(['authors' => [KeyMother::ALICE_PUBLIC_KEY_HEX], 'limit' => 1]) ?? throw new RuntimeException('Invalid filter'),
         ]);
 
-        $this->assertCount(2, $store->findByFilters($filters));
+        $this->assertCount(2, $store->findByFilters($filters, ActingKeysMother::anonymous()));
     }
 
     public function testResultsComeBackNewestFirst(): void
     {
         $store = $this->storeWithNotes(3);
 
-        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]));
+        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]), ActingKeysMother::anonymous());
 
         $this->assertSame(['note 3', 'note 2', 'note 1'], self::contents($found));
     }
@@ -126,7 +127,7 @@ final class InMemoryEventStoreTest extends TestCase
         [$lower, $higher] = $this->twoNotesCreatedAtOnceLowerIdFirst();
         $store = $this->storeHolding($higher, $lower);
 
-        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]));
+        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]), ActingKeysMother::anonymous());
 
         $this->assertSame([$lower->getId()->toHex(), $higher->getId()->toHex()], self::ids($found));
     }
@@ -136,7 +137,7 @@ final class InMemoryEventStoreTest extends TestCase
         [$lower, $higher] = $this->twoNotesCreatedAtOnceLowerIdFirst();
         $store = $this->storeHolding($higher, $lower);
 
-        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 1]));
+        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 1]), ActingKeysMother::anonymous());
 
         $this->assertSame([$lower->getId()->toHex()], self::ids($found));
     }
@@ -149,7 +150,7 @@ final class InMemoryEventStoreTest extends TestCase
         $found = $store->findByFilters(new FilterCollection([
             Filter::tryFromArray(['ids' => [$higher->getId()->toHex()]]) ?? throw new RuntimeException('Invalid filter'),
             Filter::tryFromArray(['ids' => [$lower->getId()->toHex()]]) ?? throw new RuntimeException('Invalid filter'),
-        ]));
+        ]), ActingKeysMother::anonymous());
 
         $this->assertSame([$lower->getId()->toHex(), $higher->getId()->toHex()], self::ids($found));
     }
@@ -158,14 +159,14 @@ final class InMemoryEventStoreTest extends TestCase
     {
         $store = $this->storeWithNotes(12);
 
-        $this->assertSame(12, $store->countByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 3]))->toInt());
+        $this->assertSame(12, $store->countByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 3]), ActingKeysMother::anonymous())->toInt());
     }
 
     public function testACountIsExact(): void
     {
         $store = $this->storeWithNotes(12);
 
-        $this->assertFalse($store->countByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 3]))->isApproximate());
+        $this->assertFalse($store->countByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE], 'limit' => 3]), ActingKeysMother::anonymous())->isApproximate());
     }
 
     public function testACountOfTwoOverlappingFiltersCountsAnEventOnce(): void
@@ -177,7 +178,7 @@ final class InMemoryEventStoreTest extends TestCase
             Filter::tryFromArray(['authors' => [KeyMother::ALICE_PUBLIC_KEY_HEX]]) ?? throw new RuntimeException('Invalid filter'),
         ]);
 
-        $this->assertSame(3, $store->countByFilters($filters)->toInt());
+        $this->assertSame(3, $store->countByFilters($filters, ActingKeysMother::anonymous())->toInt());
     }
 
     public function testAnEventMatchingTwoFiltersIsReturnedOnce(): void
@@ -190,7 +191,7 @@ final class InMemoryEventStoreTest extends TestCase
             Filter::tryFromArray(['authors' => [KeyMother::ALICE_PUBLIC_KEY_HEX]]) ?? throw new RuntimeException('Invalid filter'),
         ]);
 
-        $this->assertCount(1, $store->findByFilters($filters));
+        $this->assertCount(1, $store->findByFilters($filters, ActingKeysMother::anonymous()));
     }
 
     public function testWhatIsReadBackIsTheEventsOwnEncodingNotTheBytesItArrivedAs(): void
@@ -201,7 +202,7 @@ final class InMemoryEventStoreTest extends TestCase
         $store = new InMemoryEventStore();
         $store->store($arrived);
 
-        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]));
+        $found = $store->findByFilters($this->filters(['kinds' => [EventKind::TEXT_NOTE]]), ActingKeysMother::anonymous());
 
         $this->assertSame([$note->toJson()], array_map(static fn (StoredEvent $stored): string => $stored->getEncoded()->toJson(), $found->toArray()));
     }
@@ -326,7 +327,7 @@ final class InMemoryEventStoreTest extends TestCase
         $store->store($this->articleWithoutDTag('untagged', 100));
         $store->store($this->article('empty', '', 200));
 
-        $this->assertSame(['empty'], self::contents($store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]]))));
+        $this->assertSame(['empty'], self::contents($store->findByFilters($this->filters(['kinds' => [EventKind::LONGFORM_CONTENT]]), ActingKeysMother::anonymous())));
     }
 
     /**
@@ -383,7 +384,7 @@ final class InMemoryEventStoreTest extends TestCase
      */
     private function contentsOfKind(InMemoryEventStore $store, int $kind): array
     {
-        return self::contents($store->findByFilters($this->filters(['kinds' => [$kind]])));
+        return self::contents($store->findByFilters($this->filters(['kinds' => [$kind]]), ActingKeysMother::anonymous()));
     }
 
     private function storeWithNotes(int $count): InMemoryEventStore

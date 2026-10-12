@@ -14,12 +14,12 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - **AMPHP async** - Non-blocking concurrent connection handling
 - **Private relay focus** - Built for single-user/controlled access scenarios
 - **NIP-01 compliant** - EVENT, REQ, CLOSE message handling
-- **NIP-09 deletion** - Kind 5 event processing
+- **NIP-09 deletion** - A kind 5 deletion removes the events its signer published and, as NIP-59 asks, the gift wraps addressed to its signer; it never removes another deletion (see [ADR-0038](docs/adr/0038-a-deletion-deletes-its-signers-earlier-events-and-the-gift-wraps-addressed-to-it.md))
 - **NIP-11 support** - Relay information document
 - **NIP-40 expiration** - An already-expired event is refused, and an event that expires while stored is withheld from REQ results
 - **NIP-42 AUTH** - Challenge/response authentication over nostr-core's `Nip42Validator`; a challenge is issued only when a request exceeds what the connection may read (guest scope, or a gift wrap addressed to a key it has not authenticated as), or is refused as `auth-required` while the connection holds none (never on connect). A claim failure is answered `invalid:` unless the client answered a challenge the relay has since replaced, which is answered `auth-required:`; an expired `AUTH` event is refused `invalid:` and authenticates nothing. Authenticating changes no open subscription: a client sends its `REQ` again to widen one (see [ADR-0033](docs/adr/0033-authentication-leaves-open-subscriptions-as-admitted.md))
 - **NIP-67 EOSE hint** - A `REQ` narrowed to what a guest may read ends with an `AUTH` challenge and an `EOSE` carrying the `"auth"` hint; one narrowed to nothing is refused `CLOSED` `auth-required:`
-- **NIP-59 / NIP-17 gift wraps** - A kind 1059 or 21059 event is served only to a connection authenticated as a key its `p` tag names, whatever the policy grants; a filter naming no kind matches no gift wrap (see [ADR-0035](docs/adr/0035-a-gift-wrap-is-served-only-to-the-key-it-names.md))
+- **NIP-59 / NIP-17 gift wraps** - A kind 1059 or 21059 event is served only to a connection authenticated as a key its `p` tag names, whatever the policy grants. The store applies the rule on every filter before its `limit`, so a recipient reads its wraps from any filter that matches them, every `limit` is exact and a `COUNT` is exact (see [ADR-0036](docs/adr/0036-the-store-confines-a-gift-wrap-to-the-keys-it-names-on-every-filter-a-reader-asks.md)); a recipient may delete the wraps addressed to it
 - **NIP-45 COUNT** - COUNT message support
 - **NIP-50 search** - A filter's `search` reaches the store with the rest of the filter; the built-in `InMemoryEventStore` matches it through nostr-core's `Filter`, and a durable store answers it as it can
 - **NIP-70 protected events** - An event carrying a tag named `-` (NIP-70's `["-"]`, or the same name followed by any values) is admitted only from a connection authenticated as its author, whatever the policy; an unauthenticated connection is answered `auth-required`, preceded by a challenge when it holds none (see [ADR-0023](docs/adr/0023-a-protected-event-is-admitted-only-from-its-authenticated-author-whatever-the-policy.md))
@@ -60,7 +60,7 @@ composer require innis/nostr-relay
 
 The relay requires three interfaces from your host application — the store, the policy and the relay config. Everything else has a built-in default and is wired with a named `with*()` call on the factory:
 
-- **`RelayEventStoreInterface`** - Event persistence and queries. Use the built-in `InMemoryEventStore` to run a relay locally or to give a test a real store; it keeps everything in process memory and matches linearly, so a deployment supplies a durable implementation. It implements the replaceable and addressable rules, so storing a newer version of such an event removes the one it supersedes and storing an older one is refused as `Superseded`. `findByFilters` returns a `StoredEventCollection`: each `StoredEvent` carries the event's `EventHeader` (id, author, kind, read from your indexed columns), its `created_at`, its earliest stated expiry, and the bytes you stored (`new StoredEvent($header, $createdAt, $expiresAt, $encoded)`). Return what the filters match newest first and, of two events created at once, the lower id first, as NIP-01 orders them, applying each filter's own `limit` to that order. The relay may ask for one filter group at a time; it puts what each query returns in that order again before it cuts a group to its limit and merges the groups, so a store that breaks ties otherwise never decides which event a limit keeps. Store `EncodedEvent::of($event)->toJson()` when `store()` is called, and hand those bytes back with `EncodedEvent::fromOwnStore()`; the relay streams them without parsing them, so nothing but that encoding may ever reach your store (see [ADR-0021](docs/adr/0021-stored-events-are-streamed-as-the-bytes-the-relay-wrote-trusted-by-provenance.md)). `countByFilters` returns nostr-core's `EventCount`: a store that stops counting at a ceiling reports the count as approximate, and the relay marks the NIP-45 reply accordingly (see [ADR-0013](docs/adr/0013-a-store-may-count-approximately-and-the-reply-says-so.md)). `deleteByCoordinates` carries the deletion's `created_at`: delete a coordinate target only when the stored event is at or before it, so a version published after the retraction survives (see [ADR-0028](docs/adr/0028-a-deletion-deletes-only-its-authors-earlier-events-and-never-a-deletion.md)). A fault your store throws while a subscription's stored events are read ends that subscription: it is logged and the client is answered `CLOSED` `error: could not read stored events`, with no `EOSE`. A read whose subscription the client has meanwhile replaced with a new `REQ` on the same id, or closed, sends nothing more, and its fault is only logged, so a store that suspends while it reads never closes or answers the replacement (see [ADR-0034](docs/adr/0034-a-fault-while-reading-stored-events-ends-the-subscription-with-closed-error.md)).
+- **`RelayEventStoreInterface`** - Event persistence and queries. Use the built-in `InMemoryEventStore` to run a relay locally or to give a test a real store; it keeps everything in process memory and matches linearly, so a deployment supplies a durable implementation. It implements the replaceable and addressable rules, so storing a newer version of such an event removes the one it supersedes and storing an older one is refused as `Superseded`. `findByFilters` returns a `StoredEventCollection`: each `StoredEvent` carries the event's `EventHeader` (id, author, kind, read from your indexed columns), its `created_at`, its earliest stated expiry, and the bytes you stored (`new StoredEvent($header, $createdAt, $expiresAt, $encoded)`). Return the union of what the filters match, each event once, newest first and, of two events created at once, the lower id first, as NIP-01 orders them, applying each filter's own `limit` to that order: the relay cannot cut your answer again, so where a `limit` falls between two events created at once, your order decides which one it keeps (see [ADR-0039](docs/adr/0039-stored-events-are-streamed-as-the-bytes-the-relay-wrote-and-the-stores-order-decides-what-a-limit-keeps.md)). `findByFilters` and `countByFilters` take the reader's `ActingKeys`, the keys the connection has authenticated as: on every filter, before its `limit`, match an event of a gift-wrap kind (`ActingKeys::getConfinedKinds()`, 1059 and 21059) only where one of its `p` tags names one of `getKeys()`, and every other event as the filter alone decides; a store holding `Event`s can ask `ActingKeys::canRead()`. The relay reads once per `REQ` and counts once per `COUNT`, and puts what you return in NIP-01's order again before it streams it (see [ADR-0036](docs/adr/0036-the-store-confines-a-gift-wrap-to-the-keys-it-names-on-every-filter-a-reader-asks.md)). Store `EncodedEvent::of($event)->toJson()` when `store()` is called, and hand those bytes back with `EncodedEvent::fromOwnStore()`; the relay streams them without parsing them, so nothing but that encoding may ever reach your store (see [ADR-0039](docs/adr/0039-stored-events-are-streamed-as-the-bytes-the-relay-wrote-and-the-stores-order-decides-what-a-limit-keeps.md)). `countByFilters` counts that union, each event once, as NIP-45 aggregates several filters, and ignores each filter's `limit`; it returns nostr-core's `EventCount`: a store that stops counting at a ceiling reports the count as approximate, and the relay marks the NIP-45 reply accordingly (see [ADR-0013](docs/adr/0013-a-store-may-count-approximately-and-the-reply-says-so.md)). `deleteByEventIds` takes the deleter's `ActingKeys`, holding the deletion's signer: of the ids, delete the events that key signed and the gift wraps whose `p` tag names it, and never a kind 5 deletion (`ActingKeys::canDelete()` for a store holding `Event`s). `deleteByCoordinates` carries the deletion's `created_at`: delete a coordinate target only when the stored event is at or before it, so a version published after the retraction survives (see [ADR-0038](docs/adr/0038-a-deletion-deletes-its-signers-earlier-events-and-the-gift-wraps-addressed-to-it.md)). Run your store through the library's contract cases (see [Testing your store](#testing-your-store)). A fault your store throws while a subscription's stored events are read ends that subscription: it is logged and the client is answered `CLOSED` `error: could not read stored events`, with no `EOSE`. A read whose subscription the client has meanwhile replaced with a new `REQ` on the same id, or closed, sends nothing more, and its fault is only logged, so a store that suspends while it reads never closes or answers the replacement (see [ADR-0034](docs/adr/0034-a-fault-while-reading-stored-events-ends-the-subscription-with-closed-error.md)).
 - **`RelayConfigInterface`** - The relay's own configuration: the relay URL (for NIP-42 AUTH verification), the maximum concurrent connections, and the `EventLimits` every submitted event is validated against (the longest content, the most tags and the `created_at` window; `new EventLimits()` gives innis/nostr-core's defaults). An event outside them is refused `invalid:`, a tenant's included; publish the same numbers as `max_content_length`, `max_event_tags`, `created_at_lower_limit` and `created_at_upper_limit` in your relay-information document (see [ADR-0025](docs/adr/0025-the-event-limits-are-the-relays-configuration-applied-by-the-event-validator.md)). The listening address and trusted proxies are configured on the `HttpServer` the host owns, not here.
 Access control can use the built-in `RelayPolicy` or a custom implementation of `RelayPolicyInterface`. See [Implementing `RelayPolicyInterface`](#implementing-relaypolicyinterface) for how a policy signals a rejection.
 
@@ -227,7 +227,7 @@ The port has seven methods, and every one of them is yours to answer:
 |---|---|
 | `allowEventSubmission()` | may this client publish this event |
 | `allowSubscription()` | may this client open this subscription |
-| `filterForClient()` | what this client may read, as a `ScopedFilters` narrowing of the filters it asked for (the relay then confines gift wraps to the client's own keys, whatever this returns) |
+| `filterForClient()` | what this client may read, as a `ScopedFilters` narrowing of the filters it asked for (the store then confines gift wraps to the client's own keys, whatever this returns) |
 | `canClientReceiveEvent()` | may this client be sent this event, checked per event on delivery against its `EventHeader` (id, author, kind) — see [ADR-0022](docs/adr/0022-the-receive-check-sees-an-events-header-not-the-event.md) |
 | `allowsAuthentication()` | may this key authenticate here, returning `?PolicyRejection` so the refusal carries your words rather than the library's |
 | `isRateLimitExempt()` | is this client outside the rate limits and subscription caps |
@@ -261,7 +261,7 @@ If no config is passed, the relay is fully open with no restrictions.
 
 ### Authentication (NIP-42)
 
-The relay does **not** challenge on connect. It issues an `AUTH` challenge only when a subscription requests something outside the guest's scope — when the requested kinds aren't guest-readable, when the requested authors aren't tenants (under `from = 'tenants'`), or when the filter reads a **tenant's mailbox** (a `#p` tag referencing a tenant). The challenge is an offer: a client that ignores it still receives the guest-scoped results, which end with the challenge and an `EOSE` carrying NIP-67's `"auth"` hint. A subscription narrowed until it can match nothing is refused `CLOSED` `auth-required:` instead, preceded by a challenge when the client holds none. The connection is never blocked for not authenticating. (Why a scope-exceeding request rather than every connection: see [ADR-0004](docs/adr/0004-auth-challenge-only-on-scope-exceeding-request.md).)
+The relay does **not** challenge on connect. It issues an `AUTH` challenge only when a subscription requests something outside the guest's scope — when the requested kinds aren't guest-readable, when the requested authors aren't tenants (under `from = 'tenants'`), when the filter reads a **tenant's mailbox** (a `#p` tag referencing a tenant), or when a filter names a gift-wrap kind without confining it, by `#p`, to keys the connection has authenticated as. The challenge is an offer: a client that ignores it still receives the guest-scoped results, which end with the challenge and an `EOSE` carrying NIP-67's `"auth"` hint. A subscription narrowed until it can match nothing is refused `CLOSED` `auth-required:` instead, preceded by a challenge when the client holds none. The connection is never blocked for not authenticating. (Why a scope-exceeding request rather than every connection: see [ADR-0004](docs/adr/0004-auth-challenge-only-on-scope-exceeding-request.md).)
 
 Authenticating changes no open subscription. Each keeps the filters it was admitted under, nothing is replayed, and no second `EOSE` is sent; a client that wants a narrowed subscription widened sends its `REQ` again on the same id, which replaces it and counts once against the subscription cap (see [ADR-0033](docs/adr/0033-authentication-leaves-open-subscriptions-as-admitted.md)).
 
@@ -292,7 +292,7 @@ Authenticating changes no open subscription. Each keeps the filters it was admit
 - NIP-42 authentication (challenge/response)
 - NIP-09 deletion (kind 5 event processing)
 - NIP-70 protected events (admitted only from their authenticated author)
-- NIP-59 / NIP-17 gift wraps (served only to the key they name)
+- NIP-59 / NIP-17 gift wraps (served only to the key they name, and deleted at its request)
 - Ephemeral event handling (kinds 20000-29999)
 - Subscription management and limits
 - Filter matching and event distribution
@@ -315,6 +315,36 @@ composer test
 ```
 
 Runs the Unit, Integration and Acceptance suites, then the soak harness (`tools/soak-harness.php`), then PHPStan level 9 static analysis. `composer test-unit` runs the Unit suite alone; `composer soak` the harness alone.
+
+### Testing your store
+
+The store you supply confines gift wraps and deletes them at their recipient's request, and a store that gets either wrong fails silently. The library ships the cases every store must pass, autoloaded from `tests/Contract` (see [ADR-0037](docs/adr/0037-the-store-contract-ships-as-cases-a-host-runs-against-its-own-store.md)). Run them against a fresh instance of your store:
+
+```php
+use Innis\Nostr\Relay\Tests\Contract\RelayEventStoreContract;
+use Innis\Nostr\Relay\Tests\Contract\RelayEventStoreContractCase;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+
+final class MyEventStoreContractTest extends TestCase
+{
+    /**
+     * @return array<string, array{RelayEventStoreContractCase}>
+     */
+    public static function contract(): array
+    {
+        return RelayEventStoreContract::cases();
+    }
+
+    #[DataProvider('contract')]
+    public function testTheStoreKeepsTheRelayEventStoreContract(RelayEventStoreContractCase $case): void
+    {
+        $this->assertSame($case->getExpected(), $case->observe(new MyEventStore()));
+    }
+}
+```
+
+Each case stores its events, then reads, counts, or deletes and reads back what remains, and names what it checks: gift wraps confined on every kind of filter, for readers with no keys, one key or several, and before the `limit` of a filter naming no kind, mixing kinds, looking up `ids` or naming `authors`; other events unaffected; NIP-01's order, at a tie too; filters that overlap read and counted once per event; exact counts; who may delete a gift wrap; and that a deletion removes nothing it does not name. `tests/Contract` ships in the dist archive and must stay there (see [ADR-0037](docs/adr/0037-the-store-contract-ships-as-cases-a-host-runs-against-its-own-store.md)).
 
 Manual testing with [websocat](https://github.com/vi/websocat):
 

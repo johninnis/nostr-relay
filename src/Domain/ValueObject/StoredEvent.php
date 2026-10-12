@@ -37,7 +37,7 @@ final readonly class StoredEvent
         return $this->encoded;
     }
 
-    // Deliberate: newest first, and of two created at once the lower id first, the order NIP-01 gives a REQ's stored events — see ADR-0021
+    // Deliberate: newest first, and of two created at once the lower id first, the order NIP-01 gives a REQ's stored events — see ADR-0039
     public function precedes(self $other): bool
     {
         $newer = $this->createdAt->toInt() <=> $other->createdAt->toInt();

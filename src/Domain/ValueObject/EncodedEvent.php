@@ -21,7 +21,7 @@ final readonly class EncodedEvent
         return new self($event->toJson());
     }
 
-    // Deliberate: trusted by provenance and never parsed — only bytes this relay wrote with of() may be passed here — see ADR-0021
+    // Deliberate: trusted by provenance and never parsed — only bytes this relay wrote with of() may be passed here — see ADR-0039
     public static function fromOwnStore(string $json): self
     {
         return new self($json);

@@ -15,6 +15,7 @@ use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
@@ -42,7 +43,7 @@ final class CloseSubscriptionUseCaseTest extends TestCase
     {
         $subId = SubscriptionIdMother::from('sub-1');
         $subscription = Subscription::create($subId, new FilterCollection([Filter::from()]));
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, ActingKeysMother::anonymous());
 
         $this->useCase->execute($this->client, $subId);
 

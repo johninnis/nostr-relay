@@ -20,11 +20,13 @@ use Innis\Nostr\Relay\Application\Service\InMemoryAuthenticationRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use Innis\Nostr\Relay\Tests\Support\TestDoubleException;
 use PHPUnit\Framework\TestCase;
@@ -55,7 +57,7 @@ final class SubscriptionAnswersTest extends TestCase
     public function testSettleRefusalWithdrawsTheRegistration(): void
     {
         $subscription = Subscription::create(SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, ActingKeysMother::anonymous());
 
         $this->answers->settleRefusal($this->client, SubscriptionIdMother::from('sub-1'), PolicyRejection::blocked('not allowed'));
 
@@ -85,35 +87,35 @@ final class SubscriptionAnswersTest extends TestCase
 
     public function testForScopeOffersAChallengeWhenBeyondScope(): void
     {
-        $replies = $this->answers->forScope($this->client, ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+        $replies = $this->answers->forScope($this->client, new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertSame([AuthMessage::class], self::messageTypes($replies));
     }
 
     public function testForScopeIsSilentWithinScope(): void
     {
-        $replies = $this->answers->forScope($this->client, ScopedFilters::unchanged(new FilterCollection([Filter::from()])));
+        $replies = $this->answers->forScope($this->client, new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous()));
 
         $this->assertSame([], $replies);
     }
 
     public function testStoredEventsOfAReadWithinScopeEndWithAPlainEose(): void
     {
-        $replies = $this->answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), ScopedFilters::unchanged(new FilterCollection([Filter::from()])));
+        $replies = $this->answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous()));
 
         $this->assertEquals([new EoseMessage(SubscriptionIdMother::from('sub-1'))], $replies);
     }
 
     public function testStoredEventsOfAReadBeyondScopeEndWithAChallengeThenAnEose(): void
     {
-        $replies = $this->answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+        $replies = $this->answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertSame([AuthMessage::class, EoseMessage::class], self::messageTypes($replies));
     }
 
     public function testTheEoseOfAReadBeyondScopeCarriesTheAuthHint(): void
     {
-        $replies = $this->answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+        $replies = $this->answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertSame('["EOSE","sub-1",["auth"]]', ($replies[1] ?? null)?->toJson());
     }
@@ -124,7 +126,7 @@ final class SubscriptionAnswersTest extends TestCase
         $authenticationRegistry->getOrCreateChallenge($this->client->getId());
         $answers = new SubscriptionAnswers($this->subscriptionRegistry, new AuthChallengeIssuer($authenticationRegistry), new NullLogger());
 
-        $replies = $answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+        $replies = $answers->endOfStoredEvents($this->client, SubscriptionIdMother::from('sub-1'), new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertInstanceOf(AuthMessage::class, $replies[0]);
     }
@@ -186,7 +188,7 @@ final class SubscriptionAnswersTest extends TestCase
     private function registeredSubscription(): Subscription
     {
         $subscription = Subscription::create(SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, ActingKeysMother::anonymous());
 
         return $subscription;
     }

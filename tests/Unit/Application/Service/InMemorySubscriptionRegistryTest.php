@@ -14,6 +14,8 @@ use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
+use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
@@ -56,7 +58,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $clientId = ClientId::fromString('client-1');
         $subscription = $this->createSubscription('sub-1');
 
-        $manager->addSubscription($clientId, $subscription);
+        $manager->addSubscription($clientId, $subscription, ActingKeysMother::anonymous());
     }
 
     public function testReplacingASubscriptionIncrementsMetricsForEachAddition(): void
@@ -136,7 +138,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $subId = SubscriptionIdMother::from('sub-1');
         $subscription = $this->createSubscription('sub-1');
 
-        $this->manager->addSubscription($clientId, $subscription);
+        $this->manager->addSubscription($clientId, $subscription, ActingKeysMother::anonymous());
         $this->manager->updateSubscriptionState($clientId, $subId, SubscriptionState::Live);
 
         $updated = $this->manager->getSubscriptionsForClient($clientId)->get($subId);
@@ -149,11 +151,28 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $clientId = ClientId::fromString('client-1');
         $subscription = $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]);
 
-        $this->manager->addSubscription($clientId, $subscription);
+        $this->manager->addSubscription($clientId, $subscription, ActingKeysMother::anonymous());
 
         $results = $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE));
 
-        $this->assertEquals([new SubscriptionMatch($clientId, $subscription)], $results->toArray());
+        $this->assertEquals([new SubscriptionMatch($clientId, $subscription, ActingKeysMother::anonymous())], $results->toArray());
+    }
+
+    public function testAMatchCarriesTheReaderItsSubscriptionWasAdmittedFor(): void
+    {
+        $reader = ActingKeysMother::of(KeyMother::alicePublicKey());
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]), $reader);
+
+        $this->assertSame($reader, $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE))->toArray()[0]->getReader());
+    }
+
+    public function testAReplacingSubscriptionCarriesItsOwnReader(): void
+    {
+        $reader = ActingKeysMother::of(KeyMother::alicePublicKey());
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]), ActingKeysMother::anonymous());
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]), $reader);
+
+        $this->assertSame($reader, $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE))->toArray()[0]->getReader());
     }
 
     public function testGetSubscriptionsForEventReturnsWildcardSubscriptions(): void
@@ -161,7 +180,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $clientId = ClientId::fromString('client-1');
         $subscription = $this->createSubscription('sub-1');
 
-        $this->manager->addSubscription($clientId, $subscription);
+        $this->manager->addSubscription($clientId, $subscription, ActingKeysMother::anonymous());
 
         $results = $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE));
 
@@ -173,7 +192,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
         $clientId = ClientId::fromString('client-1');
         $subscription = $this->createSubscription('sub-1', [EventKind::METADATA]);
 
-        $this->manager->addSubscription($clientId, $subscription);
+        $this->manager->addSubscription($clientId, $subscription, ActingKeysMother::anonymous());
 
         $results = $this->manager->getSubscriptionsForEvent(EventKind::fromInt(EventKind::TEXT_NOTE));
 
@@ -183,8 +202,8 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testGetSubscriptionsForClientReturnsCollection(): void
     {
         $clientId = ClientId::fromString('client-1');
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'));
-        $this->manager->addSubscription($clientId, $this->createSubscription('sub-2'));
+        $this->manager->addSubscription($clientId, $this->createSubscription('sub-1'), ActingKeysMother::anonymous());
+        $this->manager->addSubscription($clientId, $this->createSubscription('sub-2'), ActingKeysMother::anonymous());
 
         $result = $this->manager->getSubscriptionsForClient($clientId);
 
@@ -200,8 +219,8 @@ final class InMemorySubscriptionRegistryTest extends TestCase
 
     public function testGetAllSubscriptionsReturnsAll(): void
     {
-        $this->manager->addSubscription(ClientId::fromString('c1'), $this->createSubscription('sub-1'));
-        $this->manager->addSubscription(ClientId::fromString('c2'), $this->createSubscription('sub-2'));
+        $this->manager->addSubscription(ClientId::fromString('c1'), $this->createSubscription('sub-1'), ActingKeysMother::anonymous());
+        $this->manager->addSubscription(ClientId::fromString('c2'), $this->createSubscription('sub-2'), ActingKeysMother::anonymous());
 
         $result = $this->manager->getAllSubscriptions();
 
@@ -216,7 +235,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
             $recorded[] = [(string) $message, $context];
         });
         $manager = new InMemorySubscriptionRegistry($this->createStub(MetricsCollectorInterface::class), $logger);
-        $manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'));
+        $manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'), ActingKeysMother::anonymous());
 
         $manager->updateSubscriptionState(ClientId::fromString('client-1'), SubscriptionIdMother::from('sub-1'), SubscriptionState::Live);
 
@@ -226,7 +245,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testItHoldsASubscriptionItRegistered(): void
     {
         $subscription = $this->createSubscription('sub-1');
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription, ActingKeysMother::anonymous());
 
         $this->assertTrue($this->manager->holds(ClientId::fromString('client-1'), $subscription));
     }
@@ -234,8 +253,8 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testItNoLongerHoldsASubscriptionReplacedOnItsId(): void
     {
         $replaced = $this->createSubscription('sub-1');
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $replaced);
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'));
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $replaced, ActingKeysMother::anonymous());
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'), ActingKeysMother::anonymous());
 
         $this->assertFalse($this->manager->holds(ClientId::fromString('client-1'), $replaced));
     }
@@ -243,8 +262,8 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testItHoldsTheSubscriptionThatReplacedAnother(): void
     {
         $replacement = $this->createSubscription('sub-1');
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'));
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $replacement);
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $this->createSubscription('sub-1'), ActingKeysMother::anonymous());
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $replacement, ActingKeysMother::anonymous());
 
         $this->assertTrue($this->manager->holds(ClientId::fromString('client-1'), $replacement));
     }
@@ -252,7 +271,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testItNoLongerHoldsARemovedSubscription(): void
     {
         $subscription = $this->createSubscription('sub-1');
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription, ActingKeysMother::anonymous());
         $this->manager->removeSubscription(ClientId::fromString('client-1'), $subscription->getId());
 
         $this->assertFalse($this->manager->holds(ClientId::fromString('client-1'), $subscription));
@@ -261,7 +280,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testItNoLongerHoldsASubscriptionOfAClientWhoseSubscriptionsWereAllRemoved(): void
     {
         $subscription = $this->createSubscription('sub-1');
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription, ActingKeysMother::anonymous());
         $this->manager->removeAllForClient(ClientId::fromString('client-1'));
 
         $this->assertFalse($this->manager->holds(ClientId::fromString('client-1'), $subscription));
@@ -270,7 +289,7 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testItStillHoldsASubscriptionThatWentLive(): void
     {
         $subscription = $this->createSubscription('sub-1');
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription, ActingKeysMother::anonymous());
         $this->manager->updateSubscriptionState(ClientId::fromString('client-1'), $subscription->getId(), SubscriptionState::Live);
 
         $this->assertTrue($this->manager->holds(ClientId::fromString('client-1'), $subscription));
@@ -279,29 +298,29 @@ final class InMemorySubscriptionRegistryTest extends TestCase
     public function testItDoesNotHoldASubscriptionForAnotherClient(): void
     {
         $subscription = $this->createSubscription('sub-1');
-        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription);
+        $this->manager->addSubscription(ClientId::fromString('client-1'), $subscription, ActingKeysMother::anonymous());
 
         $this->assertFalse($this->manager->holds(ClientId::fromString('client-2'), $subscription));
     }
 
     private function replaceSubscription(InMemorySubscriptionRegistry $manager, ClientId $clientId): void
     {
-        $manager->addSubscription($clientId, $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]));
-        $manager->addSubscription($clientId, $this->createSubscription('sub-1', [EventKind::METADATA]));
+        $manager->addSubscription($clientId, $this->createSubscription('sub-1', [EventKind::TEXT_NOTE]), ActingKeysMother::anonymous());
+        $manager->addSubscription($clientId, $this->createSubscription('sub-1', [EventKind::METADATA]), ActingKeysMother::anonymous());
     }
 
     private function addAndRemoveSubscription(InMemorySubscriptionRegistry $manager, ClientId $clientId): void
     {
         $subscription = $this->createSubscription('sub-1');
 
-        $manager->addSubscription($clientId, $subscription);
+        $manager->addSubscription($clientId, $subscription, ActingKeysMother::anonymous());
         $manager->removeSubscription($clientId, $subscription->getId());
     }
 
     private function addTwoAndRemoveAllForClient(InMemorySubscriptionRegistry $manager, ClientId $clientId): void
     {
-        $manager->addSubscription($clientId, $this->createSubscription('sub-1'));
-        $manager->addSubscription($clientId, $this->createSubscription('sub-2'));
+        $manager->addSubscription($clientId, $this->createSubscription('sub-1'), ActingKeysMother::anonymous());
+        $manager->addSubscription($clientId, $this->createSubscription('sub-2'), ActingKeysMother::anonymous());
 
         $manager->removeAllForClient($clientId);
     }

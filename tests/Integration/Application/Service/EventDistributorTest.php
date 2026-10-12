@@ -26,9 +26,9 @@ use Innis\Nostr\Relay\Application\Service\EventDistributor;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\RecordingClientConnection;
@@ -159,7 +159,7 @@ final class EventDistributorTest extends TestCase
             );
             $subscriptionRegistry->addSubscription(
                 $client->getId(),
-                Subscription::create(SubscriptionIdMother::from($subscriptionId), $filters)->withState(SubscriptionState::Active),
+                Subscription::create(SubscriptionIdMother::from($subscriptionId), $filters)->withState(SubscriptionState::Active), ActingKeysMother::anonymous(),
             );
         }
 
@@ -167,7 +167,7 @@ final class EventDistributorTest extends TestCase
         $policy->method('canClientReceiveEvent')->willReturn($policyAdmits);
 
         return new EventDistributor(
-            new EventAudience(new DeliveryGate($policy, new GiftWrapFilterRules()), $subscriptionRegistry, $clientRegistry),
+            new EventAudience(new DeliveryGate($policy), $subscriptionRegistry, $clientRegistry),
             new ClientMessenger($clientRegistry),
             $logger,
         );

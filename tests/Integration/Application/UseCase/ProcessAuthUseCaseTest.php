@@ -47,6 +47,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
 use Innis\Nostr\Relay\Infrastructure\Monitoring\InMemoryMetricsCollector;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
@@ -146,7 +147,7 @@ final class ProcessAuthUseCaseTest extends TestCase
     public function testAnAuthLeavesAnOpenSubscriptionAsItWasAdmitted(): void
     {
         $admitted = new FilterCollection([Filter::tryFromArray(['kinds' => [1], 'authors' => [KeyMother::alicePublicKey()->toHex()]])]);
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), Subscription::create(SubscriptionIdMother::from('open'), $admitted, SubscriptionState::Live));
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), Subscription::create(SubscriptionIdMother::from('open'), $admitted, SubscriptionState::Live), ActingKeysMother::anonymous());
 
         $this->repliesToAValidAuth();
 
@@ -155,7 +156,7 @@ final class ProcessAuthUseCaseTest extends TestCase
 
     public function testAnAuthWithAnOpenSubscriptionIsAnsweredWithOneOk(): void
     {
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), Subscription::create(SubscriptionIdMother::from('open'), new FilterCollection([Filter::from()]), SubscriptionState::Live));
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), Subscription::create(SubscriptionIdMother::from('open'), new FilterCollection([Filter::from()]), SubscriptionState::Live), ActingKeysMother::anonymous());
 
         $this->assertSame([OkMessage::class], array_map(get_class(...), $this->repliesToAValidAuth()));
     }
@@ -166,7 +167,7 @@ final class ProcessAuthUseCaseTest extends TestCase
         $this->connection->method('sendText')->willReturnCallback(static function (string $json) use (&$sent): void {
             $sent[] = $json;
         });
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), Subscription::create(SubscriptionIdMother::from('open'), new FilterCollection([Filter::from()]), SubscriptionState::Live));
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), Subscription::create(SubscriptionIdMother::from('open'), new FilterCollection([Filter::from()]), SubscriptionState::Live), ActingKeysMother::anonymous());
 
         $this->repliesToAValidAuth();
 

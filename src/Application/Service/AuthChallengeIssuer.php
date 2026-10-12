@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Innis\Nostr\Relay\Application\Service;
 
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Message\Relay\AuthMessage;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
-use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class AuthChallengeIssuer
 {
@@ -47,8 +47,8 @@ final readonly class AuthChallengeIssuer
     /**
      * @return list<AuthMessage>
      */
-    public function offerForScope(ScopedFilters $scopedFilters, ClientId $clientId): array
+    public function offerForScope(AdmittedRead $read, ClientId $clientId): array
     {
-        return $scopedFilters->isBeyondScope() ? [$this->issue($clientId)] : [];
+        return $read->isBeyondScope() ? [$this->issue($clientId)] : [];
     }
 }

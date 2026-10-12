@@ -7,7 +7,7 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Throwable;
 
 // Deliberate: every frame asks whether the client still holds the subscription, because a send can suspend and a REQ or CLOSE can arrive meanwhile — see ADR-0034
@@ -31,7 +31,7 @@ final readonly class HeldSubscriptionSender
         }
     }
 
-    public function sendEnd(RelayClient $client, Subscription $subscription, ScopedFilters $admission): void
+    public function sendEnd(RelayClient $client, Subscription $subscription, AdmittedRead $admission): void
     {
         if (!$this->holds($client, $subscription)) {
             return;

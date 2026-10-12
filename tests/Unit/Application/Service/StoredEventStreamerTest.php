@@ -31,13 +31,14 @@ use Innis\Nostr\Relay\Application\Service\StoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\EncodedEvent;
 use Innis\Nostr\Relay\Domain\ValueObject\EventHeader;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\RecordingClientMessenger;
@@ -45,7 +46,6 @@ use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
 use Innis\Nostr\Relay\Tests\Support\TestDoubleException;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\NullLogger;
-use RuntimeException;
 
 final class StoredEventStreamerTest extends TestCase
 {
@@ -137,31 +137,16 @@ final class StoredEventStreamerTest extends TestCase
 
     public function testAReadBeyondScopeEndsWithAnAuthHintedEose(): void
     {
-        $frames = $this->stream(new StoredEventCollection([]), self::NOW, scoped: ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+        $frames = $this->stream(new StoredEventCollection([]), self::NOW, scoped: new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertSame('["EOSE","sub-1",["auth"]]', $frames[count($frames) - 1] ?? null);
     }
 
     public function testAReadBeyondScopeIsOfferedAChallengeJustBeforeItsEose(): void
     {
-        $frames = $this->stream(new StoredEventCollection([]), self::NOW, scoped: ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+        $frames = $this->stream(new StoredEventCollection([]), self::NOW, scoped: new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertNotNull(AuthMessage::tryFromJson($frames[0]));
-    }
-
-    public function testAStoredGiftWrapIsWithheldFromARequestNamingNoKind(): void
-    {
-        $giftWrap = StoredEvent::of(EventMother::giftWrapFor(KeyMother::bobPublicKey()));
-
-        $this->assertSame([self::EOSE], $this->stream(new StoredEventCollection([$giftWrap]), self::NOW));
-    }
-
-    public function testAStoredGiftWrapIsWithheldFromARequestNamingAnotherKeyWithoutAKind(): void
-    {
-        $giftWrap = StoredEvent::of(EventMother::giftWrapFor(KeyMother::bobPublicKey()));
-        $filters = new FilterCollection([Filter::tryFromArray(['#p' => [KeyMother::bobPublicKey()->toHex()]]) ?? throw new RuntimeException('filter did not parse')]);
-
-        $this->assertSame([self::EOSE], $this->stream(new StoredEventCollection([$giftWrap]), self::NOW, scoped: ScopedFilters::unchanged($filters)));
     }
 
     public function testAReadWhoseSubscriptionAReqReplacedWhileItWasReadSendsNothing(): void
@@ -173,7 +158,7 @@ final class StoredEventStreamerTest extends TestCase
             return new StoredEventCollection([$this->storedEvent(null)]);
         });
 
-        $this->assertSame([], $this->streamFrom($eventStore, self::NOW, true, ScopedFilters::unchanged(new FilterCollection([Filter::from()]))));
+        $this->assertSame([], $this->streamFrom($eventStore, self::NOW, true, new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous())));
     }
 
     public function testAFaultOnAReadWhoseSubscriptionAReqReplacedWhileItWasReadSendsNothing(): void
@@ -185,7 +170,7 @@ final class StoredEventStreamerTest extends TestCase
             throw new TestDoubleException('store unavailable');
         });
 
-        $this->assertSame([], $this->streamFrom($eventStore, self::NOW, true, ScopedFilters::unchanged(new FilterCollection([Filter::from()]))));
+        $this->assertSame([], $this->streamFrom($eventStore, self::NOW, true, new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous())));
     }
 
     /**
@@ -196,13 +181,13 @@ final class StoredEventStreamerTest extends TestCase
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willThrowException(new TestDoubleException('store unavailable'));
 
-        return $this->streamFrom($eventStore, self::NOW, true, ScopedFilters::unchanged(new FilterCollection([Filter::from()])));
+        return $this->streamFrom($eventStore, self::NOW, true, new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous()));
     }
 
     private function register(): Subscription
     {
         $subscription = Subscription::create(SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, ActingKeysMother::anonymous());
 
         return $subscription;
     }
@@ -221,18 +206,18 @@ final class StoredEventStreamerTest extends TestCase
     /**
      * @return list<string>
      */
-    private function stream(StoredEventCollection $stored, int $now, bool $receives = true, ?ScopedFilters $scoped = null): array
+    private function stream(StoredEventCollection $stored, int $now, bool $receives = true, ?AdmittedRead $scoped = null): array
     {
         $eventStore = $this->createStub(RelayEventStoreInterface::class);
         $eventStore->method('findByFilters')->willReturn($stored);
 
-        return $this->streamFrom($eventStore, $now, $receives, $scoped ?? ScopedFilters::unchanged(new FilterCollection([Filter::from()])));
+        return $this->streamFrom($eventStore, $now, $receives, $scoped ?? new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous()));
     }
 
     /**
      * @return list<string>
      */
-    private function streamFrom(RelayEventStoreInterface $eventStore, int $now, bool $receives, ScopedFilters $scoped): array
+    private function streamFrom(RelayEventStoreInterface $eventStore, int $now, bool $receives, AdmittedRead $scoped): array
     {
         $policy = $this->createStub(RelayPolicyInterface::class);
         $policy->method('canClientReceiveEvent')->willReturn($receives);
@@ -248,7 +233,7 @@ final class StoredEventStreamerTest extends TestCase
         );
 
         new StoredEventStreamer(
-            new StoredEventReadGate($eventStore, new DeliveryGate($policy, new GiftWrapFilterRules()), $clock),
+            new StoredEventReadGate($eventStore, new DeliveryGate($policy), $clock),
             new HeldSubscriptionSender($messenger, $this->subscriptionRegistry, $answers),
         )->stream($this->client, $this->register(), $scoped);
 

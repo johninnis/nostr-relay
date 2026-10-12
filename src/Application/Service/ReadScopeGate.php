@@ -7,26 +7,25 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Relay\Application\Port\RelayPolicyInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
+use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
-use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 
 final readonly class ReadScopeGate
 {
     public function __construct(
         private RelayPolicyInterface $policy,
         private AuthenticatedSessionsInterface $authenticatedSessions,
-        private GiftWrapFilterRules $giftWrapRules,
     ) {
     }
 
-    // Deliberate: gift wraps are confined after every policy, so no policy's widened scope reaches a wrap addressed to another key — see ADR-0035
-    public function admit(RelayClient $client, FilterCollection $filters, int $heldCount): PolicyRejection|ScopedFilters
+    // Deliberate: the read carries the keys the connection has authenticated as, so the store confines gift wraps to them after every policy, whatever scope the policy grants — see ADR-0036
+    public function admit(RelayClient $client, FilterCollection $filters, int $heldCount): PolicyRejection|AdmittedRead
     {
         return $this->policy->allowSubscription($client, $filters, $heldCount)
-            ?? $this->giftWrapRules->confine(
+            ?? new AdmittedRead(
                 $this->policy->filterForClient($client, $filters),
-                $this->authenticatedSessions->getAuthenticatedPubkeys($client->getId()),
+                new ActingKeys($this->authenticatedSessions->getAuthenticatedPubkeys($client->getId())),
             );
     }
 }

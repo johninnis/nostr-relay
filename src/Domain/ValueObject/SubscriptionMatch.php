@@ -11,6 +11,7 @@ final readonly class SubscriptionMatch
     public function __construct(
         private ClientId $clientId,
         private Subscription $subscription,
+        private ActingKeys $reader,
     ) {
     }
 
@@ -22,5 +23,10 @@ final readonly class SubscriptionMatch
     public function getSubscription(): Subscription
     {
         return $this->subscription;
+    }
+
+    public function getReader(): ActingKeys
+    {
+        return $this->reader;
     }
 }

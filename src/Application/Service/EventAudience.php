@@ -37,7 +37,7 @@ final readonly class EventAudience
     {
         $client = $this->clientRegistry->getClient($match->getClientId());
 
-        return $client instanceof RelayClient && $this->deliveryGate->allowsLive($client, $match->getSubscription()->getFilters(), $event)
+        return $client instanceof RelayClient && $this->deliveryGate->allowsLive($client, $match, $event)
             ? new EventRecipient($client, $match->getSubscription()->getId())
             : null;
     }

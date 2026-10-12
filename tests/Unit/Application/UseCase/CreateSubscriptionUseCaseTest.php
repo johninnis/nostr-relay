@@ -37,7 +37,6 @@ use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Application\UseCase\CreateSubscriptionUseCase;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
@@ -73,15 +72,14 @@ final class CreateSubscriptionUseCaseTest extends TestCase
         $this->clientRegistry = new InMemoryClientRegistry($metrics, new NativeRandomBytesGenerator(), $logger);
         $messenger = new ClientMessenger($this->clientRegistry);
         $this->authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
-        $giftWrapRules = new GiftWrapFilterRules();
         $admission = new SubscriptionAdmission(
             new RateLimitGate($this->rateLimiter, $this->policy),
-            new ReadScopeGate($this->policy, $this->authenticationRegistry, $giftWrapRules),
+            new ReadScopeGate($this->policy, $this->authenticationRegistry),
             $this->subscriptionRegistry,
         );
         $answers = new SubscriptionAnswers($this->subscriptionRegistry, new AuthChallengeIssuer($this->authenticationRegistry), $logger);
         $storedEventStreamer = new StoredEventStreamer(
-            new StoredEventReadGate($this->eventStore, new DeliveryGate($this->policy, $giftWrapRules), new SystemClock()),
+            new StoredEventReadGate($this->eventStore, new DeliveryGate($this->policy), new SystemClock()),
             new HeldSubscriptionSender($messenger, $this->subscriptionRegistry, $answers),
         );
         $activator = new SubscriptionActivator(

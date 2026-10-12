@@ -25,12 +25,14 @@ use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Application\Service\SubscriptionAnswers;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\EncodedEvent;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
 use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\RecordingClientMessenger;
@@ -91,7 +93,7 @@ final class HeldSubscriptionSenderTest extends TestCase
 
     public function testTheEndOfAHeldSubscriptionsStoredEventsIsSent(): void
     {
-        $this->sender($this->messenger)->sendEnd($this->client, $this->registered(), ScopedFilters::unchanged(new FilterCollection([Filter::from()])));
+        $this->sender($this->messenger)->sendEnd($this->client, $this->registered(), new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous()));
 
         $this->assertSame([self::EOSE], $this->messenger->frames());
     }
@@ -101,7 +103,7 @@ final class HeldSubscriptionSenderTest extends TestCase
         $replaced = $this->registered();
         $this->registered();
 
-        $this->sender($this->messenger)->sendEnd($this->client, $replaced, ScopedFilters::unchanged(new FilterCollection([Filter::from()])));
+        $this->sender($this->messenger)->sendEnd($this->client, $replaced, new AdmittedRead(ScopedFilters::unchanged(new FilterCollection([Filter::from()])), ActingKeysMother::anonymous()));
 
         $this->assertSame([], $this->messenger->frames());
     }
@@ -111,7 +113,7 @@ final class HeldSubscriptionSenderTest extends TestCase
         $replaced = $this->registered();
         $this->registered();
 
-        $this->sender($this->messenger)->sendEnd($this->client, $replaced, ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+        $this->sender($this->messenger)->sendEnd($this->client, $replaced, new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertNull($this->authenticationRegistry->getChallenge($this->client->getId()));
     }
@@ -121,7 +123,7 @@ final class HeldSubscriptionSenderTest extends TestCase
         $frames = [];
 
         $this->sender($this->messengerReplacingTheSubscriptionAfterItsFirstFrame($frames))
-            ->sendEnd($this->client, $this->registered(), ScopedFilters::scoped(new FilterCollection([Filter::from()]), true));
+            ->sendEnd($this->client, $this->registered(), new AdmittedRead(ScopedFilters::scoped(new FilterCollection([Filter::from()]), true), ActingKeysMother::anonymous()));
 
         $this->assertSame([AuthMessage::class], array_map(static fn (string $frame): string => null === AuthMessage::tryFromJson($frame) ? $frame : AuthMessage::class, $frames));
     }
@@ -155,7 +157,7 @@ final class HeldSubscriptionSenderTest extends TestCase
     private function registered(): Subscription
     {
         $subscription = Subscription::create(SubscriptionIdMother::from('sub-1'), new FilterCollection([Filter::from()]));
-        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($this->client->getId(), $subscription, ActingKeysMother::anonymous());
 
         return $subscription;
     }

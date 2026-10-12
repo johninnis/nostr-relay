@@ -24,11 +24,12 @@ use Innis\Nostr\Relay\Application\Service\EventAudience;
 use Innis\Nostr\Relay\Application\Service\InMemoryClientRegistry;
 use Innis\Nostr\Relay\Application\Service\InMemorySubscriptionRegistry;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
+use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\EventRecipient;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use Innis\Nostr\Relay\Tests\Support\SubscriptionIdMother;
@@ -53,7 +54,7 @@ final class EventAudienceTest extends TestCase
         $this->subscriptionRegistry = new InMemorySubscriptionRegistry($metrics, $logger);
         $this->clientRegistry = new InMemoryClientRegistry($metrics, new NativeRandomBytesGenerator(), $logger);
 
-        $this->audience = new EventAudience(new DeliveryGate($this->policy, new GiftWrapFilterRules()), $this->subscriptionRegistry, $this->clientRegistry);
+        $this->audience = new EventAudience(new DeliveryGate($this->policy), $this->subscriptionRegistry, $this->clientRegistry);
     }
 
     public function testAMatchingSubscriptionYieldsARecipientWithItsClientAndSubscriptionId(): void
@@ -83,7 +84,7 @@ final class EventAudienceTest extends TestCase
             new FilterCollection([Filter::from(kinds: EventKindCollection::fromInts([EventKind::TEXT_NOTE]))]),
             SubscriptionState::Active,
         );
-        $this->subscriptionRegistry->addSubscription($ghost, $subscription);
+        $this->subscriptionRegistry->addSubscription($ghost, $subscription, ActingKeysMother::anonymous());
 
         $this->assertSame([], $this->audience->audienceFor($this->textNote())->toArray());
     }
@@ -96,36 +97,36 @@ final class EventAudienceTest extends TestCase
         $this->assertSame([], $this->audience->audienceFor($this->textNote())->toArray());
     }
 
-    public function testALiveGiftWrapIsWithheldFromASubscriptionNamingNoKind(): void
+    public function testALiveGiftWrapReachesASubscriptionNamingNoKindAdmittedForItsRecipient(): void
     {
         $this->policy->method('canClientReceiveEvent')->willReturn(true);
-        $this->registerClientWithFilters('sub-1', []);
-
-        $this->assertSame([], $this->audience->audienceFor(EventMother::giftWrapFor(KeyMother::bobPublicKey()))->toArray());
-    }
-
-    public function testALiveGiftWrapIsWithheldFromASubscriptionNamingItsRecipientWithoutAKind(): void
-    {
-        $this->policy->method('canClientReceiveEvent')->willReturn(true);
-        $this->registerClientWithFilters('sub-1', ['#p' => [KeyMother::bobPublicKey()->toHex()]]);
-
-        $this->assertSame([], $this->audience->audienceFor(EventMother::giftWrapFor(KeyMother::bobPublicKey()))->toArray());
-    }
-
-    public function testALiveGiftWrapReachesASubscriptionConfinedToItsRecipient(): void
-    {
-        $this->policy->method('canClientReceiveEvent')->willReturn(true);
-        $client = $this->registerClientWithFilters('sub-1', ['kinds' => [EventKind::GIFT_WRAP], '#p' => [KeyMother::bobPublicKey()->toHex()]]);
+        $client = $this->registerClientReading('sub-1', ActingKeysMother::of(KeyMother::bobPublicKey()), []);
 
         $recipients = $this->audience->audienceFor(EventMother::giftWrapFor(KeyMother::bobPublicKey()))->toArray();
 
         $this->assertEquals([new EventRecipient($client, SubscriptionIdMother::from('sub-1'))], $recipients);
     }
 
-    public function testALiveGiftWrapReachesASubscriptionThroughAFilterNamingItsKindBesideOneNamingNone(): void
+    public function testALiveGiftWrapIsWithheldFromASubscriptionNamingNoKindAdmittedForAnotherKey(): void
     {
         $this->policy->method('canClientReceiveEvent')->willReturn(true);
-        $client = $this->registerClientWithFilters('sub-1', [], ['kinds' => [EventKind::GIFT_WRAP], '#p' => [KeyMother::bobPublicKey()->toHex()]]);
+        $this->registerClientReading('sub-1', ActingKeysMother::of(KeyMother::alicePublicKey()), []);
+
+        $this->assertSame([], $this->audience->audienceFor(EventMother::giftWrapFor(KeyMother::bobPublicKey()))->toArray());
+    }
+
+    public function testALiveGiftWrapIsWithheldFromASubscriptionNamingItsRecipientAdmittedForAGuest(): void
+    {
+        $this->policy->method('canClientReceiveEvent')->willReturn(true);
+        $this->registerClientWithFilters('sub-1', ['kinds' => [EventKind::GIFT_WRAP], '#p' => [KeyMother::bobPublicKey()->toHex()]]);
+
+        $this->assertSame([], $this->audience->audienceFor(EventMother::giftWrapFor(KeyMother::bobPublicKey()))->toArray());
+    }
+
+    public function testALiveGiftWrapReachesASubscriptionNamingItsKindAdmittedForItsRecipient(): void
+    {
+        $this->policy->method('canClientReceiveEvent')->willReturn(true);
+        $client = $this->registerClientReading('sub-1', ActingKeysMother::of(KeyMother::bobPublicKey()), ['kinds' => [EventKind::GIFT_WRAP]]);
 
         $recipients = $this->audience->audienceFor(EventMother::giftWrapFor(KeyMother::bobPublicKey()))->toArray();
 
@@ -145,6 +146,14 @@ final class EventAudienceTest extends TestCase
      */
     private function registerClientWithFilters(string $subIdStr, array ...$filters): RelayClient
     {
+        return $this->registerClientReading($subIdStr, ActingKeysMother::anonymous(), ...$filters);
+    }
+
+    /**
+     * @param array<string, mixed> ...$filters
+     */
+    private function registerClientReading(string $subIdStr, ActingKeys $reader, array ...$filters): RelayClient
+    {
         $client = $this->clientRegistry->registerClient(
             $this->createStub(ClientConnectionInterface::class),
             new ConnectionInfo(IpAddress::fromString('127.0.0.1'), 'Test/1.0', Timestamp::now()),
@@ -158,7 +167,7 @@ final class EventAudienceTest extends TestCase
             )),
             SubscriptionState::Active,
         );
-        $this->subscriptionRegistry->addSubscription($client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($client->getId(), $subscription, $reader);
 
         return $client;
     }

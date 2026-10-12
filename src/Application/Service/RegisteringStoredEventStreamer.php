@@ -7,7 +7,7 @@ namespace Innis\Nostr\Relay\Application\Service;
 use Innis\Nostr\Core\Domain\Entity\Subscription;
 use Innis\Nostr\Relay\Application\Port\DeferredExecutorInterface;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
-use Innis\Nostr\Relay\Domain\ValueObject\ScopedFilters;
+use Innis\Nostr\Relay\Domain\ValueObject\AdmittedRead;
 use Throwable;
 
 final readonly class RegisteringStoredEventStreamer
@@ -19,9 +19,9 @@ final readonly class RegisteringStoredEventStreamer
     ) {
     }
 
-    public function stream(RelayClient $client, Subscription $subscription, ScopedFilters $admission): void
+    public function stream(RelayClient $client, Subscription $subscription, AdmittedRead $admission): void
     {
-        $this->subscriptionRegistry->addSubscription($client->getId(), $subscription);
+        $this->subscriptionRegistry->addSubscription($client->getId(), $subscription, $admission->getReader());
 
         try {
             $this->deferredExecutor->defer(fn () => $this->storedEventStreamer->stream($client, $subscription, $admission));

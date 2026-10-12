@@ -17,6 +17,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
+use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
 use Override;
 
@@ -64,12 +65,12 @@ final class InMemoryEventStore implements RelayEventStoreInterface
     }
 
     #[Override]
-    public function findByFilters(FilterCollection $filters): StoredEventCollection
+    public function findByFilters(FilterCollection $filters, ActingKeys $reader): StoredEventCollection
     {
         $matched = [];
 
         foreach ($filters as $filter) {
-            foreach ($this->newestMatching($filter) as $event) {
+            foreach ($this->newestMatching($filter, $reader) as $event) {
                 $matched[$event->getHeader()->getId()->toHex()] = $event;
             }
         }
@@ -77,14 +78,15 @@ final class InMemoryEventStore implements RelayEventStoreInterface
         return new StoredEventCollection($matched)->newestFirst();
     }
 
+    // Deliberate: the reader's acting keys are applied before the filter's limit, so a limit counts only events the reader may read — see ADR-0036
     /**
      * @return list<StoredEvent>
      */
-    private function newestMatching(Filter $filter): array
+    private function newestMatching(Filter $filter, ActingKeys $reader): array
     {
         $matching = new StoredEventCollection(array_intersect_key(
             $this->encoded,
-            array_filter($this->events, static fn (Event $event): bool => $filter->matches($event)),
+            array_filter($this->events, static fn (Event $event): bool => $filter->matches($event) && $reader->canRead($event)),
         ))->newestFirst()->toArray();
 
         $limit = $filter->getLimit();
@@ -94,36 +96,27 @@ final class InMemoryEventStore implements RelayEventStoreInterface
 
     // Deliberate: counts matches directly rather than reusing the read path, because a filter's limit bounds the reply to a REQ and not the number of events that match — see ADR-0013
     #[Override]
-    public function countByFilters(FilterCollection $filters): EventCount
+    public function countByFilters(FilterCollection $filters, ActingKeys $reader): EventCount
     {
-        $matched = [];
-
-        foreach ($filters as $filter) {
-            foreach ($this->events as $id => $event) {
-                if ($filter->matches($event)) {
-                    $matched[$id] = true;
-                }
-            }
-        }
-
-        return EventCount::exact(count($matched));
+        return EventCount::exact(count(array_filter(
+            $this->events,
+            static fn (Event $event): bool => $filters->matches($event) && $reader->canRead($event),
+        )));
     }
 
     #[Override]
-    public function deleteByEventIds(EventIdCollection $eventIds, PublicKey $author): int
+    public function deleteByEventIds(EventIdCollection $eventIds, ActingKeys $deleter): int
     {
-        $deleted = 0;
+        $deletable = array_keys(array_filter(
+            array_intersect_key($this->events, array_flip($eventIds->toHexes())),
+            $deleter->canDelete(...),
+        ));
 
-        foreach ($eventIds as $eventId) {
-            $id = $eventId->toHex();
-
-            if (isset($this->events[$id]) && $this->events[$id]->getPubkey()->equals($author)) {
-                $this->remove($id);
-                ++$deleted;
-            }
+        foreach ($deletable as $id) {
+            $this->remove((string) $id);
         }
 
-        return $deleted;
+        return count($deletable);
     }
 
     #[Override]

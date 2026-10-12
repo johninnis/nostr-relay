@@ -11,6 +11,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Content\EventKind;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\SubscriptionId;
 use Innis\Nostr\Relay\Application\Port\MetricsCollectorInterface;
 use Innis\Nostr\Relay\Domain\Collection\SubscriptionMatchCollection;
+use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use Innis\Nostr\Relay\Domain\ValueObject\ClientId;
 use Innis\Nostr\Relay\Domain\ValueObject\SubscriptionMatch;
 use Override;
@@ -22,6 +23,8 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
     private array $subscriptions = [];
     /** @var array<string, Subscription> */
     private array $registered = [];
+    /** @var array<string, ActingKeys> */
+    private array $readers = [];
     /** @var array<string, ClientId> */
     private array $clientIdByKey = [];
     /** @var array<int|string, array<string, true>> */
@@ -36,7 +39,7 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
     }
 
     #[Override]
-    public function addSubscription(ClientId $clientId, Subscription $subscription): void
+    public function addSubscription(ClientId $clientId, Subscription $subscription, ActingKeys $reader): void
     {
         $key = $this->compositeKey($clientId, $subscription->getId());
         $clientIdStr = (string) $clientId;
@@ -47,6 +50,7 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
 
         $this->subscriptions[$key] = $subscription;
         $this->registered[$key] = $subscription;
+        $this->readers[$key] = $reader;
         $this->clientIdByKey[$key] = $clientId;
         $this->addToKindIndex($subscription, $key);
         $this->subscriptionsByClient[$clientIdStr][$key] = true;
@@ -119,8 +123,8 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
 
         $results = [];
         foreach ($keys as $key => $unused) {
-            if (isset($this->subscriptions[$key], $this->clientIdByKey[$key])) {
-                $results[] = new SubscriptionMatch($this->clientIdByKey[$key], $this->subscriptions[$key]);
+            if (isset($this->subscriptions[$key], $this->clientIdByKey[$key], $this->readers[$key])) {
+                $results[] = new SubscriptionMatch($this->clientIdByKey[$key], $this->subscriptions[$key], $this->readers[$key]);
             }
         }
 
@@ -173,7 +177,7 @@ final class InMemorySubscriptionRegistry implements SubscriptionRegistryInterfac
         }
 
         $this->removeFromKindIndex($this->subscriptions[$key], $key);
-        unset($this->subscriptions[$key], $this->registered[$key], $this->clientIdByKey[$key]);
+        unset($this->subscriptions[$key], $this->registered[$key], $this->readers[$key], $this->clientIdByKey[$key]);
         $this->metrics->decrementSubscriptions();
     }
 

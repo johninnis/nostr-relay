@@ -59,7 +59,6 @@ use Innis\Nostr\Relay\Application\Service\MessageRouter;
 use Innis\Nostr\Relay\Application\Service\Nip42Handshake;
 use Innis\Nostr\Relay\Application\Service\PublishingGate;
 use Innis\Nostr\Relay\Application\Service\RateLimitGate;
-use Innis\Nostr\Relay\Application\Service\ReadableEventCounter;
 use Innis\Nostr\Relay\Application\Service\ReadScopeGate;
 use Innis\Nostr\Relay\Application\Service\RegisteringStoredEventStreamer;
 use Innis\Nostr\Relay\Application\Service\StoredEventReadGate;
@@ -75,7 +74,6 @@ use Innis\Nostr\Relay\Application\UseCase\ProcessEventSubmissionUseCase;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Entity\RelayClient;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
-use Innis\Nostr\Relay\Domain\Service\GiftWrapFilterRules;
 use Innis\Nostr\Relay\Domain\ValueObject\ConnectionInfo;
 use Innis\Nostr\Relay\Domain\ValueObject\IpAddress;
 use Innis\Nostr\Relay\Domain\ValueObject\PolicyRejection;
@@ -131,7 +129,7 @@ final class MessageRouterTest extends TestCase
         $messenger = new ClientMessenger($this->clientRegistry);
 
         $distributor = new EventDistributor(
-            new EventAudience(new DeliveryGate($this->policy, new GiftWrapFilterRules()), $this->subscriptionRegistry, $this->clientRegistry),
+            new EventAudience(new DeliveryGate($this->policy), $this->subscriptionRegistry, $this->clientRegistry),
             $messenger,
             $logger,
         );
@@ -146,7 +144,7 @@ final class MessageRouterTest extends TestCase
 
         $admission = new SubscriptionAdmission(
             $rateLimitGate,
-            new ReadScopeGate($this->policy, $this->authenticationRegistry, new GiftWrapFilterRules()),
+            new ReadScopeGate($this->policy, $this->authenticationRegistry),
             $this->subscriptionRegistry,
         );
 
@@ -169,7 +167,7 @@ final class MessageRouterTest extends TestCase
         $subscriptionAnswers = new SubscriptionAnswers($this->subscriptionRegistry, $authChallengeIssuer, $logger);
 
         $storedEventStreamer = new StoredEventStreamer(
-            new StoredEventReadGate($this->eventStore, new DeliveryGate($this->policy, new GiftWrapFilterRules()), new SystemClock()),
+            new StoredEventReadGate($this->eventStore, new DeliveryGate($this->policy), new SystemClock()),
             new HeldSubscriptionSender($messenger, $this->subscriptionRegistry, $subscriptionAnswers),
         );
 
@@ -195,7 +193,7 @@ final class MessageRouterTest extends TestCase
                     ),
                     $validityGate,
                 ),
-                new CountSubscriptionUseCase(new ReadableEventCounter($this->eventStore, new GiftWrapFilterRules()), $admission, $subscriptionAnswers),
+                new CountSubscriptionUseCase($this->eventStore, $admission, $subscriptionAnswers),
             ),
             $this->clientRegistry,
             $logger,

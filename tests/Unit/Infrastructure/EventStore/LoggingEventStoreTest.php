@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Tests\Unit\Infrastructure\EventStore;
 
+use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Collection\TagCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
@@ -16,6 +17,7 @@ use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
 use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Infrastructure\EventStore\LoggingEventStore;
+use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use Innis\Nostr\Relay\Tests\Support\KeyMother;
 use PHPUnit\Framework\TestCase;
@@ -44,11 +46,12 @@ final class LoggingEventStoreTest extends TestCase
     public function testFindByFiltersForwardsToTheInnerStore(): void
     {
         $filters = new FilterCollection([Filter::from()]);
+        $reader = ActingKeysMother::of(KeyMother::alicePublicKey());
 
         $inner = $this->createMock(RelayEventStoreInterface::class);
-        $inner->expects($this->once())->method('findByFilters')->with($filters)->willReturn(new StoredEventCollection([]));
+        $inner->expects($this->once())->method('findByFilters')->with($filters, $reader)->willReturn(new StoredEventCollection([]));
 
-        new LoggingEventStore($inner, new NullLogger())->findByFilters($filters);
+        new LoggingEventStore($inner, new NullLogger())->findByFilters($filters, $reader);
     }
 
     public function testFindByFiltersReturnsTheInnerStoresEvents(): void
@@ -58,7 +61,7 @@ final class LoggingEventStoreTest extends TestCase
         $inner = $this->createStub(RelayEventStoreInterface::class);
         $inner->method('findByFilters')->willReturn($stored);
 
-        $this->assertSame($stored, new LoggingEventStore($inner, new NullLogger())->findByFilters(new FilterCollection([Filter::from()])));
+        $this->assertSame($stored, new LoggingEventStore($inner, new NullLogger())->findByFilters(new FilterCollection([Filter::from()]), ActingKeysMother::anonymous()));
     }
 
     public function testCountByFiltersForwardsToTheInnerStore(): void
@@ -70,7 +73,18 @@ final class LoggingEventStoreTest extends TestCase
 
         $store = new LoggingEventStore($inner, new NullLogger());
 
-        $this->assertSame(3, $store->countByFilters($filters)->toInt());
+        $this->assertSame(3, $store->countByFilters($filters, ActingKeysMother::anonymous())->toInt());
+    }
+
+    public function testDeleteByEventIdsForwardsTheDeleterToTheInnerStore(): void
+    {
+        $eventIds = new EventIdCollection([$this->event()->getId()]);
+        $deleter = ActingKeysMother::of(KeyMother::alicePublicKey());
+
+        $inner = $this->createMock(RelayEventStoreInterface::class);
+        $inner->expects($this->once())->method('deleteByEventIds')->with($eventIds, $deleter)->willReturn(1);
+
+        new LoggingEventStore($inner, new NullLogger())->deleteByEventIds($eventIds, $deleter);
     }
 
     private function event(): Event
