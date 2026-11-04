@@ -18,6 +18,7 @@ use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Rumour;
 use Innis\Nostr\Core\Domain\ValueObject\Tag\Tag;
 use Innis\Nostr\Core\Domain\ValueObject\Timestamp;
+use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use RuntimeException;
 
@@ -41,6 +42,7 @@ final class RelayEventStoreContract
             ...self::orderCases(),
             ...self::unionCases(),
             ...self::deletionCases(),
+            ...self::sharedDeletionCases(),
         ]);
     }
 
@@ -188,6 +190,58 @@ final class RelayEventStoreContract
             'a deletion leaves an event of the deleter\'s that it does not name' => self::deleting($noteTaggingAlice, self::AUTHOR, [self::note(90)])
                 ->given($noteTaggingAlice, self::note(90)),
         ];
+    }
+
+    // Deliberate: every store applies the shared deletion corpus both ways, a request arriving after its target and before it, so a store's own statement of the rule cannot drift from nostr-core's — see ADR-0040 and nostr-adrs ADR-0127
+    /**
+     * @return array<string, RelayEventStoreContractCase>
+     */
+    private static function sharedDeletionCases(): array
+    {
+        $cases = [];
+
+        foreach (self::deletionCorpus() as $description => [$deletion, $target, $covers]) {
+            $cases['applied to what is stored: '.$description] = RelayEventStoreContractCase::applyingDeletion(
+                $deletion,
+                new EventCollection($covers ? [] : [$target]),
+            )->given($target);
+            $cases['applied to what arrives after it: '.$description] = RelayEventStoreContractCase::storing(
+                $target,
+                $covers ? EventStoreOutcome::Deleted : EventStoreOutcome::Stored,
+            )->given($deletion);
+        }
+
+        return $cases;
+    }
+
+    /**
+     * @return array<string, array{Event, Event, bool}>
+     */
+    private static function deletionCorpus(): array
+    {
+        $json = file_get_contents(__DIR__.'/deletion-vectors.json');
+        if (false === $json) {
+            throw new RuntimeException('Cannot read tests/Contract/deletion-vectors.json');
+        }
+
+        $decoded = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
+        if (!is_array($decoded) || !is_array($decoded['cases'] ?? null)) {
+            throw new RuntimeException('deletion-vectors.json has no cases list');
+        }
+
+        $corpus = [];
+        foreach ($decoded['cases'] as $case) {
+            $description = is_array($case) ? ($case['description'] ?? null) : null;
+            $deletion = is_array($case) ? Event::tryFromArray($case['deletion'] ?? null) : null;
+            $target = is_array($case) ? Event::tryFromArray($case['target'] ?? null) : null;
+            $covers = is_array($case) ? ($case['covers'] ?? null) : null;
+            if (!is_string($description) || null === $deletion || null === $target || !is_bool($covers)) {
+                throw new RuntimeException('deletion-vectors.json holds a case that is not a description, two events and a verdict');
+            }
+            $corpus[$description] = [$deletion, $target, $covers];
+        }
+
+        return $corpus;
     }
 
     /**

@@ -26,6 +26,7 @@ use Innis\Nostr\Relay\Infrastructure\EventStore\InMemoryEventStore;
 use Innis\Nostr\Relay\Tests\Support\ActingKeysMother;
 use Innis\Nostr\Relay\Tests\Support\EventMother;
 use PHPUnit\Framework\TestCase;
+use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use RuntimeException;
 
@@ -77,6 +78,30 @@ final class EventDeletionProcessorTest extends TestCase
             ->willReturn(0);
 
         new EventDeletionProcessor($eventStore, new NullLogger())->process($this->event(self::author(), EventKind::EVENT_DELETION, new TagCollection($tags)));
+    }
+
+    public function testAnEventThatIsNotADeletionRequestDeletesNothing(): void
+    {
+        $target = $this->event(self::author(), EventKind::TEXT_NOTE);
+        $notADeletion = $this->event(self::author(), EventKind::TEXT_NOTE, new TagCollection([Tag::event($target->getId())]));
+
+        $this->assertSame([$target->getId()->toHex()], $this->remainingAfter($notADeletion, $target));
+    }
+
+    public function testACoordinateOfAnotherAuthorIsWarnedAbout(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->once())->method('warning');
+
+        new EventDeletionProcessor(new InMemoryEventStore(), $logger)->process($this->deletionOfCoordinates(self::stranger(), self::author()));
+    }
+
+    public function testAnOwnCoordinateTaggedTwiceIsNotWarnedAbout(): void
+    {
+        $logger = $this->createMock(LoggerInterface::class);
+        $logger->expects($this->never())->method('warning');
+
+        new EventDeletionProcessor(new InMemoryEventStore(), $logger)->process($this->deletionOfCoordinates(self::author(), self::author()));
     }
 
     public function testADeletionRemovesItsAuthorsEvent(): void
@@ -174,6 +199,14 @@ final class EventDeletionProcessorTest extends TestCase
             static fn (StoredEvent $event): string => $event->getHeader()->getId()->toHex(),
             $eventStore->findByFilters(new FilterCollection([Filter::from(ids: new EventIdCollection([$target->getId()]))]), ActingKeysMother::of(self::author(), self::stranger()))->toArray(),
         );
+    }
+
+    private function deletionOfCoordinates(PublicKey ...$profileAuthors): Event
+    {
+        return $this->event(self::author(), EventKind::EVENT_DELETION, new TagCollection(array_map(
+            static fn (PublicKey $profileAuthor): Tag => (EventCoordinate::tryFrom(EventKind::fromInt(EventKind::METADATA), $profileAuthor, '') ?? throw new RuntimeException('Invalid coordinate'))->toATag(),
+            $profileAuthors,
+        )));
     }
 
     private function deletionOf(Event $target): Event

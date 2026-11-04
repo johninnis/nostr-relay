@@ -12,9 +12,12 @@ use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
 use Innis\Nostr\Core\Domain\ValueObject\Protocol\Filter;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
+use Innis\Nostr\Relay\Application\Service\EventDeletionProcessor;
 use Innis\Nostr\Relay\Domain\Collection\StoredEventCollection;
+use Innis\Nostr\Relay\Domain\Enum\EventStoreOutcome;
 use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 use Innis\Nostr\Relay\Domain\ValueObject\StoredEvent;
+use Psr\Log\NullLogger;
 
 final readonly class RelayEventStoreContractCase
 {
@@ -56,6 +59,28 @@ final readonly class RelayEventStoreContractCase
                 return self::stillStored($store, $stored);
             },
             self::sorted(self::idsOf($remaining)),
+            new EventCollection([]),
+        );
+    }
+
+    public static function applyingDeletion(Event $deletion, EventCollection $remaining): self
+    {
+        return new self(
+            static function (RelayEventStoreInterface $store, EventCollection $stored) use ($deletion): array {
+                new EventDeletionProcessor($store, new NullLogger())->process($deletion);
+
+                return self::stillStored($store, $stored);
+            },
+            self::sorted(self::idsOf($remaining)),
+            new EventCollection([]),
+        );
+    }
+
+    public static function storing(Event $event, EventStoreOutcome $expected): self
+    {
+        return new self(
+            static fn (RelayEventStoreInterface $store): array => [$store->store($event)->value],
+            [$expected->value],
             new EventCollection([]),
         );
     }

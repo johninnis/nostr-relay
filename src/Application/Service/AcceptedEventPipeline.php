@@ -33,6 +33,8 @@ final readonly class AcceptedEventPipeline
             EventStoreOutcome::Stored => $this->onStored($client, $event),
             EventStoreOutcome::Duplicate => OkMessage::refused($event->getId(), ReasonPrefix::Duplicate, 'event already exists'),
             EventStoreOutcome::Superseded => OkMessage::refused($event->getId(), ReasonPrefix::Duplicate, 'newer version already exists'),
+            // Deliberate: an event a stored deletion request deletes is refused, not stored and withheld — see ADR-0040 and nostr-adrs ADR-0126
+            EventStoreOutcome::Deleted => OkMessage::refused($event->getId(), ReasonPrefix::Blocked, 'a deletion request deletes this event'),
         };
     }
 

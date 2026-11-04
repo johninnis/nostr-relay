@@ -18,6 +18,7 @@ use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
 interface RelayEventStoreInterface
 {
     // Deliberate: a store is handed an Event, never bytes, and keeps EncodedEvent::of() of it, so what findByFilters returns may be streamed unparsed — see ADR-0039
+    // Deliberate: a store refuses an event a deletion request it holds deletes, judged by nostr-core in the same write, as Deleted — see ADR-0040
     public function store(Event $event): EventStoreOutcome;
 
     // Deliberate: a store returns the union, each event once, newest first, the lower id first at a tie, applying each filter's own limit, and on every filter, before that limit, matches a gift-wrap kind only where a p tag names one of the reader's keys; no read is unconfined — see ADR-0024 and ADR-0036

@@ -170,6 +170,7 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         yield 'stored' => [EventStoreOutcome::Stored];
         yield 'duplicate' => [EventStoreOutcome::Duplicate];
         yield 'superseded' => [EventStoreOutcome::Superseded];
+        yield 'deleted' => [EventStoreOutcome::Deleted];
     }
 
     #[DataProvider('storeOutcomes')]
@@ -206,6 +207,19 @@ final class ProcessEventSubmissionUseCaseTest extends TestCase
         $this->assertSame(
             'duplicate: newer version already exists',
             self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Superseded))?->getMessage(),
+        );
+    }
+
+    public function testAnEventADeletionRequestDeletesIsRefused(): void
+    {
+        $this->assertFalse(self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Deleted))?->isAccepted());
+    }
+
+    public function testAnEventADeletionRequestDeletesIsAnsweredBlocked(): void
+    {
+        $this->assertSame(
+            'blocked: a deletion request deletes this event',
+            self::okReply($this->repliesWhenTheStoreAnswers(EventStoreOutcome::Deleted))?->getMessage(),
         );
     }
 

@@ -9,4 +9,5 @@ enum EventStoreOutcome: string
     case Stored = 'stored';
     case Duplicate = 'duplicate';
     case Superseded = 'superseded';
+    case Deleted = 'deleted';
 }

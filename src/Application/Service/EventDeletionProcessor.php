@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Innis\Nostr\Relay\Application\Service;
 
-use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
 use Innis\Nostr\Core\Domain\Collection\PublicKeyCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Service\DeletionCoverage;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
 use Innis\Nostr\Relay\Application\Port\RelayEventStoreInterface;
 use Innis\Nostr\Relay\Domain\ValueObject\ActingKeys;
@@ -22,18 +22,19 @@ final readonly class EventDeletionProcessor
 
     public function process(Event $event): void
     {
+        if (!$event->isDeletion()) {
+            return;
+        }
+
         $author = $event->getPubkey();
 
         $requestedEventIds = $event->getTags()->getEventIds();
         $requestedCoordinates = $event->getTags()->getCoordinates();
         $requestedCount = count($requestedEventIds) + count($requestedCoordinates);
 
-        $ownCoordinates = new EventCoordinateCollection(array_values(array_filter(
-            $requestedCoordinates->toArray(),
-            static fn (EventCoordinate $coordinate): bool => $coordinate->getPubkey()->equals($author),
-        )));
+        $ownCoordinates = DeletionCoverage::deletedCoordinates($event);
 
-        if (count($ownCoordinates) < count($requestedCoordinates)) {
+        if (array_any($requestedCoordinates->toArray(), static fn (EventCoordinate $coordinate): bool => !$coordinate->getPubkey()->equals($author))) {
             $this->logger->warning('Deletion event referenced events not owned by author', [
                 'deletion_event_id' => $event->getId()->toHex(),
                 'pubkey' => $author->toHex(),

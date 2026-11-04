@@ -8,6 +8,7 @@ use Innis\Nostr\Core\Domain\Collection\EventCoordinateCollection;
 use Innis\Nostr\Core\Domain\Collection\EventIdCollection;
 use Innis\Nostr\Core\Domain\Collection\FilterCollection;
 use Innis\Nostr\Core\Domain\Entity\Event;
+use Innis\Nostr\Core\Domain\Service\DeletionCoverage;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventCoordinate;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\EventVersion;
 use Innis\Nostr\Core\Domain\ValueObject\Identity\PublicKey;
@@ -38,6 +39,10 @@ final class InMemoryEventStore implements RelayEventStoreInterface
             return EventStoreOutcome::Duplicate;
         }
 
+        if ($this->isDeleted($event)) {
+            return EventStoreOutcome::Deleted;
+        }
+
         $incumbent = $this->incumbentFor($event);
 
         if ($incumbent instanceof Event) {
@@ -52,6 +57,16 @@ final class InMemoryEventStore implements RelayEventStoreInterface
         $this->encoded[$id] = StoredEvent::of($event);
 
         return EventStoreOutcome::Stored;
+    }
+
+    private function isDeleted(Event $event): bool
+    {
+        $lookup = DeletionCoverage::lookupFilters($event);
+
+        return array_any(
+            $this->events,
+            static fn (Event $stored): bool => $lookup->matches($stored) && DeletionCoverage::covers($stored, $event),
+        );
     }
 
     private function incumbentFor(Event $event): ?Event

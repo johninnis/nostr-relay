@@ -1,0 +1,839 @@
+{
+  "description": "NIP-09 deletion coverage (shared ADR-0124, ADR-0126, ADR-0127): whether `deletion` covers `target`. Owned by @innis/nostr-core; every copy is byte-identical.",
+  "cases": [
+    {
+      "description": "an e tag covers the author's own event",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff"
+          ]
+        ],
+        "content": "",
+        "id": "04db3e1e58fec01364b9e9e9cbd4b8b6133da10088d3298b9506bba608c9fd61",
+        "sig": "77859f659ca7fa48269daf150b075238d12405c8c89c81a9a136bb90fdd12b28802811ba0da0b41599c2371667a2222cd1ad7f9b263b5f7e745a0f6891ad6d5e"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999900,
+        "kind": 1,
+        "tags": [],
+        "content": "a note",
+        "id": "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff",
+        "sig": "455328076e3908660de00fa06e6f16696bb0c8fd189a3cf450b9f174aaa9942896e848d53d4342d708d81e9592c668b751d4562d9aded833a0c7661381b777c4"
+      },
+      "covers": true
+    },
+    {
+      "description": "an e tag never covers another author's event",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "fd1d2d8c42439a8d39a0801dc28f07b02ceb74d6630b7ad63fc17d47d1668bf6"
+          ]
+        ],
+        "content": "",
+        "id": "a7ac6e4fe9074e60494e3ec88f43a894cb83199ad326c1ea5f0b350ad2d84184",
+        "sig": "f9b1eb78c109dc36749f64c7280681dfb81d3b9c37bd1ce684678f17ac9fc5af8b36b118ea6aff9d4333947e4893a750d4bd9005c1f2c375e1c52a58566ad0fe"
+      },
+      "target": {
+        "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        "created_at": 1699999900,
+        "kind": 1,
+        "tags": [],
+        "content": "someone else's note",
+        "id": "fd1d2d8c42439a8d39a0801dc28f07b02ceb74d6630b7ad63fc17d47d1668bf6",
+        "sig": "510bdae14d9e914b3f82be53b6302688ffb04fe4ced8649f9452c9090e70832ee361b54bce61c433e2789a213557dfd7c08f1e4ef052699264c4b585def50896"
+      },
+      "covers": false
+    },
+    {
+      "description": "an e tag covers only the event it names",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "fd1d2d8c42439a8d39a0801dc28f07b02ceb74d6630b7ad63fc17d47d1668bf6"
+          ]
+        ],
+        "content": "",
+        "id": "a7ac6e4fe9074e60494e3ec88f43a894cb83199ad326c1ea5f0b350ad2d84184",
+        "sig": "498533c6e9296c30274e9c3b099e34197e188571f3bdc0916037df1b7568c0a6c6b9708e69f0b3070e67ae6e408a7c94b8a2b9f11b62842738395bcffd944e55"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999900,
+        "kind": 1,
+        "tags": [],
+        "content": "a note",
+        "id": "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff",
+        "sig": "455328076e3908660de00fa06e6f16696bb0c8fd189a3cf450b9f174aaa9942896e848d53d4342d708d81e9592c668b751d4562d9aded833a0c7661381b777c4"
+      },
+      "covers": false
+    },
+    {
+      "description": "an e tag never covers a deletion request",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "fd84af74a3fad880a674efe6fccb255571d7138a9270e8510d7657b34a51d620"
+          ]
+        ],
+        "content": "",
+        "id": "90644f40f4407dc76a0ada29b5a58e124cc6486fa9aeca19277d207e1b27feb1",
+        "sig": "1c73e5ff5a357e03ee552a4288fe29a6626c07bcf05364cd5db68cd74bbcb8291750b4649a95f766f8fdc1f2e43a9d9d1cb7f07173dad1a6e0871bc6427ca1c3"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999900,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff"
+          ]
+        ],
+        "content": "",
+        "id": "fd84af74a3fad880a674efe6fccb255571d7138a9270e8510d7657b34a51d620",
+        "sig": "4e10d3dd3007bd7991606c5c12a1a3fb7f471d4d6bdf81edc4fb6e6f38daa4f011fe3f483dc066be8cfa0126f7f33cc3cf93bd2b8ba3b049f5d37c410752dd4b"
+      },
+      "covers": false
+    },
+    {
+      "description": "an e tag covers a version created after the request, having no time bound",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "bcb1c9f3042f18f646e4a1d909140a6f441bea5216a4b4b0e436d1828a5f350f"
+          ]
+        ],
+        "content": "",
+        "id": "b3b1f25abf5b6eb6e8e575838a3c0f527fdcf71b40b142443fdc65c21d55cb15",
+        "sig": "c6d71cf83a60519b3038cf511d00eb20b5de018c7c7368fcaa7d59b645da9021ffe55714ccc7573470ad850cfe7527a2ad27b9ac21e7ed0b0ef1578cabc95132"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000001,
+        "kind": 30023,
+        "tags": [
+          [
+            "d",
+            "article"
+          ]
+        ],
+        "content": "an article, republished",
+        "id": "bcb1c9f3042f18f646e4a1d909140a6f441bea5216a4b4b0e436d1828a5f350f",
+        "sig": "9cc0b0c28c07bd825e8366a4fa7df969006bef62f795201c10a68abe374c04c5e386d5feece94fbae490a6316dc96aa5f324e376791f3bc68a6aa5fbafe91f49"
+      },
+      "covers": true
+    },
+    {
+      "description": "an event that is not a deletion request covers nothing",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 1,
+        "tags": [
+          [
+            "e",
+            "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff"
+          ]
+        ],
+        "content": "",
+        "id": "65a48f0f7a1dbccb769eb2028f99b3b2b5abd9bb4ab0d35eb778b640c9a719a0",
+        "sig": "680e4eb92876d212dceb52fe5a7e8b02d5ef560e046acf3f613dd856680f94c197f1aaece4396a4aa0dba4ca2b73fe1c1cf7ec9efb16915f15aa98dd00cf0138"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999900,
+        "kind": 1,
+        "tags": [],
+        "content": "a note",
+        "id": "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff",
+        "sig": "455328076e3908660de00fa06e6f16696bb0c8fd189a3cf450b9f174aaa9942896e848d53d4342d708d81e9592c668b751d4562d9aded833a0c7661381b777c4"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag covers a replaceable version created before the request",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "10001:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:"
+          ]
+        ],
+        "content": "",
+        "id": "eca2632ac608b124c288904881cc19d597b4a8d410df4c57432304230ef1ff26",
+        "sig": "e1bfb82395b5eb7a5b69ad5482e40b24a67a19a60c3d9c8ba6066776fdadb0686ff177210fabe6e988ad124df4f37c3bc974e8b243a4da42afe155329d78215c"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 10001,
+        "tags": [],
+        "content": "pins before",
+        "id": "b6725337654b0a6f791ebd0a97748495b3ea68e0f966abd3a866eea5fb630cc6",
+        "sig": "aaec7264dc4cdbea6d87b9078ba19f127a6d60f8a45ab70c9797b9bdb2633bf569b74acd2863a27ee8816ab8c4d171012dcbf13c27ee59b94442e0f1bf340c97"
+      },
+      "covers": true
+    },
+    {
+      "description": "an a tag covers a replaceable version created at the request's created_at",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "10001:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:"
+          ]
+        ],
+        "content": "",
+        "id": "eca2632ac608b124c288904881cc19d597b4a8d410df4c57432304230ef1ff26",
+        "sig": "c371996ccdfc941334fc5140b5e862671359420c63ec711f795b694914eb3eaf45c30d53022b0064d03cddd1a54564954dae303eabf69c96bfc5b2e12e8e7742"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 10001,
+        "tags": [],
+        "content": "pins at",
+        "id": "5651a14c6d0289f2779717fd764e50189bcfe7a6ae1db1be4d5d9e1c0641e3f0",
+        "sig": "efb42e0dc90cbcf75d36b7e1296d60e7917d6ce468715e3f43c857ff34110b1bef6d846b0de9bd7cb96bed527067f4440508cad34bebba1ce689d72a0c9cb6e6"
+      },
+      "covers": true
+    },
+    {
+      "description": "an a tag never covers a version created after the request",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "10001:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:"
+          ]
+        ],
+        "content": "",
+        "id": "eca2632ac608b124c288904881cc19d597b4a8d410df4c57432304230ef1ff26",
+        "sig": "506cc0f771e89439bd9ef7b78019538d3a760a00e0c5af1b3f65d3a5c8ac3e878736f7f1fc90b50a797fac5f5864f1d04ae160c7b9f0d121ddbaac2921cb1ef9"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000001,
+        "kind": 10001,
+        "tags": [],
+        "content": "pins after",
+        "id": "6944d843cedd340ef6d89f9c7622dc9244f886d770d84362ce220d9a57c87820",
+        "sig": "d5e66561e4e37f7422c913f2c0899bf1c0196f4343e9b8d915d2fa239d8b3a564448586aa5a2cc250b0af365e03fb33922590da396302d5e7d4061781a23dfd7"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag covers kind 0, a replaceable kind outside 10000-19999",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "0:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:"
+          ]
+        ],
+        "content": "",
+        "id": "2c86d63b5244f6e841aa39b91b2fd0bcfea1ca3f2387e1dd999ea81672e64891",
+        "sig": "061a933cf5be87b00959e94da597f0615947c39b9e36e87a7925cf563d16cb8f48c050c1e9f997a76587bc4b01892079c1baa56b1b762e4ddf312520805beb4b"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 0,
+        "tags": [],
+        "content": "{}",
+        "id": "fc24fdb476f72aa808b9d9856f244597bc364bd0f859b2725c1c8db98395f120",
+        "sig": "7cfe1424cef40272d62b5c819f291765dae2afa58c5a3537154f79bf44825e25870f52ecf448f89f4080f54392bb03122990c7bbed3a1c13d09076d675d263c6"
+      },
+      "covers": true
+    },
+    {
+      "description": "an a tag covers an addressable version with the d tag it names",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "30023:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:article"
+          ]
+        ],
+        "content": "",
+        "id": "61f81b27fcefa57df9a73735a15c752f431166ea30f06ce6bbdd1e9c659a6268",
+        "sig": "bb0ab58c4542a7bbd93023a6334d8ac5595209c72d0eec7fc96ba8712439519e57da84bac1c1440e5b44521d4934035dec5d4a0cc2496fe8c0cdfa97c109155f"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 30023,
+        "tags": [
+          [
+            "d",
+            "article"
+          ]
+        ],
+        "content": "an article",
+        "id": "bc9ca2c7711dd372fc151e6a02c147fe441989735e7c0d0f5e4e6fe1362ce2b3",
+        "sig": "52cf7b1da5d2255615c2d7a4dc1324c1ce4902f74d18db8d96ffc63133534142c8b0499864eb1803acc9dd3d5f32f0a52ee7385e64b9da927d4fe3c30410c107"
+      },
+      "covers": true
+    },
+    {
+      "description": "an a tag never covers an addressable version created after the request",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "30023:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:article"
+          ]
+        ],
+        "content": "",
+        "id": "61f81b27fcefa57df9a73735a15c752f431166ea30f06ce6bbdd1e9c659a6268",
+        "sig": "6bff2171b3804a621ddfbe1165df678d43f85fd3bd5c04ac935f907ced8a5c42066863c045c0a3d678a2a1eb3f1f05191ffcc68b916d8b99cbac107b13255959"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000001,
+        "kind": 30023,
+        "tags": [
+          [
+            "d",
+            "article"
+          ]
+        ],
+        "content": "an article, republished",
+        "id": "bcb1c9f3042f18f646e4a1d909140a6f441bea5216a4b4b0e436d1828a5f350f",
+        "sig": "9cc0b0c28c07bd825e8366a4fa7df969006bef62f795201c10a68abe374c04c5e386d5feece94fbae490a6316dc96aa5f324e376791f3bc68a6aa5fbafe91f49"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag never covers an addressable event with another d tag",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "30023:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:another"
+          ]
+        ],
+        "content": "",
+        "id": "7873dd97c3f5ea1bf58b98b78de945389879613d77a13ab4fd2c73ac8a157eca",
+        "sig": "08477ecc6da8ef3c6fc245541e29514742e6da483bc27fe83697df716309cfd72cb3246c4de3e8b737a3def8a4289a49b8f37ef7a6a33ad8087be8946842eb39"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 30023,
+        "tags": [
+          [
+            "d",
+            "article"
+          ]
+        ],
+        "content": "an article",
+        "id": "bc9ca2c7711dd372fc151e6a02c147fe441989735e7c0d0f5e4e6fe1362ce2b3",
+        "sig": "52cf7b1da5d2255615c2d7a4dc1324c1ce4902f74d18db8d96ffc63133534142c8b0499864eb1803acc9dd3d5f32f0a52ee7385e64b9da927d4fe3c30410c107"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag's identifier is everything after the second colon",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "30023:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:a:b"
+          ]
+        ],
+        "content": "",
+        "id": "3c843d6ab0591ba25cda136a06060ca3f9156eb207717878df52de86962bb562",
+        "sig": "1e1ef607cd56bd41c697bb211a4265d174b070dce70c2b9b36b14a6741caf62bcfddf0661f7706f61caacf85b73d7f199f4a42eb1da17c6503f15ea573fa2010"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 30023,
+        "tags": [
+          [
+            "d",
+            "a:b"
+          ]
+        ],
+        "content": "an article with a colon",
+        "id": "3dde26eeee76f1142f04c929e8597719f670aaa8f1b65d3cc749e50e29205a42",
+        "sig": "726d7ff5daf1d6b23da98e96351df035ecb58f641f2aa4dda27940640a7c679ce81bf85a5e18da9e006b411b2c5b2d8f17f52925fc78fb4cf2b4b51a04037311"
+      },
+      "covers": true
+    },
+    {
+      "description": "an a tag with the empty identifier covers an addressable event with no d tag",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "30023:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:"
+          ]
+        ],
+        "content": "",
+        "id": "7026c434f7ace6a272ceb49ca4c0b729bfba983275676455ecb35e64700c13db",
+        "sig": "011b7f1c68df10827c9376258f200e538c71aeef20764d0ab9f02c78d0619b8805c044dfb1e6a14e8b7aef13802631d4de5e6dc11a20d38a447acb8db79a37b2"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 30023,
+        "tags": [],
+        "content": "an article without a d tag",
+        "id": "8b39eaa821aa87dc4fcc93bea9b77dc89aecd5db175c8fb1be34a7eb384f22df",
+        "sig": "51bdfed3ba38423ef957895b3af9fa9a0a2981981d25c4f1299bef1eb59a649ca04c5e1fde849405337fa181b96a08ab458b0e5be129e1241f9c413614ee4049"
+      },
+      "covers": true
+    },
+    {
+      "description": "an a tag never covers an addressable event whose d tags disagree",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "30023:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:article"
+          ]
+        ],
+        "content": "",
+        "id": "61f81b27fcefa57df9a73735a15c752f431166ea30f06ce6bbdd1e9c659a6268",
+        "sig": "4246a6a1002d19111f121b4106ef40aa8d1c5a01788d99898b3c48b33152005cf6e6beb8831c047d9be4a345b8019a4ae9b29e6c3f1c4f6cf2031356570f326e"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 30023,
+        "tags": [
+          [
+            "d",
+            "article"
+          ],
+          [
+            "d",
+            "other"
+          ]
+        ],
+        "content": "an article naming two",
+        "id": "291f4c1829b33e42fe773867f6f38000d26d885fccbbc648358e8952fe90b461",
+        "sig": "0116f9467fc14eafa7ea6bdee4669a971a97a732841912b57fad005e047b2d1ecbedf9630b281b3f7707088c15fea42e80b1e0654f65b1afd633f30d8f0b5317"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag never covers another author's coordinate",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "30023:c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5:article"
+          ]
+        ],
+        "content": "",
+        "id": "1041688d5ef42f618c69e1d9881c5c9bf2d6e02b70360db2d454d4f41ccc68cd",
+        "sig": "0b97115e92d86069bf5a5cfb992f243ae113f1bd0357e59bfab2037fa349f398444ddf2cb0f755f58784463f4adbfc4e65d1009741865c40a32c92cffaaf8b45"
+      },
+      "target": {
+        "pubkey": "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5",
+        "created_at": 1699999999,
+        "kind": 30023,
+        "tags": [
+          [
+            "d",
+            "article"
+          ]
+        ],
+        "content": "someone else's article",
+        "id": "301bfab7b3a639cbc386476bfdfa4e9ce24d1c81b5bd24cbf1cdba55c47b8726",
+        "sig": "f54b0df06a8a1a2c79f25748bfea38d75f4d77e2aa26caf75d6fe7faa8db3f32f14bbdc96b32527820b7ea23cdf5420f1d8394bd10e447be3fef26bfb82ae126"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag naming a replaceable kind with an identifier names no coordinate",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "10001:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:x"
+          ]
+        ],
+        "content": "",
+        "id": "79ebb683808dd927846a7aea39e011bd10b2b9403c387348027d67aeae602706",
+        "sig": "4dd8fc2d99057f762d23fbfda5bd6666f3c5a680791463c2dd903cf88e85631af05a8c2b47564abf3ae2b6b294a272930e82fc22769a448f5339538c5beccd7e"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 10001,
+        "tags": [],
+        "content": "pins before",
+        "id": "b6725337654b0a6f791ebd0a97748495b3ea68e0f966abd3a866eea5fb630cc6",
+        "sig": "aaec7264dc4cdbea6d87b9078ba19f127a6d60f8a45ab70c9797b9bdb2633bf569b74acd2863a27ee8816ab8c4d171012dcbf13c27ee59b94442e0f1bf340c97"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag naming a regular kind names no coordinate",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "1:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:"
+          ]
+        ],
+        "content": "",
+        "id": "9a2da6bde737af523750ff056f39fb38c32886f3cdb8573d5e8c884d5e87385d",
+        "sig": "76fbb7605af4d713928b7adde093175fad0265ca0acd122ff52cc27fc1b083a63f45ec1d89c4a0f0f30e14954996630d1ca3350a23184810aa7e32c4b89510fd"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999900,
+        "kind": 1,
+        "tags": [],
+        "content": "a note",
+        "id": "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff",
+        "sig": "455328076e3908660de00fa06e6f16696bb0c8fd189a3cf450b9f174aaa9942896e848d53d4342d708d81e9592c668b751d4562d9aded833a0c7661381b777c4"
+      },
+      "covers": false
+    },
+    {
+      "description": "an e tag naming the id in upper-case hex names nothing",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "F274F83B2AC89F525F6A8EFDC52FA212011FA713BFFDA660DEFEA40F001361FF"
+          ]
+        ],
+        "content": "",
+        "id": "830b3ef84012cbb5549adc118a301c9d7564d431c19e1678d32ad8cb9adedca2",
+        "sig": "a3627da82ddf442fdfee6300a2eb676611736b59c2f784bbf0b9588f8c149c346aa21ccc29ed60f540ce4b537fcea56da27c62bf19ef9bcd3ef1d46422b831d6"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999900,
+        "kind": 1,
+        "tags": [],
+        "content": "a note",
+        "id": "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff",
+        "sig": "455328076e3908660de00fa06e6f16696bb0c8fd189a3cf450b9f174aaa9942896e848d53d4342d708d81e9592c668b751d4562d9aded833a0c7661381b777c4"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag naming the author in upper-case hex names no coordinate",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "10001:79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798:"
+          ]
+        ],
+        "content": "",
+        "id": "ba4eef373b75ea5b351208dc4699d4f373c64cb06761698298ba31daeb709a09",
+        "sig": "6db754d3070d8676bb0fc3d5c8e832ebba7b7bc692ee7c342c4a963ff0d49e32343a444a928c07c2dad02c773be73709234dae683ecc2f0fd662c63ed8c318c3"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 10001,
+        "tags": [],
+        "content": "pins before",
+        "id": "b6725337654b0a6f791ebd0a97748495b3ea68e0f966abd3a866eea5fb630cc6",
+        "sig": "aaec7264dc4cdbea6d87b9078ba19f127a6d60f8a45ab70c9797b9bdb2633bf569b74acd2863a27ee8816ab8c4d171012dcbf13c27ee59b94442e0f1bf340c97"
+      },
+      "covers": false
+    },
+    {
+      "description": "an a tag whose kind has a leading zero names no coordinate",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "a",
+            "010001:79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798:"
+          ]
+        ],
+        "content": "",
+        "id": "89dfdcaae17ffec01e09d7c7f0a21e67004d1ad7531b859fc63aa48c2ed96705",
+        "sig": "169e8d00f73f28d30667b3a0f72a767392e72cfc6d176361177ac655c12ec6272fdb5d5d16ec2617483fd0498e29231d2c01ef8d9ec5202347a0cd07ba9b93ab"
+      },
+      "target": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1699999999,
+        "kind": 10001,
+        "tags": [],
+        "content": "pins before",
+        "id": "b6725337654b0a6f791ebd0a97748495b3ea68e0f966abd3a866eea5fb630cc6",
+        "sig": "aaec7264dc4cdbea6d87b9078ba19f127a6d60f8a45ab70c9797b9bdb2633bf569b74acd2863a27ee8816ab8c4d171012dcbf13c27ee59b94442e0f1bf340c97"
+      },
+      "covers": false
+    },
+    {
+      "description": "an e tag covers a gift wrap addressed to the request's author",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "9f4e1b9e12e3dc3cbbd4accc46460dfe7a3b082e6bddf710de73280be3d0baf5"
+          ]
+        ],
+        "content": "",
+        "id": "0bd5237ed460364b19299e1e54b0f2c7d9f8cd5a54dd73171fc52630aca0bdea",
+        "sig": "7f1e5dabe1b9a71086e8fb8979f8ba86c4290bf1b01950fa1ac1898b1e3676fd0e84819f6cc091d597f155cdef7653bb394fec92925ee801c493e9decc8e442f"
+      },
+      "target": {
+        "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "created_at": 1699999900,
+        "kind": 1059,
+        "tags": [
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+          ]
+        ],
+        "content": "sealed",
+        "id": "9f4e1b9e12e3dc3cbbd4accc46460dfe7a3b082e6bddf710de73280be3d0baf5",
+        "sig": "82a30c187347ba04a492b8485a5d71b354970eb62f57daee9dc7a1be938503f5dd99270fd2505394209cd7a9cc775c6841c643ba4371df2253a4a439e64d5269"
+      },
+      "covers": true
+    },
+    {
+      "description": "an e tag covers an ephemeral gift wrap addressed to the request's author",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "cf7c6dc0d661cd4c394c0ce12993fd514bae0e905236e33d076f1b0116efa66d"
+          ]
+        ],
+        "content": "",
+        "id": "29d027ce170b15776e3afb30859fba85662117cd2f93593962979e8835575adc",
+        "sig": "d035c7b2e02b4f98b5b3e7bfa946763ae3f741c6878da47579d6f1f53815247234b4c08b8511da94e73a0c5a31764be59b6381771c5547dcdb29bde734d377f9"
+      },
+      "target": {
+        "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "created_at": 1699999900,
+        "kind": 21059,
+        "tags": [
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+          ]
+        ],
+        "content": "sealed",
+        "id": "cf7c6dc0d661cd4c394c0ce12993fd514bae0e905236e33d076f1b0116efa66d",
+        "sig": "51ec8a333ed2b1129c23e695762abc2f9f8c1603416c936283a6859dc3214432d7c60229b1ab63e22b927a83abfc3dceb1614a675605e869bf2940c1826b2edb"
+      },
+      "covers": true
+    },
+    {
+      "description": "an e tag covers a gift wrap any of whose p tags names the request's author",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "c7ab4b7f16a48bcd13c58b5c829294b75429dc6ef04869ad6725f0ffdfc940a5"
+          ]
+        ],
+        "content": "",
+        "id": "010169ed753e66656b53cd8c9269dbb0d33c5bb5f5f084afb5c6989d4d787871",
+        "sig": "97b4e4c7e6ed17e3c4248b5a24728f748bd2d6db3b328521e3f18f7bbb2e5f895f6ac7fe016b06d4f10b156bf7058f4e0b6f8390285d433d5023fcb683df0f55"
+      },
+      "target": {
+        "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "created_at": 1699999900,
+        "kind": 1059,
+        "tags": [
+          [
+            "p",
+            "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          ],
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+          ]
+        ],
+        "content": "sealed",
+        "id": "c7ab4b7f16a48bcd13c58b5c829294b75429dc6ef04869ad6725f0ffdfc940a5",
+        "sig": "bbef34442997f2413c20d527874a3dfb09122bf344827ceb610342e8a205279a0cf57eb9497a1aee8afe1439b9892635ad95e7f4fa4408158e9281e5cbc772c3"
+      },
+      "covers": true
+    },
+    {
+      "description": "an e tag never covers a gift wrap addressed to another key",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "f1c7a15c55661d7d401fcb6071e5e3ed5a08b7daff53a8a07198d26aff93d671"
+          ]
+        ],
+        "content": "",
+        "id": "b61e5634704b9a8d3b6b5a85fe524b1691f97af28422fbd6563e8df237b9c63f",
+        "sig": "8fc85a43ca2b780ef8b493868a1bcc4eaf516a0b540040b08ef01d048e72d1fced5c66bce1feba9e075f67b6eb6cb211196348278a0e45fa37820a030c83be8e"
+      },
+      "target": {
+        "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "created_at": 1699999900,
+        "kind": 1059,
+        "tags": [
+          [
+            "p",
+            "c6047f9441ed7d6d3045406e95c07cd85c778e4b8cef3ca7abac09b95c709ee5"
+          ]
+        ],
+        "content": "sealed",
+        "id": "f1c7a15c55661d7d401fcb6071e5e3ed5a08b7daff53a8a07198d26aff93d671",
+        "sig": "e564205493a28bb2b5d2ca93d8ef1309d43a8f5a5db998b34c360335c9404a234f7dea96a641bbbd242bedd6a3857ffd03d4e6f946f3089357ef0d38d0ca4dd7"
+      },
+      "covers": false
+    },
+    {
+      "description": "a gift wrap addressed to the request's author is covered only when named",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "f274f83b2ac89f525f6a8efdc52fa212011fa713bffda660defea40f001361ff"
+          ]
+        ],
+        "content": "",
+        "id": "04db3e1e58fec01364b9e9e9cbd4b8b6133da10088d3298b9506bba608c9fd61",
+        "sig": "ace9aead1fd186c78c6710c7fd15750002d96643094c45af1db03e186dc1f22fa2813e64c66105aeb87b9f2a8d2d084ee800fb3f8716b5536bdb33628de39ea6"
+      },
+      "target": {
+        "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "created_at": 1699999900,
+        "kind": 1059,
+        "tags": [
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+          ]
+        ],
+        "content": "sealed",
+        "id": "9f4e1b9e12e3dc3cbbd4accc46460dfe7a3b082e6bddf710de73280be3d0baf5",
+        "sig": "82a30c187347ba04a492b8485a5d71b354970eb62f57daee9dc7a1be938503f5dd99270fd2505394209cd7a9cc775c6841c643ba4371df2253a4a439e64d5269"
+      },
+      "covers": false
+    },
+    {
+      "description": "an e tag never covers another signer's event of a kind that is no gift wrap, whatever it tags",
+      "deletion": {
+        "pubkey": "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798",
+        "created_at": 1700000000,
+        "kind": 5,
+        "tags": [
+          [
+            "e",
+            "9aacfbf97d189d16403396f84c415b23ff540c5c82fbc44b8b49bcf4f0ea73b0"
+          ]
+        ],
+        "content": "",
+        "id": "27e6f04d06c55b53915e933aa368e4a400f1a05d42862e7524115d22366c867d",
+        "sig": "a7af29acf1c9393f9f8e2f6a538ce04d0e7a6fdb29709493bd73e02a3bb651d1373b54f4c11c14ad33693dac938f0d7a6649c59241f8ac002aa9390714c2a785"
+      },
+      "target": {
+        "pubkey": "f9308a019258c31049344f85f89d5229b531c845836f99b08601f113bce036f9",
+        "created_at": 1699999900,
+        "kind": 1,
+        "tags": [
+          [
+            "p",
+            "79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798"
+          ]
+        ],
+        "content": "a note tagging the author",
+        "id": "9aacfbf97d189d16403396f84c415b23ff540c5c82fbc44b8b49bcf4f0ea73b0",
+        "sig": "e490723487ba6e9e9c0bff845bfb0dbb7bf3bb3d1cdd4babc82b45023a2fb4af826ae153ccd1a839799b85eeb91aa81b7d86b70cd40ce9728e9f8e4603877b1c"
+      },
+      "covers": false
+    }
+  ]
+}
