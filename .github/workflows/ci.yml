@@ -7,7 +7,7 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     # composer.json declares php ^8.4, so 8.5 is a supported runtime; testing only the
     # floor would leave the upper half of that range unverified by anything.
@@ -28,7 +28,7 @@ jobs:
           tools: composer:v2
 
       - name: Install libsecp256k1 (exercise the FFI crypto path)
-        run: sudo apt-get update && sudo apt-get install -y libsecp256k1-1
+        run: sudo apt-get update && sudo apt-get install -y libsecp256k1-6
 
       - name: Cache Composer dependencies
         uses: actions/cache@v4
