@@ -43,6 +43,7 @@ A private, high-performance Nostr relay implementation designed to be embedded i
 - `amphp/http-server` ^3.0 - HTTP server
 - `amphp/websocket-server` ^4.0 - WebSocket server
 - `psr/log` ^3.0 - Logging interface
+- `ext-ffi` and the `libsecp256k1` library - `RelayServerFactory`'s default signature service verifies through them and refuses to start without them; a host without them passes `Secp256k1Signer::createPurePhp()`
 
 ---
 
