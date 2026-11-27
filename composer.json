@@ -23,11 +23,11 @@
         "amphp/websocket-client": "^2.0.2",
         "ext-ffi": "*",
         "friendsofphp/php-cs-fixer": "^3.95.29",
-        "innis/coding-standards": "^0.2.4",
+        "innis/coding-standards": "^0.2.5",
         "phpstan/phpstan": "~2.3.5",
         "phpstan/phpstan-phpunit": "^2.1.1",
         "phpunit/phpunit": "^13.4.6",
-        "rector/rector": "~2.8.4"
+        "rector/rector": "~2.9.2"
     },
     "autoload": {
         "psr-4": {

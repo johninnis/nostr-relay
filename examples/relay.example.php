@@ -26,35 +26,6 @@ use function Amp\trapSignal;
 
 require __DIR__.'/../vendor/autoload.php';
 
-// Deliberate: the relay's own configuration is what a host supplies, so an example has to declare
-// one somewhere; this is the composition root of a runnable script and the class is example-only.
-final class ExampleRelayConfig implements RelayConfigInterface
-{
-    public const string HOST = '127.0.0.1';
-    public const int PORT = 8080;
-
-    #[Override]
-    public function getMaxConnections(): int
-    {
-        return 1000;
-    }
-
-    #[Override]
-    public function getRelayUrl(): RelayUrl
-    {
-        return RelayUrl::fromString('ws://127.0.0.1:8080');
-    }
-
-    #[Override]
-    public function getEventLimits(): EventLimits
-    {
-        return new EventLimits();
-    }
-}
-
-/**
- * Minimal PSR-3 logger that writes to stderr so you can watch the relay work.
- */
 final class StderrLogger extends AbstractLogger
 {
     /**
@@ -77,8 +48,6 @@ $ownerPubkeyHex = $owner->getPublicKey()->toHex();
 $logger = new StderrLogger();
 $authenticationRegistry = new InMemoryAuthenticationRegistry(new NativeRandomBytesGenerator());
 
-// A tenant relay: the owner key may publish and read freely; guests get the configured read/write scope.
-// Configure no tenants instead (`RelayPolicyConfig::tryFromArray([])`) to run a fully open public relay.
 $policyConfig = RelayPolicyConfig::tryFromArray([
     'tenants' => [$ownerPubkeyHex],
     'guest' => [
@@ -99,7 +68,28 @@ $rateLimitPolicy = new StaticRateLimitPolicy(new RateLimitConfig(
     subscriptionsPerMinute: 20,
 ));
 
-$config = new ExampleRelayConfig();
+$config = new class implements RelayConfigInterface {
+    public const string HOST = '127.0.0.1';
+    public const int PORT = 8080;
+
+    #[Override]
+    public function getMaxConnections(): int
+    {
+        return 1000;
+    }
+
+    #[Override]
+    public function getRelayUrl(): RelayUrl
+    {
+        return RelayUrl::fromString('ws://127.0.0.1:8080');
+    }
+
+    #[Override]
+    public function getEventLimits(): EventLimits
+    {
+        return new EventLimits();
+    }
+};
 
 $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->getRelayUrl(), [
     'name' => 'Example Nostr Relay',
@@ -117,7 +107,7 @@ $nip11InfoProvider = new StaticNip11InfoProvider(Nip11Info::fromArray($config->g
 ]));
 
 $httpServer = SocketHttpServer::createForDirectAccess($logger);
-$httpServer->expose(new InternetAddress(ExampleRelayConfig::HOST, ExampleRelayConfig::PORT));
+$httpServer->expose(new InternetAddress($config::HOST, $config::PORT));
 
 $relay = new RelayServerFactory(
     eventStore: new InMemoryEventStore(),

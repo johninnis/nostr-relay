@@ -2,31 +2,6 @@
 
 declare(strict_types=1);
 
-/*
- * Soak + hostile-client harness.
- *
- * Drives the real factory-built relay graph over transport-free client sessions that
- * stream adversarial frames (malformed JSON, wrong-typed arrays, unknown message types,
- * oversized payloads, unsolicited auth, floods) and drop mid-session, under sustained
- * randomised churn of connect / subscribe / publish / close across many clients.
- *
- * The relay is assembled through RelayServerFactory exactly as production assembles it;
- * the harness drives ClientSessionCoordinator (exposed on RelayInstance) with a fake
- * ClientConnectionInterface, so every use case, registry and index runs for real without
- * a socket.
- *
- * Invariants checked:
- *   - only a ConnectionException may escape a session operation; any other throwable is a
- *     defect and fails the run;
- *   - no client ever receives an "Internal server error" NOTICE (the router's last-resort
- *     backstop firing means a non-transport throwable escaped a use case);
- *   - after teardown the client registry, subscription registry and metrics counters all
- *     return to zero (no client, subscription or kind-index leak);
- *   - resident memory does not trend upward across the run (no unbounded retention).
- *
- * Usage: php tools/soak-harness.php [iterations] [maxConnections] [seed]
- */
-
 require __DIR__.'/../vendor/autoload.php';
 
 use Amp\Http\Server\SocketHttpServer;
@@ -134,12 +109,10 @@ $signedTextNote = static function (string $content) use ($keyPair, $signer): Eve
     )->sign($keyPair, $signer);
 };
 
-// Signing is expensive; pre-sign a bounded pool of legitimate frames so the accept /
-// store / distribute path runs without dominating the run with cryptography.
-/** @var list<string> $validEventFrames */
-$validEventFrames = [];
+/** @var list<string> $preSignedEventFrames */
+$preSignedEventFrames = [];
 for ($i = 0; $i < 8; ++$i) {
-    $validEventFrames[] = new ClientEventMessage($signedTextNote('soak note '.$i))->toJson();
+    $preSignedEventFrames[] = new ClientEventMessage($signedTextNote('soak note '.$i))->toJson();
 }
 
 /** @var list<string> $authFrames */
@@ -151,14 +124,10 @@ for ($i = 0; $i < 4; ++$i) {
 
 $allFilters = new FilterCollection([Filter::from()]);
 
-/**
- * A client-supplied frame, drawn adversarially. A subscription id is threaded in so some
- * frames legitimately open, count against or close a live subscription.
- */
-$hostileFrame = static function (string $subscriptionId) use ($validEventFrames, $authFrames, $allFilters): string {
+$hostileFrame = static function (string $subscriptionId) use ($preSignedEventFrames, $authFrames, $allFilters): string {
     $subId = SubscriptionId::tryFromString($subscriptionId);
     $legitimate = [
-        $validEventFrames[mt_rand(0, count($validEventFrames) - 1)],
+        $preSignedEventFrames[mt_rand(0, count($preSignedEventFrames) - 1)],
         $authFrames[mt_rand(0, count($authFrames) - 1)],
     ];
 
@@ -168,9 +137,7 @@ $hostileFrame = static function (string $subscriptionId) use ($validEventFrames,
         $legitimate[] = CountMessage::from($subId, $allFilters)->toJson();
     }
 
-    $menu = [
-        ...$legitimate,
-        // Malformed / adversarial:
+    $malformed = [
         '{',
         '',
         'not json at all',
@@ -192,6 +159,7 @@ $hostileFrame = static function (string $subscriptionId) use ($validEventFrames,
         '["EVENT","'.$subscriptionId.'",{"kind":"not-an-int"}]',
         sprintf('["REQ","%s",%s]', $subscriptionId, '{"authors":['.str_repeat('"x",', 20000).'"x"]}'),
     ];
+    $menu = [...$legitimate, ...$malformed];
 
     return $menu[mt_rand(0, count($menu) - 1)];
 };
@@ -305,8 +273,6 @@ foreach ($allConnections as $connection) {
     }
 }
 
-// Leak signal: compare the median of the last quarter of samples against the first
-// quarter taken after warmup. A steadily-retaining run trends upward; a healthy one is flat.
 $median = static function (array $values): int {
     sort($values);
     $count = count($values);

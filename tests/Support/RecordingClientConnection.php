@@ -8,12 +8,6 @@ use Innis\Nostr\Relay\Application\Port\ClientConnectionInterface;
 use Innis\Nostr\Relay\Domain\Exception\ConnectionException;
 use Override;
 
-/**
- * A transport-free client connection that records every frame the relay sends it and,
- * after a bounded number of successful sends, fails like a peer that dropped mid-session.
- * The failing send raises the same ConnectionException the real websocket adapter raises,
- * so the relay's send-failure path is exercised without a socket.
- */
 final class RecordingClientConnection implements ClientConnectionInterface
 {
     /** @var list<string> */

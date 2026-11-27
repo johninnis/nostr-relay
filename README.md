@@ -317,6 +317,8 @@ composer test
 
 Runs the Unit, Integration and Acceptance suites, then the soak harness (`tools/soak-harness.php`), then PHPStan level 9 static analysis. `composer test-unit` runs the Unit suite alone; `composer soak` the harness alone.
 
+The soak harness builds the relay through `RelayServerFactory`, as production does, and drives its `ClientSessionCoordinator` with many transport-free clients that connect, subscribe, publish, close and drop at random, sending malformed and hostile frames among legitimate ones. A run fails when anything but a `ConnectionException` escapes a session operation, when any client receives an `Internal server error` notice, when the client registry, the subscription registry or the metrics are not back to zero after teardown, or when the median memory of the last quarter of the run exceeds that of the first, after warm-up, by more than 16 MiB. Run it as `php tools/soak-harness.php [iterations] [maxConnections] [seed]`; a failing run prints its seed, which reproduces it.
+
 ### Testing your store
 
 The store you supply confines gift wraps and deletes them at their recipient's request, and a store that gets either wrong fails silently. The library ships the cases every store must pass, autoloaded from `tests/Contract` (see [ADR-0037](docs/adr/0037-the-store-contract-ships-as-cases-a-host-runs-against-its-own-store.md)). Run them against a fresh instance of your store:
